@@ -26,7 +26,7 @@ clustering:
 snapshots:
   start: "2013-01-01"
   end: "2014-01-01"
-  closed: 'both'  # Time interval closed left, right or both
+  closed: 'left'  # Time interval closed left, right or both
 
 enable:
   prepare_links_p_nom: false
@@ -218,11 +218,11 @@ solving:
   options:
     formulation: kirchhoff
     load_shedding: false
-    noisy_costs: true
+    noisy_costs: false
     min_iterations: 4
     max_iterations: 6
     clip_p_max_pu: 0.01
-    skip_iterations: false
+    skip_iterations: true
     track_iterations: false
     #nhours: 10
   solver:
