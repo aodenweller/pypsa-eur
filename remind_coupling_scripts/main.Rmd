@@ -5,74 +5,37 @@ library(tidyverse)
 library(tidync)
 library(gdx)
 library(gdxdt)  # From Alois GitHub repo
+library(ggnewscale)
+library(devtools)
+library(quitte)
 
 file.name <- "../results/networks/elec_s_3_ec_lcopt_Ep-1H.nc"
+
+devtools::load_all(file.path("C:/Users/adrianod/Documents/PhD/Modelling/tidync"))
+
+source("readData.R")
+source("readData2.R")
+source("position_stack_and_nudge.R")
 
 ```
 
 # Read in variables
 
-```{r}
-
-# Only call after tidync::activate (necessary workaround)
-transformData <- function(data, col.sep, var.name, unit.name, hourly = F) {
-  data <- data %>% 
-    hyper_tibble(select_var = all_of(var.name)) %>% 
-    separate(col.sep,
-             into = c("region", "bus", "technology"),
-             sep = "\\s") %>% 
-    mutate(variable = var.name,
-           unit = unit.name) %>% 
-    rename(value = var.name)
-  if (hourly == T) {
-    data <- data %>% 
-      select(region, bus, technology, variable, snapshots, unit, value)
-  } else {
-    data <- data %>% 
-      select(region, bus, technology, variable, unit, value)
-  }
-}
-
-```
-
 ## Hourly data
 
 ```{r, warning = F}
 
-# Generators: Power
-v1 <- tidync(file.name) %>% 
-  activate(generators_t_p) %>% 
-  transformData(col.sep = "generators_t_p_i",
-                var.name = "generators_t_p",
-                unit.name = "MW",
-                hourly = T)
+# Generation
+vars.h.gen <- c("generators_t_p",
+                "buses_t_marginal_price",
+                "loads_t_p")
 
-# Buses: Marginal price 
-v2 <- tidync(file.name) %>% 
-  activate(buses_t_marginal_price) %>% 
-  transformData(col.sep = "buses_t_marginal_price_i",
-                var.name = "buses_t_marginal_price",
-                unit.name = "EUR/MWh",
-                hourly = T)
+data.h.gen <- readData(file.name, vars.h.gen, hourly = T)
 
-# Buses: Load
-v3 <- tidync(file.name) %>% 
-  activate(loads_t_p) %>% 
-  transformData(col.sep = "loads_t_p_i",
-                var.name = "loads_t_p",
-                unit.name = "MW",
-                hourly = T)
-  
-# Storage units: Power
-v4 <- tidync(file.name) %>% 
-  activate(storage_units_t_p) %>% 
-  transformData(col.sep = "storage_units_t_p_i",
-                var.name = "storage_units_t_p",
-                unit.name = "MW",
-                hourly = T)
+# Storage
+vars.h.stor <- c("storage_units_t_p")
 
-data.hourly <- bind_rows(v1, v2, v3, v4)
-rm(v1, v2, v3, v4)
+data.h.stor <- readData(file.name, vars.h.stor, hourly =T)
 
 ```
 
@@ -80,136 +43,195 @@ rm(v1, v2, v3, v4)
 
 ```{r, warning = F}
 
-# Generators: Nominal power
-v1 <- tidync(file.name) %>%
-  activate(generators_p_nom_opt) %>%
-  transformData(col.sep = "generators_i",
-                var.name = "generators_p_nom_opt",
-                unit.name = "MW")
+vars.a.gen <- c("generators_p_nom_opt",
+                "generators_capital_cost",
+                "generators_marginal_cost")
 
-# Generators: Marginal costs 
-v2 <- tidync(file.name) %>% 
-  activate(generators_marginal_cost) %>% 
-  transformData(col.sep = "generators_i",
-                var.name = "generators_marginal_cost",
-                unit.name = "EUR/MW")
-
-# Generators: Capital costs 
-v3 <- tidync(file.name) %>% 
-  activate(generators_capital_cost) %>% 
-  transformData(col.sep = "generators_i",
-                var.name = "generators_capital_cost",
-                unit.name = "EUR/MW")
-
-data.yearly <- bind_rows(v1, v2, v3)
-rm(v1, v2, v3)
+data.a.gen <- readData(file.name, vars.a.gen, hourly = F)
 
 ```
 
 # Plot some stuff
 
-## Load and generation
+## Colormap
+
+```{r}
+
+color.tech <- c(
+  "solar" = "#ffcc00",
+  "onwind" = "#337fff",
+  "offwind-ac" = "#63BFE0",
+  "offwind-dc" = "#63BFE0",
+  "ror" = "#191999",
+  "biomass" = "#005900",
+  "OCGT" = "#616138",
+  "CCGT" = "#999959",
+  "oil" = "#663a00",
+  "coal" = "#845353",
+  "lignite" = "#0c0c0c",
+  "nuclear" = "#ff33ff"
+)
+
+color.tech.stor <- c(
+  "PHS" = "#117FA5",
+  "battery" = "#8E5FBE",
+  "hydro" = "#7175D8",
+  "H2" = "#74E0F2"
+)
+  
+```
+
+
+## Capacity
+
+```{r}
+
+data.plot <- readData2("generators_p_nom_opt",
+                      c("region", "bus", "technology")) %>% 
+  order.levels(technology = names(color.tech))
+  
+p <- ggplot() + 
+  geom_bar(data = data.plot,
+           mapping = aes(x = bus, y = generators_p_nom_opt, fill = technology),
+           stat = "identity",
+           position = "stack") + 
+  scale_fill_manual(values = color.tech)
+
+print(p)
+
+data.plot <- data.plot %>% 
+  group_by(region, technology) %>% 
+  summarise(generators_p_nom_opt = sum(generators_p_nom_opt))
+
+p <- ggplot() + 
+  geom_bar(data = data.plot,
+           mapping = aes(x = region, y = generators_p_nom_opt, fill = technology),
+           stat = "identity",
+           position = "stack") + 
+  scale_fill_manual(values = color.tech)
+
+print(p)
+
+```
+
+## Generation
+
+```{r}
+
+data.plot <- readData2("generators_t_p",
+                      c("region", "bus", "technology")) %>% 
+  group_by(region, bus, technology) %>% 
+  summarise(generators_t_p = sum(generators_t_p)) %>% 
+  order.levels(technology = names(color.tech))
+  
+p <- ggplot() + 
+  geom_bar(data = data.plot,
+           mapping = aes(x = bus, y = generators_t_p, fill = technology),
+           stat = "identity",
+           position = "stack") + 
+  scale_fill_manual(values = color.tech)
+
+print(p)
+
+data.plot <- data.plot %>% 
+  group_by(region, technology) %>% 
+  summarise(generators_t_p = sum(generators_t_p))
+
+p <- ggplot() + 
+  geom_bar(data = data.plot,
+           mapping = aes(x = region, y = generators_t_p, fill = technology),
+           stat = "identity",
+           position = "stack") + 
+  scale_fill_manual(values = color.tech)
+
+print(p)
+
+```
+
+## Load and power (one week in January)
 
 ```{r}
 
 t.range <- seq(168,2*168)  # second week
 
-data.plot.load <- data.hourly %>% 
-  filter(variable == "loads_t_p",
-         snapshots %in% t.range) %>% 
-  mutate(load = value) %>% 
-  select(region, bus, snapshots, unit, load)
+data.plot.load <- readData2("loads_t_p",
+                            c("region", "bus")) %>% 
+  filter(snapshots %in% t.range)
 
-data.plot.gen <- data.hourly %>% 
-  filter(variable == "generators_t_p",
-         snapshots %in% t.range) %>% 
-  mutate(gen = value) %>% 
-  select(region, bus, technology, snapshots, unit, gen)
+data.plot.power <- readData2("generators_t_p",
+                             c("region", "bus", "technology")) %>% 
+  filter(snapshots %in% t.range) %>% 
+  order.levels(technology = names(color.tech))
 
 p <- ggplot() +
-  geom_area(data = data.plot.gen,
-            mapping = aes(x = snapshots, y = gen, fill = technology)) + 
+  geom_area(data = data.plot.power,
+            mapping = aes(x = snapshots, y = generators_t_p, fill = technology)) + 
   geom_line(data = data.plot.load,
-            mapping = aes(x = snapshots, y = load)) +
+            mapping = aes(x = snapshots, y = loads_t_p)) +
+  scale_fill_manual(values = color.tech) + 
   facet_wrap(~bus)
-
 print(p)
 
-# Aggregate
 data.plot.load <- data.plot.load %>% 
   group_by(region, snapshots) %>% 
-  summarise(load = sum(load))
+  summarise(loads_t_p = sum(loads_t_p))
 
-data.plot.gen <- data.plot.gen %>% 
+data.plot.power <- data.plot.power %>% 
   group_by(region, technology, snapshots) %>% 
-  summarise(gen = sum(gen))
+  summarise(generators_t_p = sum(generators_t_p))
 
 p <- ggplot() +
-  geom_area(data = data.plot.gen,
-            mapping = aes(x = snapshots, y = gen, fill = technology)) + 
+  geom_area(data = data.plot.power,
+            mapping = aes(x = snapshots, y = generators_t_p, fill = technology)) + 
   geom_line(data = data.plot.load,
-            mapping = aes(x = snapshots, y = load))
+            mapping = aes(x = snapshots, y = loads_t_p)) + 
+  scale_fill_manual(values = color.tech)
 print(p)
 
 # With storage
-data.plot.storage <- data.hourly %>% 
-  filter(variable == "storage_units_t_p",
-         snapshots %in% t.range) %>% 
+data.plot.stor <- readData2("storage_units_t_p",
+                            c("region", "bus", "technology")) %>% 
+  filter(snapshots %in% t.range) %>% 
   group_by(region, technology, snapshots) %>% 
-  summarise(gen = sum(value))
+  summarise(storage_units_t_p = sum(storage_units_t_p))
 
-data.plot.gen <- bind_rows(data.plot.gen, data.plot.storage)
+data.plot.genstor <- bind_rows(data.plot.gen %>%
+                                 rename(value = generators_t_p),
+                               data.plot.stor %>% 
+                                 rename(value = storage_units_t_p)) %>% 
+  order.levels(technology = names(c(color.tech.stor, color.tech)))
 
 p <- ggplot() +
-  geom_area(data = data.plot.gen,
-            mapping = aes(x = snapshots, y = gen, fill = technology)) + 
+  geom_area(data = data.plot.genstor,
+            mapping = aes(x = snapshots, y = value, fill = technology)) + 
   geom_line(data = data.plot.load,
-            mapping = aes(x = snapshots, y = load))
+            mapping = aes(x = snapshots, y = loads_t_p)) + 
+  scale_fill_manual(values = c(color.tech.stor, color.tech))
 print(p)
 
-
 ```
-
-## Electricity price
+## Electricity price (one week in January)
 
 ```{r}
 
-data.plot.price <- data.hourly %>% 
-  filter(variable == "buses_t_marginal_price",
-         snapshots %in% t.range)
+data.plot.price <- readData2(c("buses_t_marginal_price", "loads_t_p"),
+                             c("region", "bus")) %>% 
+  filter(snapshots %in% t.range)
 
 p <- ggplot(data = data.plot.price) +
-  geom_line(aes(x = snapshots, y = value)) +
+  geom_line(aes(x = snapshots, y = buses_t_marginal_price)) +
   facet_wrap(~bus)
 
 print(p)
 
-# Aggregate over buses (weighted by load)
-data.plot.load <- data.hourly %>% 
-  filter(variable == "loads_t_p",
-         snapshots %in% t.range) %>% 
-  rename(load = value) %>% 
-  select(region, bus, snapshots, load)
-
-data.plot.price <- data.plot.price %>% 
-  rename(price = value) %>% 
-  select(region, bus, snapshots, price)
-  
-data.plot.price.weighted <- full_join(data.plot.load, data.plot.price) %>% 
+data.plot.price.weighted <- data.plot.price %>% 
   group_by(region, snapshots) %>% 
-  summarise(price.weighted = sum(load*price)/sum(load))
-
+  summarise(price.weighted = sum(buses_t_marginal_price * loads_t_p) / sum(loads_t_p))
+  
 p <- ggplot(data = data.plot.price.weighted) +
   geom_line(aes(x = snapshots, y = price.weighted))
 
 print(p)
-
-# Aggregate over buses and time (weighted by load)
-data.plot.price.year <- full_join(data.plot.load, data.plot.price) %>% 
-  group_by(region) %>% 
-  summarise(price.weighted = sum(load*price)/sum(load))
-
-print(data.plot.price.year)
 
 ```
 
@@ -217,22 +239,10 @@ print(data.plot.price.year)
 
 ```{r}
 
-data.plot.price <- data.hourly %>% 
-  filter(variable == "buses_t_marginal_price")
-
-# Aggregate over buses (weighted by load)
-data.plot.load <- data.hourly %>% 
-  filter(variable == "loads_t_p") %>% 
-  rename(load = value) %>% 
-  select(region, bus, snapshots, load)
-
-data.plot.price <- data.plot.price %>% 
-  rename(price = value) %>% 
-  select(region, bus, snapshots, price)
-  
-data.plot.price.weighted <- full_join(data.plot.load, data.plot.price) %>% 
+data.plot.price.weighted <- readData2(c("buses_t_marginal_price", "loads_t_p"),
+                                      c("region", "bus")) %>% 
   group_by(region, snapshots) %>% 
-  summarise(price.weighted = sum(load*price)/sum(load)) %>% 
+  summarise(price.weighted = sum(buses_t_marginal_price * loads_t_p) / sum(loads_t_p)) %>% 
   arrange(desc(price.weighted))
 
 p <- ggplot(data = data.plot.price.weighted) + 
@@ -242,33 +252,202 @@ print(p)
 
 ```
 
+# Basic economics
 
-# Calculate some stuff
+## Total payments = Total revenues (w/o investments, follows from power balance)
 
-## Average capacity factor
+Show that market price-weighted load (consumer payments) is equal to
+market price-weighted generation (generator revenues) + congestion rent!
 
-```{r, warning = F}
+```{r}
 
-# Actual power
-data.p <- data.hourly %>%
-  filter(variable == "generators_t_p") %>%
-  group_by(region, bus, technology) %>% 
-  summarise(sum = sum(value))
+# Consumer payments
+data.plot.pay <- readData(file.name,
+                          c("loads_t_p", "buses_t_marginal_price"),
+                          hourly = T) %>%
+  summarise(total.payment = sum(loads_t_p * buses_t_marginal_price))
 
-# Nominal power
-data.pnom <- data.yearly %>% 
-  filter(variable == "generators_p_nom_opt")
+# Generator revenues
+data.plot.rev <- readData(file.name,
+                          c("generators_t_p", "buses_t_marginal_price"),
+                          hourly = T) %>% 
+  summarise(total.revenue = sum(generators_t_p * buses_t_marginal_price))
 
-data.cf <- full_join(data.p, data.pnom) %>% 
-  group_by(region, bus, technology) %>% 
-  transmute(cf = sum/(value*8760))
+# Storage revenues
+data.plot.stor.rev <- readData(file.name,
+                               c("storage_units_t_p", "buses_t_marginal_price"),
+                               hourly = T) %>% 
+  summarise(total.revenue = sum(storage_units_t_p * buses_t_marginal_price))
 
-p <- ggplot(data = data.cf) + 
-  geom_point(aes(x = technology, y = cf, color = bus))
+# Congestion rent
+test1 <- readData2(vars = c("lines_t_p0", "lines_t_p1"),
+                   dims = c("lines"))
+
+test2 <- readData2(vars = c("lines_bus0", "lines_bus1"),
+                   dims = "lines")
+
+test3 <- full_join(test1, test2) %>% 
+  separate(lines_bus0,
+           into = c("region0", "bus0"),
+           sep = "\\s") %>% 
+  separate(lines_bus1,
+           into = c("region1", "bus1"),
+           sep = "\\s")
+
+price <- readData2(vars = "buses_t_marginal_price",
+                   dims = c("region", "bus"))
+
+temp1 <- full_join(test3, price, by = c("region0" = "region",
+                                       "bus0" = "bus",
+                                       "snapshots")) %>% 
+  filter(!is.na(lines_t_p0)) %>% 
+  summarise(sum1 = sum(lines_t_p0*buses_t_marginal_price))
+
+temp2 <- full_join(test3, price, by = c("region1" = "region",
+                                       "bus1" = "bus",
+                                       "snapshots")) %>% 
+  filter(!is.na(lines_t_p0)) %>% 
+  summarise(sum2 = sum(lines_t_p0*buses_t_marginal_price))
+
+data.plot.cong.rent <- bind_cols(temp1, temp2) %>% 
+  transmute(cong.rent = abs(sum1 - sum2))
+
+data.plot <- bind_rows(
+  data.plot.rev %>% 
+    mutate(variable = "generation revenue") %>% 
+    rename(value = total.revenue),
+  data.plot.stor.rev %>% 
+    mutate(variable = "storage revenue") %>% 
+    rename(value = total.revenue),
+  data.plot.cong.rent %>% 
+    mutate(variable = "congestion rent") %>% 
+    rename(value = cong.rent)
+)
+
+p <- ggplot() + 
+  geom_bar(data = data.plot,
+           mapping = aes(x = 0, y = value, fill = variable),
+           stat = "identity") +
+  scale_fill_discrete(name = "Supply side") +
+  new_scale_fill() + 
+  geom_bar(data = data.plot.pay,
+           mapping = aes(x = 1, y = total.payment, fill = "Total payments"),
+           stat = "identity") + 
+  scale_fill_manual(name = "Demand side",
+                    values = c("Total payments" = "gray")) + 
+  ggtitle("Equality of payments and revenues, without costs!")
 
 print(p)
 
 ```
+
+## Zero profit conditions
+
+### Generation (LCOE = MV)
+
+```{r}
+
+data.costs <- readData2(c("generators_capital_cost", "generators_marginal_cost"),
+                        c("region", "bus", "technology"))
+
+data.gen <- readData2(c("generators_p_nom_opt", "generators_t_p"),
+                      c("region", "bus", "technology"))
+
+data.price <- readData2("buses_t_marginal_price",
+                        c("region", "buses"))
+
+data.lcoe <- data.gen %>% 
+  full_join(data.costs) %>% 
+  group_by(technology, bus) %>% 
+  summarise(fix = (sum(generators_capital_cost * 1/8760*generators_p_nom_opt)/sum(generators_t_p)),
+            var = (sum(generators_marginal_cost * generators_t_p)/sum(generators_t_p))) %>% 
+  pivot_longer(cols = c(fix, var), names_to = "lcoe_part") %>% 
+  order.levels(lcoe_part = c("var", "fix"))
+
+data.mv <- data.gen %>% 
+  full_join(data.price) %>% 
+  group_by(technology, bus) %>% 
+  summarise(mv = case_when(sum(generators_t_p) > 1E-3 ~ sum(buses_t_marginal_price*generators_t_p)/sum(generators_t_p),
+                           TRUE ~ 0))
+
+p <- ggplot() + 
+  geom_bar(data = data.lcoe,
+           mapping = aes(x = bus, y = value, fill = lcoe_part),
+           stat = "identity",
+           width = 0.3,
+           position = position_stack_and_nudge(x = -0.2)) +
+  scale_fill_discrete(name = "Investment side",
+                      labels = c("var" = "LCOE (variable)",
+                                 "fix" = "LCOE (fixed)")) + 
+  new_scale_fill() + 
+  geom_bar(data = data.mv %>% filter(technology != "oil"),
+           mapping = aes(x = bus, y = mv, fill = "Market value"),
+           stat = "identity",
+           width = 0.3,
+           position = position_stack_and_nudge(x = 0.2)) +
+  scale_fill_manual(name = "Revenue side",
+                    values = c("Market value" = "grey50")) +
+  facet_wrap(~technology) +
+  ggtitle("LCOE = Market value, only for extendable technologies")
+
+print(p)
+
+```
+
+### Transmission
+
+```{r}
+
+data.costs <- readData2("lines_capital_cost",
+                        "lines")
+
+data.lines <- readData2(c("lines_s_nom_opt", "lines_s_nom"),
+                        "lines") %>% 
+  mutate(temp = lines_s_nom_opt - lines_s_nom)
+
+test1 <- readData2(vars = c("lines_t_p0", "lines_t_p1"),
+                   dims = c("lines"))
+
+test2 <- readData2(vars = c("lines_bus0", "lines_bus1"),
+                   dims = "lines")
+
+test3 <- full_join(test1, test2) %>% 
+  separate(lines_bus0,
+           into = c("region0", "bus0"),
+           sep = "\\s") %>% 
+  separate(lines_bus1,
+           into = c("region1", "bus1"),
+           sep = "\\s")
+
+price <- readData2(vars = "buses_t_marginal_price",
+                   dims = c("region", "bus"))
+
+temp1 <- full_join(test3, price, by = c("region0" = "region",
+                                       "bus0" = "bus",
+                                       "snapshots")) %>% 
+  filter(!is.na(lines_t_p0)) %>% 
+  group_by(lines) %>% 
+  summarise(sum1 = sum(lines_t_p0*buses_t_marginal_price))
+
+temp2 <- full_join(test3, price, by = c("region1" = "region",
+                                       "bus1" = "bus",
+                                       "snapshots")) %>% 
+  filter(!is.na(lines_t_p0)) %>% 
+  group_by(lines) %>% 
+  summarise(sum2 = sum(lines_t_p0*buses_t_marginal_price))
+
+data.plot.cong.rent <- full_join(temp1, temp2) %>% 
+  mutate(cong.rent = abs(sum1 - sum2))
+
+temp <- full_join(data.plot.cong.rent, data.costs) %>% 
+  full_join(data.lines) %>% 
+  mutate(invest = lines_capital_cost * temp) %>% 
+  summarise(cong.rent = sum(cong.rent),
+            invest = sum(invest))
+
+```
+
+### Storage
 
 ## Market value vs. Marginal costs
 
@@ -295,22 +474,91 @@ data.mv <- full_join(data.p, data.price) %>%
   transmute(value = sum.revenue / sum.gen,
             variable = "market value")
 
+# Capital costs
+data.cc <- data.yearly %>% 
+  filter(variable %in% c("generators_capital_cost", "generators_p_nom_opt")) %>% 
+  select(!unit) %>% 
+  pivot_wider(names_from = variable, values_from = value)
+
+data.prod <- data.hourly %>% 
+  filter(variable == "generators_t_p") %>% 
+  rename(generators_t_p = value) %>% 
+  select(!c("unit", "variable"))
+
+data.temp <- full_join(data.cc, data.prod) %>% 
+  group_by(region, bus, technology, generators_p_nom_opt, generators_capital_cost) %>% 
+  summarise(gen = sum(generators_t_p)) %>% 
+  mutate(value = generators_capital_cost * generators_p_nom_opt / gen,
+         variable = "capital cost") %>% 
+  ungroup() %>% 
+  select(region, bus, technology, variable, value)
+
 # Marginal costs
 data.mc <- data.yearly %>% 
   filter(variable == "generators_marginal_cost") %>% 
-  mutate(variable = "marginal cost")
+  mutate(variable = "marginal cost") %>%
+  select(!unit)
 
-data.plot <- bind_rows(data.mv, data.mc)
+data.plot.lcoe <- bind_rows(data.mc, data.temp)
 
-p <- ggplot(data.plot) +
-  geom_bar(aes(x = bus, y = value, fill = variable),
+source("position_stack_and_nudge.R")
+
+p <- ggplot() +
+  geom_bar(data = data.plot.lcoe,
+           mapping = aes(x = bus, y = value, fill = variable),
            stat = "identity",
-           position = "dodge") +
+           width = 0.35,
+           position = position_stack_and_nudge(x = -0.2)) +
+  scale_fill_discrete(name = "LCOE components") +
+  new_scale_fill() + 
+  geom_bar(data = data.mv,
+           mapping = aes(x = bus, y = value, fill = variable),
+           stat = "identity",
+           width = 0.35,
+           position = position_stack_and_nudge(x = 0.2)) +
+  scale_fill_manual(values = c("market value" = "gray50")) +
   facet_wrap(~technology)
 
 print(p)
 
 ```
+
+## VRE value factors
+
+```{r}
+
+data.plot.mv <- data.mv %>% 
+  filter(technology %in% c("offwind-ac", "offwind-dc", "onwind", "solar")) %>% 
+  select(region, bus, technology, value)
+
+data.plot.price <- data.hourly %>% 
+  filter(variable == "buses_t_marginal_price") %>% 
+  rename(price = value) %>% 
+  select(region, bus, snapshots, price)
+
+data.plot.load <- data.hourly %>% 
+  filter(variable == "loads_t_p") %>% 
+  rename(load = value) %>% 
+  select(region, bus, snapshots, load)
+
+data.plot.price.weighted <- full_join(data.plot.load, data.plot.price) %>% 
+  group_by(region, bus) %>% 
+  summarise(price.weighted = sum(load*price)/sum(load))
+
+data.plot <- full_join(data.plot.mv, data.plot.price.weighted) %>% 
+  mutate(value.factor = value / price.weighted)
+
+p <- ggplot() + 
+  geom_bar(data = data.plot,
+           mapping = aes(x = bus, y = value.factor, fill = technology),
+           stat = "identity",
+           position = "dodge")
+
+print(p)
+
+```
+
+
 ## LCOE and prices
 
 Without investment, LCOE = short-term marginal costs (O&M, fuel, CO2)

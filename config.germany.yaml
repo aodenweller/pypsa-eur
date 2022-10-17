@@ -44,7 +44,7 @@ electricity:
   agg_p_nom_limits: data/agg_p_nom_minmax.csv  # per carrier generator nominal capacity constraints
 
   extendable_carriers:
-    Generator: []  # Subset of ['OCGT', 'CCGT'], places them where gas plants are located today
+    Generator: ['OCGT', 'CCGT', 'nuclear']  # Subset of ['OCGT', 'CCGT'], places them where gas plants are located today
     StorageUnit: [battery, H2]  # battery, H2
     Store: []  # What's the difference to StorageUnit?
     Link: []  # Only 'H2 pipeline', without capacity limit, zero initial capacity
@@ -55,7 +55,7 @@ electricity:
 
   powerplants_filter: false  # use pandas query strings here, e.g. Country not in ['Germany']
   custom_powerplants: false  # use pandas query strings here, e.g. Country in ['Germany']
-  conventional_carriers: [nuclear, oil, OCGT, CCGT, coal, lignite, geothermal, biomass]   # List to include from resources/powerplants.csv
+  conventional_carriers: [oil, coal, lignite, geothermal, biomass]
   renewable_capacities_from_OPSD: []  # OPSD = open power system data, onwind, offwind, solar
 
   # estimate_renewable_capacities_from_capacity_stats:
@@ -201,16 +201,6 @@ costs:
   year: 2030
   discountrate: 0.07 # From a Lion Hirth paper, also reflects average of Noothout et al 2016
   USD2013_to_EUR2013: 0.7532 # [EUR/USD] ECB: https://www.ecb.europa.eu/stats/exchange/eurofxref/html/eurofxref-graph-usd.en.html
-  marginal_cost:  # EUR/MWh, are these overwritten by the costs file?
-    solar: 0.01
-    onwind: 0.015
-    offwind: 0.015
-    hydro: 0.
-    H2: 0.
-    electrolysis: 0.
-    fuel cell: 0.
-    battery: 0.
-    battery inverter: 0.
   emission_prices: # in currency per tonne emission, only used with the option Ep
     co2: 50
 
@@ -230,7 +220,7 @@ solving:
     threads: 4
     method: 2 # barrier
     crossover: 0
-    BarConvTol: 1.e-5
+    BarConvTol: 1.e-8
     FeasibilityTol: 1.e-6
     AggFill: 0
     PreDual: 0
