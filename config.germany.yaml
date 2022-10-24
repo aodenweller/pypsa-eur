@@ -16,7 +16,7 @@ run:
 scenario:
   simpl: ['']  # Number of buses for pre-clustering
   ll: ['copt']  # Line limits: Limit on line costs (c), optimise (opt)
-  clusters: [3]
+  clusters: [5]
   opts: [Ep-1H]  # Co2L = CO2 limit, Ep = emission pricing, hourly resolution (1H)
 
 countries: ['DE']
