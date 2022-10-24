@@ -20,6 +20,7 @@ gurobi.log
 /data/links_p_nom.csv
 /cutouts
 /dask-worker-space
+/venv
 
 doc/_build
 
