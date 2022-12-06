@@ -1,0 +1,233 @@
+# SPDX-FileCopyrightText: : 2017-2022 The PyPSA-Eur Authors
+#
+# SPDX-License-Identifier: MIT
+
+# Snakefile #2 for REMIND-PyPSA coupling. Changes by Adrian Odenweller.
+
+# This snakefile contains all rules from add_electricity onwards.
+# Another wildcard "year" has been added for parallelisation.
+# All rules have an "_rm" appended at the end. 
+# Two rules "export_network_rm" and "export_all_networks_rm" have been added.
+# This snakefile does not require internet access.
+
+from os.path import normpath, exists
+from shutil import copyfile
+
+if not exists("config.yaml"):
+    copyfile("config.default.yaml", "config.yaml")
+
+configfile: "config.yaml"
+
+run = config.get("run", {})
+RDIR = run["name"] + "/" if run.get("name") else ""
+CDIR = RDIR if not run.get("shared_cutouts") else ""
+
+wildcard_constraints:
+    simpl="[a-zA-Z0-9]*|all",
+    clusters="[0-9]+m?|all",
+    ll="(v|c)([0-9\.]+|opt|all)|all",
+    opts="[-+a-zA-Z0-9\.]*",
+    year="2[01][0-9][05]"
+
+
+def memory(w):
+    factor = 3.0
+    for o in w.opts.split("-"):
+        m = re.match(r"^(\d+)h$", o, re.IGNORECASE)
+        if m is not None:
+            factor /= int(m.group(1))
+            break
+    for o in w.opts.split("-"):
+        m = re.match(r"^(\d+)seg$", o, re.IGNORECASE)
+        if m is not None:
+            factor *= int(m.group(1)) / 8760
+            break
+    if w.clusters.endswith("m"):
+        return int(factor * (18000 + 180 * int(w.clusters[:-1])))
+    elif w.clusters == "all":
+        return int(factor * (18000 + 180 * 4000))
+    else:
+        return int(factor * (10000 + 195 * int(w.clusters)))
+
+
+rule add_electricity_rm:
+    input:
+        **{
+            f"profile_{tech}": "resources/" + RDIR + f"profile_{tech}.nc"
+            for tech in config["renewable"]
+        },
+        **{
+            f"conventional_{carrier}_{attr}": fn
+            for carrier, d in config.get("conventional", {None: {}}).items()
+            for attr, fn in d.items()
+            if str(fn).startswith("data/")
+        },
+        base_network="networks/" + RDIR + "base.nc",
+        tech_costs="remind/data_in/" + RDIR + "costs_{year}.csv",
+        regions="resources/" + RDIR + "regions_onshore.geojson",
+        powerplants="resources/" + RDIR + "powerplants.csv",
+        hydro_capacities="data/bundle/hydro_capacities.csv",
+        geth_hydro_capacities="data/geth2015_hydro_capacities.csv",
+        load="resources/" + RDIR + "load.csv",
+        nuts3_shapes="resources/" + RDIR + "nuts3_shapes.geojson",
+    output:
+        "networks/" + RDIR + "elec_y{year}.nc",
+    log:
+        "logs/" + RDIR + "add_electricity_rm_y{year}.log",
+    benchmark:
+        "benchmarks/" + RDIR + "add_electricity_rm_y{year}"
+    threads: 1
+    resources:
+        mem_mb=5000,
+    script:
+        "scripts/add_electricity.py"
+
+rule simplify_network_rm:
+    input:
+        network="networks/" + RDIR + "elec_y{year}.nc",
+        tech_costs="remind/data_in/" + RDIR + "costs_{year}.csv",
+        regions_onshore="resources/" + RDIR + "regions_onshore.geojson",
+        regions_offshore="resources/" + RDIR + "regions_offshore.geojson",
+    output:
+        network="networks/" + RDIR + "elec_s{simpl}_y{year}.nc",
+        regions_onshore="resources/" + RDIR + "regions_onshore_elec_s{simpl}_y{year}.geojson",
+        regions_offshore="resources/" + RDIR + "regions_offshore_elec_s{simpl}_y{year}.geojson",
+        busmap="resources/" + RDIR + "busmap_elec_s{simpl}_y{year}.csv",
+        connection_costs="resources/" + RDIR + "connection_costs_s{simpl}_y{year}.csv",
+    log:
+        "logs/" + RDIR + "simplify_network_rm/elec_s{simpl}_y{year}.log",
+    benchmark:
+        "benchmarks/" + RDIR + "simplify_network_rm/elec_s{simpl}_y{year}"
+    threads: 1
+    resources:
+        mem_mb=4000,
+    script:
+        "scripts/simplify_network.py"
+
+rule cluster_network_rm:
+    input:
+        network="networks/" + RDIR + "elec_s{simpl}_y{year}.nc",
+        regions_onshore="resources/" + RDIR + "regions_onshore_elec_s{simpl}_y{year}.geojson",
+        regions_offshore="resources/" + RDIR + "regions_offshore_elec_s{simpl}_y{year}.geojson",
+        busmap=ancient("resources/" + RDIR + "busmap_elec_s{simpl}_y{year}.csv"),
+        custom_busmap=(
+            "data/custom_busmap_elec_s{simpl}_{clusters}.csv"
+            if config["enable"].get("custom_busmap", False)
+            else []
+        ),
+        tech_costs="remind/data_in/" + RDIR + "costs_{year}.csv",
+    output:
+        network="networks/" + RDIR + "elec_s{simpl}_{clusters}_y{year}.nc",
+        regions_onshore="resources/"
+        + RDIR
+        + "regions_onshore_elec_s{simpl}_{clusters}_y{year}.geojson",
+        regions_offshore="resources/"
+        + RDIR
+        + "regions_offshore_elec_s{simpl}_{clusters}_y{year}.geojson",
+        busmap="resources/" + RDIR + "busmap_elec_s{simpl}_{clusters}_y{year}.csv",
+        linemap="resources/" + RDIR + "linemap_elec_s{simpl}_{clusters}_y{year}.csv",
+    log:
+        "logs/" + RDIR + "cluster_network_rm/elec_s{simpl}_{clusters}_y{year}.log",
+    benchmark:
+        "benchmarks/" + RDIR + "cluster_network_rm/elec_s{simpl}_{clusters}_y{year}"
+    threads: 1
+    resources:
+        mem_mb=6000,
+    script:
+        "scripts/cluster_network.py"
+
+rule add_extra_components_rm:
+    input:
+        network="networks/" + RDIR + "elec_s{simpl}_{clusters}_y{year}.nc",
+        tech_costs="remind/data_in/" + RDIR + "costs_{year}.csv",
+    output:
+        "networks/" + RDIR + "elec_s{simpl}_{clusters}_y{year}_ec.nc",
+    log:
+        "logs/" + RDIR + "add_extra_components_rm/elec_s{simpl}_{clusters}_y{year}.log",
+    benchmark:
+        "benchmarks/" + RDIR + "add_extra_components_rm/elec_s{simpl}_{clusters}_y{year}_ec"
+    threads: 1
+    resources:
+        mem_mb=3000,
+    script:
+        "scripts/add_extra_components.py"
+
+rule prepare_network_rm:
+    input:
+        "networks/" + RDIR + "elec_s{simpl}_{clusters}_y{year}_ec.nc",
+        tech_costs="remind/data_in/" + RDIR + "costs_{year}.csv",
+    output:
+        "networks/" + RDIR + "elec_s{simpl}_{clusters}_y{year}_ec_l{ll}_{opts}.nc",
+    log:
+        "logs/" + RDIR + "prepare_network_rm/elec_s{simpl}_{clusters}_y{year}_ec_l{ll}_{opts}.log",
+    benchmark:
+        (
+            "benchmarks/"
+            + RDIR
+            + "prepare_network_rm/elec_s{simpl}_{clusters}_y_{year}_ec_l{ll}_{opts}"
+        )
+    threads: 1
+    resources:
+        mem_mb=4000,
+    script:
+        "scripts/prepare_network.py"
+
+# Introduce wildcard {iter} from here to distinguish iterations in the result files
+rule solve_network_rm:
+    input:
+        "networks/" + RDIR + "elec_s{simpl}_{clusters}_y{year}_ec_l{ll}_{opts}.nc",
+    output:
+        "results/networks/" + RDIR + "elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}.nc",
+    log:
+        solver=normpath(
+            "logs/"
+            + RDIR
+            + "solve_network_rm/elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}_solver.log"
+        ),
+        python="logs/"
+        + RDIR
+        + "solve_network_rm/elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}_python.log",
+        memory="logs/"
+        + RDIR
+        + "solve_network_rm/elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}_memory.log",
+    benchmark:
+        "benchmarks/" + RDIR + "solve_network_rm/elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}"
+    threads: 4
+    resources:
+        mem_mb=memory,
+    shadow:
+        "minimal"
+    script:
+        "scripts/solve_network.py"
+
+rule solve_all_networks_rm:
+    input:
+        expand(
+            "results/networks/" + RDIR + "elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}.nc",
+            **config["scenario"],
+            **config
+        )
+
+rule export_network_rm:
+    input:
+        "results/networks/" + RDIR + "elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}.nc",
+    output:
+        directory("results/networks/" + RDIR + "out_elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}"),
+    log:
+        "logs/"
+        + RDIR
+        + "export_network_rm/elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}.log",
+    run:
+        import pypsa
+        n = pypsa.Network(input[0])
+        n.export_to_csv_folder(output[0])
+
+rule export_all_networks_rm:
+    input:
+        expand(
+            "results/networks/" + RDIR + "out_elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}",
+            **config["scenario"],
+            **config
+        )
+
+# RUN with: snakemake -s Snakefile_rm --profile simple/ export_all_networks_rm --config iter=X
