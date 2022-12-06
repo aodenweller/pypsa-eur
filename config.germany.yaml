@@ -16,8 +16,9 @@ run:
 scenario:
   simpl: ['']  # Number of buses for pre-clustering
   ll: ['copt']  # Line limits: Limit on line costs (c), optimise (opt)
-  clusters: [3]
+  clusters: [4]
   opts: [Ep-1H]  # Co2L = CO2 limit, Ep = emission pricing, hourly resolution (1H)
+  year: [2030, 2050]
 
 countries: ['DE']
 
@@ -29,12 +30,13 @@ snapshots:
 enable:
   prepare_links_p_nom: false
   retrieve_databundle: true
-  retrieve_cost_data: true
+  retrieve_cost_data: false  # Testing
   build_cutout: false
   retrieve_cutout: true
   build_natura_raster: false
   retrieve_natura_raster: true
   custom_busmap: false
+  remind_coupling: true
 
 electricity:
   voltages: [220., 300., 380.]
@@ -280,30 +282,30 @@ solving:
   options:
     formulation: kirchhoff
     load_shedding: false
-    noisy_costs: true
+    noisy_costs: false
     min_iterations: 4
     max_iterations: 6
     clip_p_max_pu: 0.01
-    skip_iterations: false
+    skip_iterations: true
     track_iterations: false
     #nhours: 10
+  #solver:
+  #  name: gurobi
+  #  threads: 4
+  #  method: 2 # barrier
+  #  crossover: 0
+  #  BarConvTol: 1.e-5
+  #  FeasibilityTol: 1.e-6
+  #  AggFill: 0
+  #  PreDual: 0
+  #  GURO_PAR_BARDENSETHRESH: 200
   solver:
-    name: gurobi
+    name: cplex
     threads: 4
-    method: 2 # barrier
-    crossover: 0
-    BarConvTol: 1.e-5
-    FeasibilityTol: 1.e-6
-    AggFill: 0
-    PreDual: 0
-    GURO_PAR_BARDENSETHRESH: 200
-  # solver:
-  #   name: cplex
-  #   threads: 4
-  #   lpmethod: 4 # barrier
-  #   solutiontype: 2 # non basic solution, ie no crossover
-  #   barrier.convergetol: 1.e-5
-  #   feasopt.tolerance: 1.e-6
+    lpmethod: 4 # barrier
+    solutiontype: 2 # non basic solution, ie no crossover
+    barrier.convergetol: 1.e-5
+    feasopt.tolerance: 1.e-6
 
 plotting:
   map:
