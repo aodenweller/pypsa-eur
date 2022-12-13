@@ -10,7 +10,7 @@ logging:
   format: '%(levelname)s:%(name)s:%(message)s'
 
 run:
-  name: "test" # use this to keep track of runs with different settings
+  name: "RM_Py_default" # use this to keep track of runs with different settings
   shared_cutouts: true # set to true to share the default cutout(s) across runs
 
 scenario:
@@ -18,7 +18,7 @@ scenario:
   ll: ['copt']  # Line limits: Limit on line costs (c), optimise (opt)
   clusters: [4]
   opts: [Ep-1H]  # Co2L = CO2 limit, Ep = emission pricing, hourly resolution (1H)
-  year: [2030, 2050]
+  year: [2025, 2030, 2035, 2040, 2045, 2050, 2055, 2060, 2070, 2080, 2090, 2100, 2110, 2130, 2150]
 
 countries: ['DE']
 
@@ -30,13 +30,12 @@ snapshots:
 enable:
   prepare_links_p_nom: false
   retrieve_databundle: true
-  retrieve_cost_data: false  # Testing
+  retrieve_cost_data: true  # WILL COME FROM REMIND
   build_cutout: false
   retrieve_cutout: true
   build_natura_raster: false
   retrieve_natura_raster: true
   custom_busmap: false
-  remind_coupling: true
 
 electricity:
   voltages: [220., 300., 380.]
