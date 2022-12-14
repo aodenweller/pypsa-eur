@@ -1,6 +1,6 @@
 #!/bin/bash
 # Script to start PyPSA from REMIND
-# Pass iteration number as command line argument
+# Pass iteration number and name of output directory as command line argument
 echo "Starting PyPSA in iteration $1"
 cd "$(dirname "$0")"
 source venv/bin/activate
