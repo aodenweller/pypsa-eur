@@ -18,7 +18,7 @@ years <- c(seq(2025, 2060, 5), seq(2070, 2110, 10), 2130, 2150)
 rm2py_calc_load <- function(rm.file, py.load, out.folder){
   
   # Check if input files exist
-  if (file.exists(rm.file) & file.exists(py.load)) print("Files found.")
+  if (file.exists(rm.file) & file.exists(py.load)) print("All files found.")
 
   # Create output folder
   if (!dir.exists(out.folder)) dir.create(out.folder)

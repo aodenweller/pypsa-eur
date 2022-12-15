@@ -6,7 +6,10 @@ library(gdxdt)
 
 # Function arguments
 args <- commandArgs(trailingOnly=TRUE)
-RDIR_rm <- args[1]
+iter <- args[1]
+RDIR_rm <- args[2]
+print(paste("Iteration:", iter))
+print(paste("Directory:", RDIR_rm))
 
 # Set working directory to script directory
 setwd("/p/tmp/adrianod/pypsa-eur/")
@@ -41,7 +44,10 @@ py2rm_calc_capfac <- function(pypsa.folder) {
   cf <- NULL
   # Get directories
   dirs <- list.dirs(path = pypsa.folder,
-                    recursive = FALSE)
+                    recursive = FALSE) %>%
+    # Only includes directories of current iteration
+    str_subset(pattern = paste0("i",iter))
+  
   print(paste(length(dirs), "PyPSA output directories found."))
   # Loop over yearly PyPSA output
   for (d in dirs) {
@@ -100,4 +106,4 @@ PyPSA2REMIND <- bind_rows(cf)
 writegdx.parameter("PyPSA2REMIND.gdx", data.table(PyPSA2REMIND),
                    name = "PyPSA2REMIND",
                    valcol = "value",
-                   uelcols = c("tPy32", "regPy32", "tePyImp32", "varPyImp32"))
+                   uelcols = c("year", "region", "tech", "var"))
