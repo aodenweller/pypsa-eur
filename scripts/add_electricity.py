@@ -135,7 +135,7 @@ def _add_missing_carriers_from_costs(n, costs, carriers):
     n.import_components_from_dataframe(emissions, "Carrier")
 
 
-def load_costs(tech_costs, tech_costs_rm, config, elec_config, Nyears=1.0):
+def load_costs(tech_costs, config, elec_config, Nyears=1.0, tech_costs_rm = None):
     # set all asset costs and other parameters
     costs = pd.read_csv(tech_costs, index_col=[0, 1]).sort_index()
 
@@ -199,8 +199,7 @@ def load_costs(tech_costs, tech_costs_rm, config, elec_config, Nyears=1.0):
 
     # REMIND coupling: Overwrite default costs
     # TODO: Get rid of default cost parameters, get all costs from REMIND
-    remind_coupling = snakemake.config["enable"].get("remind_coupling", False)
-    if remind_coupling:
+    if tech_costs_rm is not None:
         # Read in costs from REMIND output
         costs_remind = pd.read_csv(tech_costs_rm, index_col=[0, 1]).sort_index()
         costs_remind = costs_remind.value.unstack()
@@ -723,10 +722,10 @@ if __name__ == "__main__":
 
     costs = load_costs(
         snakemake.input.tech_costs,
-        snakemake.input.tech_costs_rm,
         snakemake.config["costs"],
         snakemake.config["electricity"],
         Nyears,
+        snakemake.input.tech_costs_rm
     )
     ppl = load_powerplants(snakemake.input.powerplants)
 
