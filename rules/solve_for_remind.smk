@@ -177,7 +177,7 @@ rule solve_all_networks_remind:
 # Additional rule that exports the network to csv files
 rule export_network_remind:
     input:
-        RESULTS_remind + "elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}.nc",
+        RESULTS_remind + "networks/elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}.nc",
     output:
         directory(RESULTS_remind + "out_elec_s{simpl}_{clusters}_y{year}_i{iter}_ec_l{ll}_{opts}"),
     log:
