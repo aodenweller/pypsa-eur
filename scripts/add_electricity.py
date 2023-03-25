@@ -199,9 +199,9 @@ def load_costs(tech_costs, config, elec_config, Nyears=1.0, tech_costs_remind=No
 
     # REMIND coupling: Overwrite default costs
     # TODO: Get rid of default cost parameters, get all costs from REMIND
-    if tech_costs_rm is not None:
+    if tech_costs_remind is not None:
         # Read in costs from REMIND output
-        costs_remind = pd.read_csv(tech_costs_rm, index_col=[0, 1]).sort_index()
+        costs_remind = pd.read_csv(tech_costs_remind, index_col=[0, 1]).sort_index()
         costs_remind = costs_remind.value.unstack()
         # Overwrite costs
         costs.update(costs_remind)
