@@ -121,9 +121,9 @@ electricity:
   estimate_renewable_capacities:
     enable: true
     # Add capacities from OPSD data
-    from_opsd: true
+    from_opsd: false
     # Renewable capacities are based on existing capacities reported by IRENA
-    year: 2020
+    # year: 2020
     # Artificially limit maximum capacities to factor * (IRENA capacities),
     # i.e. 110% of <years>'s capacities => expansion_limit: 1.1
     # false: Use estimated renewable potentials determine by the workflow
@@ -687,7 +687,7 @@ solving:
     cbc-default: {} # Used in CI
     glpk-default: {} # Used in CI
 
-  mem: 10000 #memory in MB; 20 GB enough for 50+B+I+H2; 100 GB for 181+B+I+H2
+  mem: 30000 #memory in MB; 20 GB enough for 50+B+I+H2; 100 GB for 181+B+I+H2
 
 
 plotting:

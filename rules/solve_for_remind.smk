@@ -25,6 +25,7 @@ rule add_electricity_remind:
         tech_costs_remind=RESOURCES_remind + "costs_y{year}.csv",
         regions=RESOURCES + "regions_onshore.geojson",
         powerplants=RESOURCES_remind + "powerplants_y{year}.csv",
+        renewable_capacities_remind=RESOURCES_remind + "renewable_capacities_y{year}.csv",
         hydro_capacities=ancient("data/bundle/hydro_capacities.csv"),
         geth_hydro_capacities="data/geth2015_hydro_capacities.csv",
         load=RESOURCES_remind + "load_y{year}.csv",
@@ -158,6 +159,8 @@ rule solve_network_remind:
     threads: 4
     resources:
         mem_mb=memory,
+        time=5,
+        qos="priority"
     shadow:
         "minimal"
     conda:

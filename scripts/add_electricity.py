@@ -645,8 +645,8 @@ def attach_OPSD_renewables(n, tech_map):
         n.generators.p_nom_min.update(gens.bus.map(caps).dropna())
 
 
-def estimate_renewable_capacities(n, config):
-    year = config["electricity"]["estimate_renewable_capacities"]["year"]
+def estimate_renewable_capacities(n, config, renewable_capacities_remind):
+    #year = config["electricity"]["estimate_renewable_capacities"]["year"]
     tech_map = config["electricity"]["estimate_renewable_capacities"][
         "technology_mapping"
     ]
@@ -658,11 +658,14 @@ def estimate_renewable_capacities(n, config):
     if not len(countries) or not len(tech_map):
         return
 
-    capacities = pm.data.IRENASTAT().powerplant.convert_country_to_alpha2()
-    capacities = capacities.query(
-        "Year == @year and Technology in @tech_map and Country in @countries"
-    )
-    capacities = capacities.groupby(["Technology", "Country"]).Capacity.sum()
+    #capacities = pm.data.IRENASTAT().powerplant.convert_country_to_alpha2()
+    #capacities = capacities.query(
+    #    "Year == @year and Technology in @tech_map and Country in @countries"
+    #)
+    #capacities = capacities.groupby(["Technology", "Country"]).Capacity.sum()
+    
+    # Read renewable capacities from REMIND
+    capacities = pd.read_csv(renewable_capacities_remind).set_index(["Technology", "Country"])
 
     logger.info(
         f"Heuristics applied to distribute renewable capacities [GW]: "
@@ -839,7 +842,7 @@ if __name__ == "__main__":
                 "technology_mapping"
             ]
             attach_OPSD_renewables(n, tech_map)
-        estimate_renewable_capacities(n, snakemake.config)
+        estimate_renewable_capacities(n, snakemake.config, snakemake.input.renewable_capacities_remind)
 
     update_p_nom_max(n)
 
