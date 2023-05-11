@@ -376,10 +376,12 @@ def attach_conventional_generators(
         .join(costs, on="carrier", rsuffix="_r")
         .rename(index=lambda s: "C" + str(s))
     )
-    ppl["efficiency"] = ppl.efficiency.fillna(ppl.efficiency_r)
-    ppl["marginal_cost"] = (
-        ppl.carrier.map(costs.VOM) + ppl.carrier.map(costs.fuel) / ppl.efficiency
-    )
+    # Don't recalulate marginal costs as this comes from REMIND
+
+    #ppl["efficiency"] = ppl.efficiency.fillna(ppl.efficiency_r)
+    #ppl["marginal_cost"] = (
+    #    ppl.carrier.map(costs.VOM) + ppl.carrier.map(costs.fuel) / ppl.efficiency
+    #)
 
     logger.info(
         "Adding {} generators with capacities [GW] \n{}".format(
