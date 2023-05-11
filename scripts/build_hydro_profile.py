@@ -4,7 +4,6 @@
 # SPDX-FileCopyrightText: : 2017-2023 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
-
 """
 Build hydroelectric inflow time-series for each country.
 
@@ -21,7 +20,7 @@ Relevant Settings
             clip_min_inflow:
 
 .. seealso::
-    Documentation of the configuration file ``config.yaml`` at
+    Documentation of the configuration file ``config/config.yaml`` at
     :ref:`toplevel_cf`, :ref:`renewable_cf`
 
 Inputs

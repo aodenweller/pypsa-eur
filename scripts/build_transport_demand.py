@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: : 2020-2023 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
-
 """
 Build land transport demand per clustered model region including efficiency
 improvements due to drivetrain changes, time series for electric vehicle
@@ -124,7 +123,6 @@ def bev_availability_profile(fn, snapshots, nodes, options):
     """
     Derive plugged-in availability for passenger electric vehicles.
     """
-
     traffic = pd.read_csv(fn, skiprows=2, usecols=["count"]).squeeze("columns")
 
     avail_max = options["bev_avail_max"]

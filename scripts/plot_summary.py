@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: : 2020-2023 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
-
 """
 Creates plots from summary CSV files.
 """
@@ -441,7 +440,6 @@ def plot_carbon_budget_distribution(input_eurostat):
     """
     Plot historical carbon emissions in the EU and decarbonization path.
     """
-
     import seaborn as sns
 
     sns.set()

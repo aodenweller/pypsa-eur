@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: : 2020 @JanFrederickUnnewehr, The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
-
 """
 This rule downloads the load data from `Open Power System Data Time series.
 
@@ -26,7 +25,7 @@ Relevant Settings
 
 
 .. seealso::
-    Documentation of the configuration file ``config.yaml`` at
+    Documentation of the configuration file ``config/config.yaml`` at
     :ref:`load_cf`
 
 Inputs
@@ -276,7 +275,7 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
-        snakemake = mock_snakemake("build_load_data")
+        snakemake = mock_snakemake("build_electricity_demand")
 
     configure_logging(snakemake)
 

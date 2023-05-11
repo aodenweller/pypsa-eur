@@ -83,7 +83,7 @@ def load_network(import_name=None, custom_components=None):
     custom_components : dict
         Dictionary listing custom components.
         For using ``snakemake.config['override_components']``
-        in ``config.yaml`` define:
+        in ``config/config.yaml`` define:
 
         .. code:: yaml
 
@@ -400,7 +400,6 @@ def override_component_attrs(directory):
     -------
     Dictionary of overridden component attributes.
     """
-
     attrs = Dict({k: v.copy() for k, v in component_attrs.items()})
 
     for component, list_name in components.list_name.items():
@@ -418,7 +417,6 @@ def generate_periodic_profiles(dt_index, nodes, weekly_profile, localize=None):
     country for the period dt_index, taking account of time zones and summer
     time.
     """
-
     weekly_profile = pd.Series(weekly_profile, range(24 * 7))
 
     week_df = pd.DataFrame(index=dt_index, columns=nodes)

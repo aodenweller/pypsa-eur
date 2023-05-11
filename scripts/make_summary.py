@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: : 2020-2023 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
-
 """
 Create summary CSV files for all scenario runs including costs, capacities,
 capacity factors, curtailment, energy balances, prices and other metrics.
@@ -320,7 +319,6 @@ def calculate_supply(n, label, supply):
     Calculate the max dispatch of each component at the buses aggregated by
     carrier.
     """
-
     bus_carriers = n.buses.carrier.unique()
 
     for i in bus_carriers:
@@ -372,7 +370,6 @@ def calculate_supply_energy(n, label, supply_energy):
     Calculate the total energy supply/consuption of each component at the buses
     aggregated by carrier.
     """
-
     bus_carriers = n.buses.carrier.unique()
 
     for i in bus_carriers:
