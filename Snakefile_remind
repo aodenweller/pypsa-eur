@@ -1,112 +1,249 @@
-# SPDX-FileCopyrightText: : 2017-2023 The PyPSA-Eur Authors
+# SPDX-FileCopyrightText: : 2023 Adrian Odenweller <adrian.odenweller@pik-potsdam.de>, Johannes Hampp <jhampp@pik-potsdam.de>
 #
 # SPDX-License-Identifier: MIT
-
-from os.path import normpath, exists
-from shutil import copyfile, move, rmtree
-
-from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
-
-HTTP = HTTPRemoteProvider()
-
-from snakemake.utils import min_version
-
-min_version("7.7")
-
-configfile: "config.remind.yaml"
-
-COSTS = f"data/costs_{config['costs']['year']}.csv"  # TODO: only from REMIND?
-ATLITE_NPROCESSES = config["atlite"].get("nprocesses", 4)
-
-run = config.get("run", {})
-RDIR = run["name"] + "/" if run.get("name") else ""
-CDIR = RDIR if not run.get("shared_cutouts") else ""
-
-LOGS = "logs/" + RDIR
-BENCHMARKS = "benchmarks/" + RDIR
-RESOURCES = "resources/" + RDIR if not run.get("shared_resources") else "resources/"
-RESULTS = "results/" + RDIR
-
-# REMIND option passed from command line
-remind_opt = config.get("opt")  # Either "prepare" or "solve"
-
-localrules:
-    purge,
-
 
 wildcard_constraints:
     simpl="[a-zA-Z0-9]*",
     clusters="[0-9]+m?|all",
     ll="(v|c)([0-9\.]+|opt)",
     opts="[-+a-zA-Z0-9\.]*",
-    sector_opts="[-+a-zA-Z0-9\.\s]*",
-    year="2[01][0-9][05]"
+    year="2[01][0-9][05]",
 
 
-include: "rules/common.smk"
-#include: "rules/collect.smk"
-#include: "rules/retrieve.smk"
+configfile: "config.remind.yaml"
 
-# This part contains all rules, which don't need data from REMIND
-# Essentially, this creates all input data for the rule "add_electricity"
-# Snakemake needs to be called once with this setting before calling it with REMINDopt == "solve" from REIMND iteratively
-# Command: snakemake -call prepare_files_remind -s Snakefile_remind --config REMINDopt=prepare
-if remind_opt == "prepare":
 
-    include: "rules/retrieve.smk"
-    include: "rules/build_electricity.smk"
-    include: "rules/prepare_for_remind.smk"
+# Add an scenario identifier (for different REMIND scenarios) by calling
+# > snakemake ... --config remind_scenario=<scenario_identifier>
+# scenario-specific data will be stored in a subfolder called <scenario_identifier>
+# Implemented by allowing to overwrite configfile["run"]["name"] via CLI
+# If not overwritten, use default from config.remind.yaml
+config["run"]["name"] = config.get("remind_scenario", config["run"]["name"])
 
-# This part contains all rules, which get data from REMIND between iterations
-# Snakemake is called iteratively from REMIND with REMINDopt == "solve"
+
+# Import PyPSA-EUR standard workflow as module
+# Overwrite or inherit from rules below to adjust for REMIND coupling
+module pypsa_eur:
+    snakefile:
+        # The unmodified PyPSA-EUR Snakefile
+        "Snakefile"
+    config:
+        # "config.remind.yaml" is a modified version of the PyPSA-EUR config.yaml
+        # and can directly be passed to the module
+        config
+
+
+# Import all rules from pypsa_eur module with prefix
+use rule * from pypsa_eur as pypsa_eur_*
+
+
+# Rule which downloads and prepares all files which will not change
+# during REMIND <-> PyPSA-EUR coupled iterations and repeating runs.
+# * Use for downloading on e.g. login node with internet connection
+# * will create some load ~30m - 1h for creating renewable profiles
+# run with:
+# > snakemake -call -s Snakefile_remind download_and_prepare
+rule download_and_prepare:
+    message:
+        "Downloading and preparing all single-execution rules. "
+        "Running this rule requires an internet connection for downloading "
+        "datafiles for the model."
+    input:
+        rules.pypsa_eur_add_electricity.input,
+
+
+# This part contains all rules, which get data from REMIND between iterations.
+# PyPSA-EUR networks are solved between iterations via snakemake calls:
+# > snakemake -call -s Snakefile_remind --config iteration_identifier= remind_solve_all_networks
 # Example command: snakemake -call solve_all_networks_remind -s Snakefile_remind --config REMINDopt=solve iter=1
-if remind_opt == "solve":
-
-    # REMIND run name passed from command line
-    RDIR_remind = config.get("RDIR_remind", {}) + "/"
-    # Directories that are specific for each REMIND run
-    LOGS_remind = "logs/" + RDIR_remind
-    BENCHMARKS_remind = "benchmarks/" + RDIR_remind
-    RESOURCES_remind = "resources/" + RDIR_remind
-    RESULTS_remind = "results/" + RDIR_remind
-
-    include: "rules/solve_for_remind.smk"
-
-#include: "rules/build_electricity.smk"
-#include: "rules/build_sector.smk"
-#include: "rules/solve_electricity.smk"
-#include: "rules/postprocess.smk"
-
-rule purge:
-    message:
-        "Purging generated resources, results and docs. Downloads are kept."
-    run:
-        rmtree("resources/", ignore_errors=True)
-        rmtree("results/", ignore_errors=True)
-        rmtree("doc/_build", ignore_errors=True)
+# This file contains all rules from add_electricity onwards, all with a "remind" suffix
+# All rules have an additional wildcard "year" to facilitate parallelisation of years
+# Some rules also have an additional wildcard "iter" to keep track of REMIND iterations
 
 
-rule dag:
-    message:
-        "Creating DAG of workflow."
+# Inherit all properties from original rule
+# Overwrite a few dependencies to make rule work with iterative approach
+use rule pypsa_eur_add_electricity as remind_add_electricity with:
+    input:
+        # Take input input files for "profile_*" and "conventional_*" from original add_electricity rule
+        **{
+            k: v
+            for k, v in rules.pypsa_eur_add_electricity.input.items()
+            if k.startswith(("profile_", "conventional_"))
+        },
+        # Other unchanges input files from original add_electricity
+        base_network=rules.pypsa_eur_add_electricity.input["base_network"],
+        tech_costs=rules.pypsa_eur_add_electricity.input["tech_costs"],
+        regions=rules.pypsa_eur_add_electricity.input["regions"],
+        hydro_capacities=rules.pypsa_eur_add_electricity.input["hydro_capacities"],
+        geth_hydro_capacities=rules.pypsa_eur_add_electricity.input[
+            "geth_hydro_capacities"
+        ],
+        nuts3_shapes=rules.pypsa_eur_add_electricity.input["nuts3_shapes"],
+        # Input files with additional wildcard {year}
+        # Keep the same path structure as in PyPSA-EUR, but add the wildcard to the names
+        # Note: a more robust solution but less readable would be to insert the wildcard into the original pathname
+        # > powerplants = rules.pypsa_eur_add_electricity.input["powerplants"].replace("powerplants","powerplants_y{year}")
+        powerplants=pypsa_eur.RESOURCES + "powerplants_y{year}.csv",
+        renewable_capacities_remind=pypsa_eur.RESOURCES
+        + "renewable_capacities_y{year}.csv",
+        load=pypsa_eur.RESOURCES + "load_y{year}.csv",
+        # This is an new file
+        # TODO can we somehow integrate with tech_costs, by making it iteration dependent?
+        tech_costs_remind=pypsa_eur.RESOURCES + "costs_y{year}.csv",
     output:
-        dot=RESOURCES + "dag.dot",
-        pdf=RESOURCES + "dag.pdf",
-        png=RESOURCES + "dag.png",
-    conda:
-        "envs/environment.yaml"
-    shell:
-        """
-        snakemake --rulegraph all | sed -n "/digraph/,\$p" > {output.dot}
-        dot -Tpdf -o {output.pdf} {output.dot}
-        dot -Tpng -o {output.png} {output.dot}
-        """
+        pypsa_eur.RESOURCES + "networks/elec_y{year}.nc",
+    log:
+        pypsa_eur.LOGS + "add_electricity_y{year}.log",
+    benchmark:
+        pypsa_eur.BENCHMARKS + "add_electricity_y{year}"
 
 
-rule doc:
-    message:
-        "Build documentation."
+# script:
+#     # TODO: customised script, can we adapt a version where we don't adapt?
+#     "../scripts/add_electricity.py"
+
+
+use rule pypsa_eur_simplify_network as remind_simplify_network with:
+    input:
+        tech_costs=rules.pypsa_eur_simplify_network.input["tech_costs"],
+        network=pypsa_eur.RESOURCES + "networks/elec_y{year}.nc",
+        regions_onshore=pypsa_eur.RESOURCES + "regions_onshore.geojson",
+        regions_offshore=pypsa_eur.RESOURCES + "regions_offshore.geojson",
     output:
-        directory("doc/_build"),
-    shell:
-        "make -C doc html"
+        network=pypsa_eur.RESOURCES + "networks/elec_s{simpl}_y{year}.nc",
+        regions_onshore=pypsa_eur.RESOURCES
+        + "regions_onshore_elec_s{simpl}_y{year}.geojson",
+        regions_offshore=pypsa_eur.RESOURCES
+        + "regions_offshore_elec_s{simpl}_y{year}.geojson",
+        busmap=pypsa_eur.RESOURCES + "busmap_elec_s{simpl}_y{year}.csv",
+        connection_costs=pypsa_eur.RESOURCES + "connection_costs_s{simpl}_y{year}.csv",
+    log:
+        pypsa_eur.LOGS + "simplify_network/elec_s{simpl}_y{year}.log",
+    benchmark:
+        pypsa_eur.BENCHMARKS + "simplify_network/elec_s{simpl}_y{year}"
+
+
+use rule pypsa_eur_cluster_network as remind_cluster_network with:
+    input:
+        custom_busmap=rules.pypsa_eur_cluster_network.input["custom_busmap"],
+        tech_costs=rules.pypsa_eur_cluster_network.input["tech_costs"],
+        network=pypsa_eur.RESOURCES + "networks/elec_s{simpl}_y{year}.nc",
+        regions_onshore=pypsa_eur.RESOURCES
+        + "regions_onshore_elec_s{simpl}_y{year}.geojson",
+        regions_offshore=pypsa_eur.RESOURCES
+        + "regions_offshore_elec_s{simpl}_y{year}.geojson",
+        busmap=ancient(pypsa_eur.RESOURCES + "busmap_elec_s{simpl}_y{year}.csv"),
+    output:
+        network=pypsa_eur.RESOURCES + "networks/elec_s{simpl}_{clusters}_y{year}.nc",
+        regions_onshore=pypsa_eur.RESOURCES
+        + "regions_onshore_elec_s{simpl}_{clusters}_y{year}.geojson",
+        regions_offshore=pypsa_eur.RESOURCES
+        + "regions_offshore_elec_s{simpl}_{clusters}_y{year}.geojson",
+        busmap=pypsa_eur.RESOURCES + "busmap_elec_s{simpl}_{clusters}_y{year}.csv",
+        linemap=pypsa_eur.RESOURCES + "linemap_elec_s{simpl}_{clusters}_y{year}.csv",
+    log:
+        pypsa_eur.LOGS + "cluster_network/elec_s{simpl}_{clusters}_y{year}.log",
+    benchmark:
+        pypsa_eur.BENCHMARKS + "cluster_network/elec_s{simpl}_{clusters}_y{year}"
+
+
+# TODO do we need this rule? No changes in principle ....
+use rule pypsa_eur_add_extra_components as remind_add_extra_components with:
+    input:
+        tech_costs=rules.pypsa_eur_add_extra_components.input["tech_costs"],
+        network=pypsa_eur.RESOURCES + "networks/elec_s{simpl}_{clusters}_y{year}.nc",
+    output:
+        network=pypsa_eur.RESOURCES + "networks/elec_s{simpl}_{clusters}_y{year}_ec.nc",
+    log:
+        pypsa_eur.LOGS + "add_extra_components/elec_s{simpl}_{clusters}_y{year}.log",
+    benchmark:
+        (
+            pypsa_eur.BENCHMARKS
+            + "add_extra_components/elec_s{simpl}_{clusters}_y{year}_ec"
+        )
+
+
+use rule pypsa_eur_prepare_network as remind_prepare_network with:
+    input:
+        tech_costs=rules.pypsa_eur_prepare_network.input["tech_costs"],
+        network=pypsa_eur.RESOURCES + "networks/elec_s{simpl}_{clusters}_y{year}_ec.nc",
+    output:
+        network=pypsa_eur.RESOURCES
+        + "networks/elec_s{simpl}_{clusters}_y{year}_ec_l{ll}_{opts}.nc",
+    log:
+        pypsa_eur.LOGS
+        + "prepare_network/elec_s{simpl}_{clusters}_y{year}_ec_l{ll}_{opts}.log",
+    benchmark:
+        (
+            pypsa_eur.BENCHMARKS
+            + "prepare_network/elec_s{simpl}_{clusters}_y{year}_ec_l{ll}_{opts}"
+        )
+
+
+# Introduce wildcard {iteration} from here to distinguish iterations in the result files
+# {iteration} gets passed on from REMIND via a command line parameter
+# TODO: Check if {iteration} only from here makes sense?
+# NOTE: Rules only available if --config iteration=<iteration> is used for snakemake CLI call
+if config.get("iteration"):
+    from os.path import normpath, exists
+
+    use rule pypsa_eur_solve_network as remind_solve_network with:
+        input:
+            network=pypsa_eur.RESOURCES
+            + "networks/elec_s{simpl}_{clusters}_y{year}_ec_l{ll}_{opts}.nc",
+        output:
+            network=pypsa_eur.RESULTS
+            + "networks/elec_s{simpl}_{clusters}_y{year}_i{iteration}_ec_l{ll}_{opts}.nc",
+        log:
+            solver=normpath(
+                pypsa_eur.LOGS
+                + "solve_network/elec_s{simpl}_{clusters}_y{year}_i{iteration}_ec_l{ll}_{opts}_solver.log"
+            ),
+            python=pypsa_eur.LOGS
+            + "solve_network/elec_s{simpl}_{clusters}_y{year}_i{iteration}_ec_l{ll}_{opts}_python.log",
+            memory=pypsa_eur.LOGS
+            + "solve_network/elec_s{simpl}_{clusters}_y{year}_i{iteration}_ec_l{ll}_{opts}_memory.log",
+        benchmark:
+            (
+                pypsa_eur.BENCHMARKS
+                + "solve_network/elec_s{simpl}_{clusters}_y{year}_i{iteration}_ec_l{ll}_{opts}"
+            )
+
+    # Additional rule that solves all networks
+    use rule pypsa_eur_solve_elec_networks as remind_solve_elec_networks with:
+        input:
+            expand(
+                pypsa_eur.RESULTS
+                + "networks/elec_s{simpl}_{clusters}_y{year}_i{iteration}_ec_l{ll}_{opts}.nc",
+                iteration=config["iteration"],
+                **config["scenario"],
+            ),
+
+    # Additional rule that exports the network to csv files
+    rule remind_export_network:
+        input:
+            pypsa_eur.RESULTS
+            + "networks/elec_s{simpl}_{clusters}_y{year}_i{iteration}_ec_l{ll}_{opts}.nc",
+        output:
+            directory(
+                pypsa_eur.RESULTS
+                + "out_elec_s{simpl}_{clusters}_y{year}_i{iteration}_ec_l{ll}_{opts}"
+            ),
+        log:
+            pypsa_eur.LOGS
+            + "export_network/elec_s{simpl}_{clusters}_y{year}_i{iteration}_ec_l{ll}_{opts}.log",
+        run:
+            import pypsa
+            n = pypsa.Network(input[0])
+            n.export_to_csv_folder(output[0])
+
+    # Additional rule that exports all networks to csv files
+    rule remind_export_all_networks:
+        input:
+            expand(
+                pypsa_eur.RESULTS
+                + "out_elec_s{simpl}_{clusters}_y{year}_i{iteration}_ec_l{ll}_{opts}",
+                iteration=config["iteration"],
+                **config["scenario"],
+            ),

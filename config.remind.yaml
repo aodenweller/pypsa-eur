@@ -10,7 +10,7 @@ logging:
   format: '%(levelname)s:%(name)s:%(message)s'
 
 run:
-  name: "REMIND-PyPSA_prepare" # Default name for input data folders that are unchanged by REMIND
+  name: "no_scenario" # Used for distinguishing REMIND scenarios; extension via Snakefile_remind allows this to be overwritten by CLI
   disable_progressbar: false # set to true to disable the progressbar
   shared_resources: false # set to true to share the default resources across runs
   shared_cutouts: true # set to true to share the default cutout(s) across runs
