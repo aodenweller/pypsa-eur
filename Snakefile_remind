@@ -295,6 +295,19 @@ use rule pypsa_eur_solve_elec_networks as remind_solve_elec_networks with:
             **config["scenario"],
         ),
 
+rule remind_extract_coupling_parameters:
+    input:
+        networks = expand(
+            rules.remind_solve_network,
+            **config["scenario"],
+            allow_missing=True, # for keeping {iteration} unexpanded
+        )
+    output:
+        capacity_factors = RESULTS + "coupling-parameter/i{iteration}/capacity_factors.csv",
+    log: LOGS + "extract_coupling_parameters/i{iteration}.log"
+    benchmark: BENCHMARKS + "extract_coupling_parameters/i{iteration}"
+    script: "scripts/extract_coupling_parameters.py"
+
 
 # Additional rule that exports the network to csv files
 rule remind_export_network:
