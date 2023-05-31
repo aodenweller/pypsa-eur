@@ -300,41 +300,13 @@ rule remind_extract_coupling_parameters:
         networks = expand(
             rules.remind_solve_network,
             **config["scenario"],
-            allow_missing=True, # for keeping {iteration} unexpanded
+            # for keeping {iteration} unexpanded
+            allow_missing=True,
         )
     output:
         capacity_factors = RESULTS + "coupling-parameter/i{iteration}/capacity_factors.csv",
+        market_values = RESULTS + "coupling-parameters/i{iteration}/market_values.csv",
+        gdx = RESULTS + "coupling-parameters/i{iteration}/coupling-parameters.gdx",
     log: LOGS + "extract_coupling_parameters/i{iteration}.log"
     benchmark: BENCHMARKS + "extract_coupling_parameters/i{iteration}"
     script: "scripts/extract_coupling_parameters.py"
-
-
-# Additional rule that exports the network to csv files
-rule remind_export_network:
-    input:
-        rules.remind_solve_network.output["network"],
-    output:
-        network_dir=directory(
-            RESULTS
-            + "out_elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec_l{ll}_{opts}"
-        ),
-    log:
-        LOGS
-        + "export_network/elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec_l{ll}_{opts}.log",
-    group:
-        "sciy"
-    run:
-        import pypsa
-
-        n = pypsa.Network(input[0])
-        n.export_to_csv_folder(output[0])
-
-
-# Additional rule that exports all networks to csv files
-rule remind_export_all_networks:
-    input:
-        expand(
-            rules.remind_export_network.output["network_dir"],
-            iteration=config["iteration"],
-            **config["scenario"],
-        ),
