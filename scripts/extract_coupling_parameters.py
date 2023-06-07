@@ -9,6 +9,7 @@ import pandas as pd
 import pypsa
 
 # %%
+# Only Generation technologies (PyPSA "generator" "carriers")
 # Use a two step mapping approach between PyPSA-EUR and REMIND:
 # First mapping is aggregating PyPSA-EUR technologies to general technologies
 # Second mapping is disaggregating general technologies to REMIND technologies
@@ -27,28 +28,24 @@ map_pypsaeur_to_general = {
 }
 
 map_general_to_remind = {
-    "CCGT": "ngcc",
-    "CCGT": "ngccc",
-    "CCGT": "gaschp",
-    "OCGT": "ngt",
-    "biomass": "biochp",
-    "biomass": "bioigcc",
-    "biomass": "bioigccc",
-    "all_coal": "igcc",
-    "all_coal": "igccc",
-    "all_coal": "pc",
-    "all_coal": "coalchp",
-    "nuclear": "tnrs",
-    "nuclear": "fnrs",
-    "oil": "dot",
-    "solar_pv": "spv",
-    "wind_offshore": "windoff",
-    "wind_onshore": "wind",
+    "CCGT": ["ngcc", "ngccc", "gaschp"],
+    "OCGT": ["ngt"],
+    "biomass": ["biochp", "biogcc", "biogccc"],
+    "all_coal": ["igcc", "igccc", "pc", "coalchp"],
+    "nuclear": ["tnrs", "fnrs"],
+    "oil": ["dot"],
+    "solar_pv": ["spv"],
+    "wind_offshore": ["windoff"],
+    "wind_onshore": ["wind"],
+}
+
+map_pypsaeur_to_remind_loads = {
+    "AC": ["AC"],
 }
 
 # %%
 def check_for_missing_carriers(n):
-    tmp_set = set(n.generators['carrier']) - map_pypsaeur_to_general.keys()
+    tmp_set = set(n.generators["carrier"]) - map_pypsaeur_to_general.keys()
     if tmp_set:
         print(
             f"The following technologies (carriers) are missing in the mapping PyPSA-EUR -> general technologies: "
@@ -59,6 +56,13 @@ def check_for_missing_carriers(n):
     if tmp_set:
         print(
             f"The following technologies are missing in the mapping general technologies -> REMIND: "
+            f"{tmp_set}"
+        )
+
+    tmp_set = set(n.loads["bus_carrier"]) - map_pypsaeur_to_remind_loads.keys()
+    if tmp_set:
+        print(
+            f"The following technologies (carriers) are missing in the mapping PyPSA-EUR -> REMIND (loads): "
             f"{tmp_set}"
         )
 
@@ -109,12 +113,10 @@ for fp in snakemake.input["networks"]:
     # Extract year from filename, format: elec_y<YYYY>_<morestuff>.nc
     m = re.findall(r"elec_\S+_y([0-9]{4})_\S+\.nc", fp)
     assert len(m) == 1, "Unable to extract year from network path"
-    year = m[0]
+    year = int(m[0])
 
     # Load network
     network = pypsa.Network(fp)
-    check_for_missing_carriers(network)
-
     
     # Add information for aggregation later: country name and general technology
     network.generators["country"] = network.generators["bus"].map(network.buses["country"])
@@ -124,7 +126,11 @@ for fp in snakemake.input["networks"]:
     network.loads["country"] = network.loads["bus"].map(network.buses["country"])
     network.loads["bus_carrier"] = network.loads["bus"].map(network.buses["carrier"])
     
+    # Now make sure we have all carriers in the mapping
+    check_for_missing_carriers(network)
+    
     ## Extract coupling parameters from network
+    
     # Calculate capacity factors; by assigning the general carrier and grouping by here, the capacity factor is automatically
     # calculated across all "carrier" technologies that map to the same "general_carrier"
     capacity_factor = network.statistics(comps=["Generator"], groupby=["country", "general_carrier"])[
@@ -185,9 +191,35 @@ def postprocess_dataframe(df):
     removes excess columns / sets index and sorts by country + year"""
     df = pd.concat(df)
     df = df.rename(columns={"general_carrier": "carrier", "bus_carrier": "carrier"}) # different auxiliary columns have different names; rename for consistency
-    df = df.set_index(["year", "country", "carrier"]).sort_index()  # set index, more logical sort order
-    return df[["value"]]
+   
+    df = df.set_index(["year", "country", "carrier"]).sort_index() # set and sort by index for more logical sort order
+    
+    df = df[["value"]]
+    df = df.reset_index()
+    
+    def map_carriers_for_remind(dg):
+        """Maps the carrier names from general technologies to REMIND technologies"""
+        old_carrier = dg.iloc[0]["carrier"]
+        
+        # Mapping for generators and loads are different
+        if old_carrier in map_general_to_remind.keys():
+            _map = map_general_to_remind
+        elif old_carrier in map_pypsaeur_to_remind_loads.keys():
+            _map = map_pypsaeur_to_remind_loads
+        
+        new_carriers = _map[old_carrier]
+        
+        # Repeat rows for each new carrier, create new dataframe then assign the new carrier name
+        dg = pd.DataFrame(np.repeat(dg.values, len(new_carriers), axis=0), columns=dg.columns)
+        dg["carrier"] = new_carriers
+        return dg
+    
+    # Map carriers to REMIND technologies
+    df = df.groupby(["year","country","carrier"], group_keys=False).apply(map_carriers_for_remind)
+    
+    return df
 
+# %%
 # Real combining happens here
 capacity_factors = postprocess_dataframe(capacity_factors)
 generation_shares = postprocess_dataframe(generation_shares)
@@ -195,20 +227,31 @@ installed_capacities = postprocess_dataframe(installed_capacities)
 market_values = postprocess_dataframe(market_values)
 electricity_prices = postprocess_dataframe(electricity_prices)
 
+# Special treatment for Loads: rename their carrier to "load_carrier" to avoid confusion mismap with generators
+electricity_prices = electricity_prices.rename(columns={"carrier": "load_carrier"})
+
 # %%
 # Export as csv values (informative purposes only, coupling parameters below via GDX)
-capacity_factors.to_csv(snakemake.output["capacity_factors"])
-generation_shares.to_csv(snakemake.output["generation_shares"])
-installed_capacities.to_csv(snakemake.output["installed_capacities"])
-market_values.to_csv(snakemake.output["market_values"])
-electricity_prices.to_csv(snakemake.output["electricity_prices"])
+for fn, df in {
+    "capacity_factors": capacity_factors,
+    "generation_shares": generation_shares,
+    "installed_capacities": installed_capacities,
+    "market_values": market_values,
+    "electricity_prices": electricity_prices,
+}.items():
+    df.to_csv(snakemake.output[fn] , index=False)
 
 # %%
 # Export to GAMS gdx file for coupling
 gdx = gt.Container()
 
-# Construct sets from exemplary index; luckily all data shares the same indeces
-sets = {i: market_values.index.get_level_values(i).unique() for i in market_values.index.names}
+# Construct sets from exemplary index; luckily all data share most of the indeces
+sets = {
+    "year": market_values["year"].unique(),
+    "country": market_values["country"].unique(),
+    "carrier": market_values["carrier"].unique(),
+    "load_carrier": electricity_prices["load_carrier"].unique(),
+}
 
 # First add sets to the container
 s_year = gt.Set(gdx, "year", records=sets["year"], description="simulation year")
@@ -224,13 +267,19 @@ s_carrier = gt.Set(
     records=sets["carrier"],
     description="PyPSA technology by which the values were aggregated",
 )
+s_load_carrier = gt.Set(
+    gdx,
+    "load_carrier",
+    records=sets["load_carrier"],
+    description="PyPSA load type by which the values were aggregated",
+)
 
 # Now we can add data to the container
 c = gt.Parameter(
     gdx,
     name="capacity_factor",
     domain=[s_year, s_country, s_carrier],
-    records=capacity_factors.reset_index(),
+    records=capacity_factors,
     description="Cacacity factors of technology per year and country in p.u.",
 )
 
@@ -238,7 +287,7 @@ g = gt.Parameter(
     gdx,
     name="generation_share",
     domain=[s_year, s_country, s_carrier],
-    records=generation_shares.reset_index(),
+    records=generation_shares,
     description="Share of generation of technology per year and country in p.u.",
 )
 
@@ -246,7 +295,7 @@ i = gt.Parameter(
     gdx,
     name="installed_capacity",
     domain=[s_year, s_country, s_carrier],
-    records=installed_capacities.reset_index(),
+    records=installed_capacities,
     description="Installed capacity of technology per year and country in MW",
 )
 
@@ -254,18 +303,17 @@ m = gt.Parameter(
     gdx,
     name="market_value",
     domain=[s_year, s_country, s_carrier],
-    records=market_values.reset_index(),
+    records=market_values,
     description="Market value of technology per year and country in EUR/MWh",
 )
 
 p = gt.Parameter(
     gdx,
     name="electricity_price",
-    domain=[s_year, s_country],
-    records=electricity_prices.loc[:,:,"AC"].reset_index(), # only electricity prices, remaining loads (if any) are ignored
+    domain=[s_year, s_country, s_load_carrier],
+    records=electricity_prices,
     description="Electricity price per year and country in EUR/MWh",
 )
 
 gdx.write(snakemake.output["gdx"])
-
-# TODO: Dis-aggregation PyPSA2REMIND
+# %%
