@@ -26,6 +26,8 @@ map_pypsaeur_to_general = {
     "onwind": "wind_onshore",
     "solar": "solar_pv",
     "nuclear": "nuclear",
+    "hydro": "hydro",
+    "ror": "hydro",
 }
 
 map_general_to_remind = {
@@ -38,6 +40,7 @@ map_general_to_remind = {
     "solar_pv": ["spv"],
     "wind_offshore": ["windoff"],
     "wind_onshore": ["wind"],
+    "hydro": ["hydro"],
 }
 
 map_pypsaeur_to_remind_loads = {
