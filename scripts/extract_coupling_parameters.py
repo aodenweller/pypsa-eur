@@ -44,31 +44,6 @@ map_pypsaeur_to_remind_loads = {
     "AC": ["AC"],
 }
 
-
-# %%
-def check_for_missing_carriers(n):
-    tmp_set = set(n.generators["carrier"]) - map_pypsaeur_to_general.keys()
-    if tmp_set:
-        print(
-            f"The following technologies (carriers) are missing in the mapping PyPSA-EUR -> general technologies: "
-            f"{tmp_set}"
-        )
-
-    tmp_set = map_pypsaeur_to_general.values() - map_general_to_remind.keys()
-    if tmp_set:
-        print(
-            f"The following technologies are missing in the mapping general technologies -> REMIND: "
-            f"{tmp_set}"
-        )
-
-    tmp_set = set(n.loads["bus_carrier"]) - map_pypsaeur_to_remind_loads.keys()
-    if tmp_set:
-        print(
-            f"The following technologies (carriers) are missing in the mapping PyPSA-EUR -> REMIND (loads): "
-            f"{tmp_set}"
-        )
-
-
 # %%
 if "snakemake" not in globals():
     # For testing only
@@ -117,6 +92,36 @@ region_mapping["PyPSA-EUR"] = coco.convert(
 region_mapping = region_mapping[["PyPSA-EUR", "REMIND-EU"]].set_index("PyPSA-EUR")
 
 # %%
+def check_for_mapping_completeness(n):
+    tmp_set = set(n.generators["carrier"]) - map_pypsaeur_to_general.keys()
+    if tmp_set:
+        print(
+            f"The following technologies (carriers) are missing in the mapping PyPSA-EUR -> general technologies: "
+            f"{tmp_set}"
+        )
+
+    tmp_set = map_pypsaeur_to_general.values() - map_general_to_remind.keys()
+    if tmp_set:
+        print(
+            f"The following technologies are missing in the mapping general technologies -> REMIND: "
+            f"{tmp_set}"
+        )
+
+    tmp_set = set(n.loads["bus_carrier"]) - map_pypsaeur_to_remind_loads.keys()
+    if tmp_set:
+        print(
+            f"The following technologies (carriers) are missing in the mapping PyPSA-EUR -> REMIND (loads): "
+            f"{tmp_set}"
+        )
+
+    tmp_set = set(n.buses["country"]) - set(region_mapping.index)
+    if tmp_set:
+        print(
+            f"The following PyPSA-EUR countries have no mapping to REMIND-EU regions: "
+            f"{tmp_set}"
+        )
+
+# %%
 capacity_factors = []
 generation_shares = []
 installed_capacities = []
@@ -147,7 +152,7 @@ for fp in snakemake.input["networks"]:
     network.loads["bus_carrier"] = network.loads["bus"].map(network.buses["carrier"])
 
     # Now make sure we have all carriers in the mapping
-    check_for_missing_carriers(network)
+    check_for_mapping_completeness(network)
 
     ## Extract coupling parameters from network
 
