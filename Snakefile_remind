@@ -262,7 +262,7 @@ use rule pypsa_eur_prepare_network as remind_prepare_network with:
         "sciy"
 
 
-use rule pypsa_eur_solve_network as remind_solve_network with:
+rule remind_solve_network:
     input:
         network=rules.remind_prepare_network.output["network"],
     output:
@@ -284,7 +284,13 @@ use rule pypsa_eur_solve_network as remind_solve_network with:
         )
     group:
         "sciy"
-
+    threads: 4
+    resources:
+        mem_mb=pypsa_eur.memory,
+    shadow:
+        "minimal"
+    script:
+        "scripts/solve_network.py"
 
 # Additional rule that solves all networks
 use rule pypsa_eur_solve_elec_networks as remind_solve_elec_networks with:
@@ -298,11 +304,12 @@ use rule pypsa_eur_solve_elec_networks as remind_solve_elec_networks with:
 rule remind_extract_coupling_parameters:
     input:
         networks = expand(
-            rules.remind_solve_network,
+            rules.remind_solve_network.output["network"],
             **config["scenario"],
             # for keeping {iteration} unexpanded
             allow_missing=True,
-        )
+        ),
+        region_mapping="config/regionmapping_21_EU11.csv",
     output:
         capacity_factors = RESULTS + "coupling-parameter/i{iteration}/capacity_factors.csv",
         market_values = RESULTS + "coupling-parameters/i{iteration}/market_values.csv",
@@ -310,3 +317,5 @@ rule remind_extract_coupling_parameters:
     log: LOGS + "extract_coupling_parameters/i{iteration}.log"
     benchmark: BENCHMARKS + "extract_coupling_parameters/i{iteration}"
     script: "scripts/extract_coupling_parameters.py"
+
+# micromamba run --name pypsa-eur snakemake --profile <...> -s Snakemake_remind results//coupling-parameters/i<iteration>/coupling-parameters.gdx
