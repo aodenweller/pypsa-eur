@@ -404,14 +404,6 @@ g = gt.Parameter(
     description="Share of generation of technology per year and region in p.u.",
 )
 
-i = gt.Parameter(
-    gdx,
-    name="installed_capacity",
-    domain=[s_year, s_region, s_carrier],
-    records=installed_capacities,
-    description="Installed capacity of technology per year and region in MW",
-)
-
 m = gt.Parameter(
     gdx,
     name="market_value",
