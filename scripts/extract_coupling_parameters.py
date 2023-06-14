@@ -39,7 +39,7 @@ map_pypsaeur_to_general = {
 map_general_to_remind = {
     "CCGT": ["ngcc", "ngccc", "gaschp"],
     "OCGT": ["ngt"],
-    "biomass": ["biochp", "biogcc", "biogccc"],
+    "biomass": ["biochp", "bioigcc", "bioigccc"],
     "all_coal": ["igcc", "igccc", "pc", "coalchp"],
     "nuclear": ["tnrs", "fnrs"],
     "oil": ["dot"],
