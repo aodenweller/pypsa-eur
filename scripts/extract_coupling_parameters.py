@@ -9,7 +9,13 @@ import pandas as pd
 import pypsa
 from gams import transfer as gt
 
-# %%
+import logging
+from _helpers import configure_logging
+
+logger = logging.getLogger(__name__)
+if "snakemake" in globals():
+    configure_logging(snakemake)
+
 # Only Generation technologies (PyPSA "generator" "carriers")
 # Use a two step mapping approach between PyPSA-EUR and REMIND:
 # First mapping is aggregating PyPSA-EUR technologies to general technologies
@@ -73,6 +79,7 @@ if "snakemake" not in globals():
             "../results/no_scenario/networks/elec_s_4_y2150_i1_ec_lcopt_1H.nc",
         ],
         "region_mapping": "../config/regionmapping_21_EU11.csv",
+        "remind_weights": "../resources/no_scenario/coupling-parameters/i1/REMIND2PyPSA.gdx",
     }
     snakemake.output = {
         "capacity_factors": "../results/no_scenario/coupling-parameters/i1/capacity_factors.csv",
@@ -83,7 +90,6 @@ if "snakemake" not in globals():
         "gdx": "../results/no_scenario/coupling-parameters/i1/coupling-parameters.gdx",
     }
 
-# %%
 # Create region mapping by loading the original mapping from REMIND-EU from file
 # and then mapping ISO 3166-1 alpha-3 country codes to PyPSA-EUR ISO 3166-1 alpha-2 country codes
 region_mapping = pd.read_csv(snakemake.input["region_mapping"], sep=";").rename(
@@ -94,7 +100,6 @@ region_mapping["PyPSA-EUR"] = coco.convert(
 )
 region_mapping = region_mapping[["PyPSA-EUR", "REMIND-EU"]].set_index("PyPSA-EUR")
 
-# %%
 def check_for_mapping_completeness(n):
     tmp_set = set(n.generators["carrier"]) - map_pypsaeur_to_general.keys()
     if tmp_set:
@@ -274,6 +279,51 @@ def postprocess_dataframe(df):
 
     return df
 
+def weigh_by_REMIND_capacity(df):
+    """ 
+    Weighing here uses the capacities from REMIND
+    and calaculates the weights s.t. the sum of weights equals 1 for each group of carriers (= "general_carrier")
+    which are mapped against REMIND technologies.
+    """
+    # Read gen shares from REMIND for weighing
+    capacity_weights = gt.Container(snakemake.input["remind_weights"]).data["v32_shSeElDisp"].records
+    
+    # Align naming, dtypes & reduce to required columns
+    capacity_weights = capacity_weights.rename(columns={"ttot":"year","all_regi":"region","all_te":"carrier"})
+    capacity_weights = capacity_weights.astype({"year": int, "level": float, "carrier": str, "region": str})
+    capacity_weights = capacity_weights[['year','region','carrier','level']]
+    capacity_weights["level"] = capacity_weights["level"].where(lambda x: x > np.finfo(float).eps, 0.0) # Remove very small values below EPS passed by GAMS
+     
+    # Map REMIND technologies to general_carriers
+    capacity_weights["general_carrier"] = capacity_weights["carrier"].map(
+        {
+        lv:k for k,v in map_general_to_remind.items() for lv in v
+    }
+    )
+    
+    # Calculate weights for individual carrier based on total levels per shared "general_carrier" and individual share
+    general_carrier_weights = capacity_weights.groupby(["year","region","general_carrier"])["level"].sum()
+    general_carrier_weights = general_carrier_weights.where(lambda x: x != 0, 1) # avoid division by zero
+    general_carrier_weights.name = "general_carrier_weight"
+
+    capacity_weights = capacity_weights.join(general_carrier_weights,
+                          on=["year","region","general_carrier"],
+                          validate="m:1",
+    )
+    capacity_weights["weight"] = capacity_weights["level"] / capacity_weights["general_carrier_weight"]
+
+    # Map weights to data to-be-weighted based on (year, region, carrier)
+    df = df.set_index(['year','region','carrier']).join(capacity_weights.set_index(['year','region','carrier']))
+    
+    # Consistency checks
+    assert df['weight'].isna().sum() == 0, "Some weights are missing"
+    assert all(df["weight"]>=0.0), "Some weights are negative"
+    assert all(df["weight"]<=1.0), "Some weights are larger than 1.0"
+    
+    # Apply weights
+    df["value"] *= df["weight"]
+    
+    return df[["value"]].reset_index()
 
 # %%
 # Real combining happens here
@@ -283,8 +333,15 @@ installed_capacities = postprocess_dataframe(installed_capacities)
 market_values = postprocess_dataframe(market_values)
 electricity_prices = postprocess_dataframe(electricity_prices)
 
-# Special treatment for Loads: rename their carrier to "load_carrier" to avoid confusion mismap with generators
+# Special treatment: for Loads rename their carrier to "load_carrier" to avoid confusion mismap with generators
 electricity_prices = electricity_prices.rename(columns={"carrier": "load_carrier"})
+
+# %%
+# Special treatment: Weigh values of df based on installed capacities in REMIND
+generation_shares = weigh_by_REMIND_capacity(generation_shares)
+
+if any(generation_shares.groupby(["year","region"])["value"].sum() != 1.):
+    logger.warning("Sum of generation shares is not equal to 1.0 for each year and region.")
 
 # %%
 # Export as csv values (informative purposes only, coupling parameters below via GDX)
@@ -372,4 +429,3 @@ p = gt.Parameter(
 )
 
 gdx.write(snakemake.output["gdx"])
-# %%

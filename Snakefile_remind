@@ -310,6 +310,7 @@ rule remind_extract_coupling_parameters:
             allow_missing=True,
         ),
         region_mapping="config/regionmapping_21_EU11.csv",
+        "remind_weights"="../resources/no_scenario/i1/REMIND2PyPSA.gdx",
     output:
         capacity_factors = RESULTS + "coupling-parameter/i{iteration}/capacity_factors.csv",
         market_values = RESULTS + "coupling-parameters/i{iteration}/market_values.csv",
