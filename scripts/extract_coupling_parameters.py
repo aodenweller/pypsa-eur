@@ -79,7 +79,7 @@ if "snakemake" not in globals():
             "../results/no_scenario/networks/elec_s_4_y2150_i1_ec_lcopt_1H.nc",
         ],
         "region_mapping": "../config/regionmapping_21_EU11.csv",
-        "remind_weights": "../resources/no_scenario/coupling-parameters/i1/REMIND2PyPSA.gdx",
+        "remind_weights": "../resources/no_scenario/i1/REMIND2PyPSAEUR.gdx",
     }
     snakemake.output = {
         "capacity_factors": "../results/no_scenario/coupling-parameters/i1/capacity_factors.csv",
@@ -333,10 +333,9 @@ installed_capacities = postprocess_dataframe(installed_capacities)
 market_values = postprocess_dataframe(market_values)
 electricity_prices = postprocess_dataframe(electricity_prices)
 
-# Special treatment: for Loads rename their carrier to "load_carrier" to avoid confusion mismap with generators
-electricity_prices = electricity_prices.rename(columns={"carrier": "load_carrier"})
+# For loads only output AC (electricity) prices
+electricity_prices = electricity_prices.query("carrier == 'AC'").drop(columns=["carrier"])
 
-# %%
 # Special treatment: Weigh values of df based on installed capacities in REMIND
 generation_shares = weigh_by_REMIND_capacity(generation_shares)
 
@@ -363,7 +362,6 @@ sets = {
     "year": market_values["year"].unique(),
     "region": market_values["region"].unique(),
     "carrier": market_values["carrier"].unique(),
-    "load_carrier": electricity_prices["load_carrier"].unique(),
 }
 
 # First add sets to the container
@@ -379,12 +377,6 @@ s_carrier = gt.Set(
     "carrier",
     records=sets["carrier"],
     description="PyPSA technology by which the values were aggregated",
-)
-s_load_carrier = gt.Set(
-    gdx,
-    "load_carrier",
-    records=sets["load_carrier"],
-    description="PyPSA load type by which the values were aggregated",
 )
 
 # Now we can add data to the container
@@ -415,7 +407,7 @@ m = gt.Parameter(
 p = gt.Parameter(
     gdx,
     name="electricity_price",
-    domain=[s_year, s_region, s_load_carrier],
+    domain=[s_year, s_region],
     records=electricity_prices,
     description="Electricity price per year and region in EUR/MWh",
 )
