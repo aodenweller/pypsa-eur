@@ -79,6 +79,11 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = SimpleNamespace()
 
+        snakemake.wildcards = {
+            "year": "2040",
+            "iteration": 1
+        }
+
         snakemake.input = {
             "original_costs": "../data/costs_2040.csv",  # Reference costs used for ratios between technologies witout values from REMIND-EU
             "region_mapping": "../config/regionmapping_21_EU11.csv",
@@ -88,14 +93,11 @@ if __name__ == "__main__":
         snakemake.output = {
             "costs": "../resources/no_scenario/i1/y2040/costs.csv",
         }
-
-        snakemake.wildcards = {
-            "year": "2040",
-        }
-
+        
         snakemake.config = {"countries": ["DE", "FR", "PL"]}
-
-    configure_logging(snakemake)
+    
+    else:
+        configure_logging(snakemake)
     
     # Create region mapping by loading the original mapping from REMIND-EU from file
     # and then mapping ISO 3166-1 alpha-3 country codes to PyPSA-EUR ISO 3166-1 alpha-2 country codes
@@ -264,7 +266,6 @@ if __name__ == "__main__":
         }
     )
     fuel_costs = fuel_costs.loc[fuel_costs["year"] == snakemake.wildcards["year"]]
-
     # Unit conversion from TUSD/TWa to USD/MWh
     fuel_costs["value"] *= 1e6 / 8760
 
@@ -283,9 +284,21 @@ if __name__ == "__main__":
 
     fuel_costs = fuel_costs.merge(map_carrier_technology, on="carrier")
     fuel_costs["parameter"] = "fuel"
-    fuel_costs["unit"] = "USD/MWh"  # TODO check correct unit (should be per MWh_th input)
+    fuel_costs["unit"] = "USD/MWh_th"  # TODO check correct unit (should be per MWh_th input)
     fuel_costs = fuel_costs[["region", "technology", "parameter", "value", "unit"]]
 
+    # Special treatment for nuclear:
+    # * Fuel costs are given in TUSD/Mt, which is converted to USD/MWh_el using the efficiency
+    # * Efficiencies are given in TWa/Mt uranium, which we already apply to the fuel costs, thus set efficiency to 1
+    fuel_costs = fuel_costs.set_index(["technology", "region"])
+    efficiency = efficiency.set_index(["technology", "region"])
+    fuel_costs.loc[["fnrs","tnrs"], "value"] /= (efficiency.loc[["fnrs","tnrs"]]["value"])
+    fuel_costs.loc[["fnrs","tnrs"], "unit"] = "USD/MWh_el"
+    efficiency.loc[["fnrs","tnrs"], "value"] = 1
+    fuel_costs = fuel_costs.reset_index()
+    efficiency = efficiency.reset_index()
+    
+    
     logger.info("Calculating weighted technology costs...")
     weights = remind_data["v32_usableSeTeDisp"].records.rename(
         columns={
@@ -388,7 +401,7 @@ if __name__ == "__main__":
 
     # Check values for plausibility
     # Efficiencies should be between 0 and 1
-    if not df_base.query("parameter == 'efficiency'")["value"].between(0, 1).all():
+    if not efficiency["value"].between(0, 1).all():
         logger.warning("Efficiency values below 0 or above 1 detected.")
 
     # FOM in percent should be between 0 and 100
@@ -411,8 +424,6 @@ if __name__ == "__main__":
     if not df_base.query("parameter == 'lifetime'")["value"].between(10, 100).all():
         logger.warning("Lifetime values below 10 or above 100 years detected.")
 
-    # %%
-    df_base.loc[df_base["technology"].isin(["ror", "hydro"])]
     # %%
     # Write results to file
     df_base.to_csv(snakemake.output["costs"], index=False)
