@@ -1,7 +1,22 @@
-# SPDX-FileCopyrightText: : 2023 Adrian Odenweller <adrian.odenweller@pik-potsdam.de>, Johannes Hampp <jhampp@pik-potsdam.de>
+# SPDX-FileCopyrightText: : 2023 Adrian Odenweller <adrian.odenweller@pik-potsdam.de>, Johannes Hampp <johannes.hampp@pik-potsdam.de>
 #
 # SPDX-License-Identifier: MIT
 from os.path import normpath, exists
+from shutil import copyfile, move, rmtree
+import numpy as np
+import pandas as pd
+from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
+
+HTTP = HTTPRemoteProvider()
+
+from snakemake.utils import min_version
+
+min_version("7.7")
+
+
+localrules:
+    purge,
+    dag,
 
 
 wildcard_constraints:
@@ -16,6 +31,9 @@ wildcard_constraints:
 configfile: "config.remind.yaml"
 
 
+COSTS = f"data/costs_{config['costs']['year']}.csv"
+ATLITE_NPROCESSES = config["atlite"].get("nprocesses", 4)
+
 # Add an scenario identifier (for different REMIND scenarios) by calling
 # > snakemake ... --config remind_scenario=<scenario_identifier>
 # scenario-specific data will be stored in a subfolder called <scenario_identifier>
@@ -24,30 +42,73 @@ configfile: "config.remind.yaml"
 config["run"]["name"] = config.get("remind_scenario", config["run"]["name"])
 
 # Add default value for "iteration" if not specified via CLI
-config["iteration"] = config.get("iteration", 0)
+config["run"]["iteration"] = config.get("iteration", 0)
+
+run = config.get("run", {})
+RDIR = run["name"] + "/" if run.get("name") else ""
+CDIR = RDIR if not run.get("shared_cutouts") else ""
+
+LOGS = "logs/" + RDIR
+BENCHMARKS = "benchmarks/" + RDIR
+RESOURCES = "resources/" + RDIR if not run.get("shared_resources") else "resources/"
+RESULTS = "results/" + RDIR
 
 
-# Import PyPSA-EUR standard workflow as module
-# Overwrite or inherit from rules below to adjust for REMIND coupling
-module pypsa_eur:
-    snakefile:
-        # The unmodified PyPSA-EUR Snakefile
-        "Snakefile"
-    config:
-        # "config.remind.yaml" is a modified version of the PyPSA-EUR config.yaml
-        # and can directly be passed to the module
-        config
+include: "rules/common.smk"
+include: "rules/collect.smk"
+include: "rules/retrieve.smk"
+include: "rules/build_electricity.smk"
+include: "rules/solve_electricity.smk"
+include: "rules/postprocess.smk"
 
 
-# Import all rules from pypsa_eur module with prefix
-use rule * from pypsa_eur as pypsa_eur_*
+rule purge:
+    message:
+        "Purging generated resources, results and docs. Downloads are kept."
+    run:
+        rmtree("resources/", ignore_errors=True)
+        rmtree("results/", ignore_errors=True)
+        rmtree("doc/_build", ignore_errors=True)
 
 
-# Variables from pypsa_eur module, alias here for better readibility
-BENCHMARKS = pypsa_eur.BENCHMARKS
-LOGS = pypsa_eur.LOGS
-RESOURCES = pypsa_eur.RESOURCES
-RESULTS = pypsa_eur.RESULTS
+rule dag:
+    message:
+        "Creating DAG of workflow."
+    output:
+        dot=RESOURCES + "dag.dot",
+        pdf=RESOURCES + "dag.pdf",
+        png=RESOURCES + "dag.png",
+    conda:
+        "envs/environment.yaml"
+    shell:
+        """
+        snakemake --rulegraph all | sed -n "/digraph/,\$p" > {output.dot}
+        dot -Tpdf -o {output.pdf} {output.dot}
+        dot -Tpng -o {output.png} {output.dot}
+        """
+
+
+# # Import PyPSA-EUR standard workflow as module
+# # Overwrite or inherit from rules below to adjust for REMIND coupling
+# module pypsa_eur:
+#     snakefile:
+#         # The unmodified PyPSA-EUR Snakefile
+#         "Snakefile"
+#     config:
+#         # "config.remind.yaml" is a modified version of the PyPSA-EUR config.yaml
+#         # and can directly be passed to the module
+#         config
+
+
+# # Import all rules from pypsa_eur module with prefix
+# use rule * from pypsa_eur as pypsa_eur_*
+
+
+# # Variables from pypsa_eur module, alias here for better readibility
+# BENCHMARKS = pypsa_eur.BENCHMARKS
+# LOGS = pypsa_eur.LOGS
+# RESOURCES = pypsa_eur.RESOURCES
+# RESULTS = pypsa_eur.RESULTS
 
 
 # Rule which downloads and prepares all files which will not change
@@ -62,261 +123,139 @@ rule download_and_prepare:
         "Running this rule requires an internet connection for downloading "
         "datafiles for the model."
     input:
-        rules.pypsa_eur_add_electricity.input,
+        rules.add_electricity.input,
 
 
-# This part contains all rules, which get data from REMIND between iterations.
-# PyPSA-EUR networks are solved between iterations via snakemake calls:
-# > snakemake -call -s Snakefile_remind --config iteration=<iteration> -- remind_solve_all_networks
-#
-# Most of the rules below are rules inherited from PyPSA-EUR, where input files change
-# during the iterations between REMIND and PyPSA-EUR; therefore the input/output files of the rules
-# are modified (but not the model setup itself, i.e. Python scripts).
-# Some additional rules are created for helping to setup the model or to export results for use later by REMIND.
-#
-# Naming:
-# * Original rules from PyPSA-EUR are prefixed as: pypsa_eur_<rulename>
-# * New rules and modified rules (via inheritance "use rule ... as ... with") are prefixed as: remind_<rulename>
-#
-# Some of the new rules have additional wildcards:
-# * {year}: Indicating the REMIND year for which the model is built
-# * {iteration}: Indicating the REMIND iteration for which the model is built
+# # This part contains all rules, which get data from REMIND between iterations.
+# # PyPSA-EUR networks are solved between iterations via snakemake calls:
+# # > snakemake -call -s Snakefile_remind --config iteration=<iteration> -- remind_solve_all_networks
+# #
+# # Most of the rules below are rules inherited from PyPSA-EUR, where input files change
+# # during the iterations between REMIND and PyPSA-EUR; therefore the input/output files of the rules
+# # are modified (but not the model setup itself, i.e. Python scripts).
+# # Some additional rules are created for helping to setup the model or to export results for use later by REMIND.
+# #
+# # Naming:
+# # * Original rules from PyPSA-EUR are prefixed as: pypsa_eur_<rulename>
+# # * New rules and modified rules (via inheritance "use rule ... as ... with") are prefixed as: remind_<rulename>
+# #
+# # Some of the new rules have additional wildcards:
+# # * {year}: Indicating the REMIND year for which the model is built
+# # * {iteration}: Indicating the REMIND iteration for which the model is built
 
 
-# TODO
 # Build cost data compatible with the original PyPSA-EUR cost data structure from technology-data
 # as part of the coupling with REMIND.
 # Since the cost data is used in multiple rules, the cost data is provided as a dedicated file
 # and not only overwritten in the network as part of the "remind_overwrite_elec_network" rule below.
-rule remind_build_tech_costs:
-    # TODO: get from REMIND
-    # input:
-    output:
-        RESOURCES + "costs_i{iteration}_y{year}.csv",
-    log:
-        LOGS + "build_tech_costs_i{iteration}_y{year}.log",
-    benchmark:
-        BENCHMARKS + "build_tech_costs_i{iteration}_y{year}"
-    group:
-        "iy"
-
-
-# TODO need script to get to same format as original tech_costs
-# script:
-
-
-# Inherit all properties from original rule
-# Overwrite a few dependencies to make rule work with iterative approach
-use rule pypsa_eur_add_electricity as remind_add_electricity with:
+rule import_REMIND_costs:
     input:
-        # Take input input files for "profile_*" and "conventional_*" from original add_electricity rule
-        **{
-            k: v
-            for k, v in rules.pypsa_eur_add_electricity.input.items()
-            if k.startswith(("profile_", "conventional_"))
-        },
-        # Other input files from original rule which don't change
-        **{
-            k: v
-            for k, v in rules.pypsa_eur_add_electricity.input.items()
-            if k
-            in [
-                "base_network",
-                "regions",
-                "hydro_capacities",
-                "geth_hydro_capacities",
-                "nuts3_shapes",
-            ]
-        },
-        # Input files with additional wildcard {year}
-        # Keep the same path structure as in PyPSA-EUR, but add the wildcard to the names
-        # Note: a more robust solution but less readable would be to insert the wildcard into the original pathname
-        # > powerplants = rules.pypsa_eur_add_electricity.input["powerplants"].replace("powerplants","powerplants_y{year}")
-        powerplants=RESOURCES + "powerplants_y{year}.csv",
-        renewable_capacities_remind=RESOURCES
-        + "renewable_capacities_y{year}.csv",
-        load=RESOURCES + "load_y{year}.csv",
-        # Input file with additional wildcards {year} and {iteration}
-        tech_costs=rules.remind_build_tech_costs.output[0],
-    output:
-        RESOURCES + "networks/elec_i{iteration}_y{year}.nc",
-    log:
-        LOGS + "add_electricity_i{iteration}_y{year}.log",
-    benchmark:
-        BENCHMARKS + "add_electricity_i{iteration}_y{year}"
-    group:
-        "iy"
-
-
-# TODO
-# This rule overwrites parts of the network created from rule "remind_add_electricity" as part
-# of the coupling with REMIND.
-# The overwrites are:
-# * <TODO: Add what is overwritten>
-rule remind_overwrite_elec_network:
-    input:
-        network=rules.remind_add_electricity.output[0],
-    output:
-        network=RESOURCES
-        + "networks/elec_i{iteration}_y{year}_remind-overwrites.nc",
-    log:
-        LOGS + "remind_overwrite_elec_network_i{iteration}_y{year}.log",
-    benchmark:
-        BENCHMARKS + "remind_overwrite_elec_network_i{iteration}_y{year}"
-    group:
-        "iy"
-
-
-use rule pypsa_eur_simplify_network as remind_simplify_network with:
-    input:
-        # Unchanged input
-        regions_onshore=rules.pypsa_eur_simplify_network.input["regions_onshore"],
-        regions_offshore=rules.pypsa_eur_simplify_network.input["regions_offshore"],
-        # Input with additional wildcards
-        network=rules.remind_overwrite_elec_network.output["network"],
-        tech_costs=rules.remind_build_tech_costs.output[0],
-    output:
-        network=RESOURCES + "networks/elec_s{simpl}_i{iteration}_y{year}.nc",
-        regions_onshore=RESOURCES
-        + "regions_onshore_elec_s{simpl}_i{iteration}_y{year}.geojson",
-        regions_offshore=RESOURCES
-        + "regions_offshore_elec_s{simpl}_i{iteration}_y{year}.geojson",
-        busmap=RESOURCES + "busmap_elec_s{simpl}_i{iteration}_y{year}.csv",
-        connection_costs=RESOURCES
-        + "connection_costs_s{simpl}_i{iteration}_y{year}.csv",
-    log:
-        LOGS + "simplify_network/elec_s{simpl}_i{iteration}_y{year}.log",
-    benchmark:
-        BENCHMARKS + "simplify_network/elec_s{simpl}_i{iteration}_y{year}"
-    group:
-        "sciy"
-
-
-use rule pypsa_eur_cluster_network as remind_cluster_network with:
-    input:
-        custom_busmap=rules.pypsa_eur_cluster_network.input["custom_busmap"],
-        tech_costs=rules.remind_build_tech_costs.output[0],
-        network=rules.remind_simplify_network.output["network"],
-        regions_onshore=rules.remind_simplify_network.output["regions_onshore"],
-        regions_offshore=rules.remind_simplify_network.output["regions_offshore"],
-        busmap=rules.remind_simplify_network.output["busmap"],
-    output:
-        network=RESOURCES
-        + "networks/elec_s{simpl}_{clusters}_i{iteration}_y{year}.nc",
-        regions_onshore=RESOURCES
-        + "regions_onshore_elec_s{simpl}_{clusters}_i{iteration}_y{year}.geojson",
-        regions_offshore=RESOURCES
-        + "regions_offshore_elec_s{simpl}_{clusters}_i{iteration}_y{year}.geojson",
-        busmap=RESOURCES
-        + "busmap_elec_s{simpl}_{clusters}_i{iteration}_y{year}.csv",
-        linemap=RESOURCES
-        + "linemap_elec_s{simpl}_{clusters}_i{iteration}_y{year}.csv",
-    log:
-        LOGS
-        + "cluster_network/elec_s{simpl}_{clusters}_i{iteration}_y{year}.log",
-    benchmark:
-        (
-            BENCHMARKS
-            + "cluster_network/elec_s{simpl}_{clusters}_i{iteration}_y{year}"
-        )
-    group:
-        "sciy"
-
-
-use rule pypsa_eur_add_extra_components as remind_add_extra_components with:
-    input:
-        tech_costs=rules.remind_build_tech_costs.output[0],
-        network=RESOURCES
-        + "networks/elec_s{simpl}_{clusters}_i{iteration}_y{year}.nc",
-    output:
-        network=RESOURCES
-        + "networks/elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec.nc",
-    log:
-        LOGS
-        + "add_extra_components/elec_s{simpl}_{clusters}_i{iteration}_y{year}.log",
-    benchmark:
-        (
-            BENCHMARKS
-            + "add_extra_components/elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec"
-        )
-    group:
-        "sciy"
-
-
-use rule pypsa_eur_prepare_network as remind_prepare_network with:
-    input:
-        tech_costs=rules.remind_build_tech_costs.output[0],
-        network=rules.remind_add_extra_components.output["network"],
-    output:
-        network=RESOURCES
-        + "networks/elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec_l{ll}_{opts}.nc",
-    log:
-        LOGS
-        + "prepare_network/elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec_l{ll}_{opts}.log",
-    benchmark:
-        (
-            BENCHMARKS
-            + "prepare_network/elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec_l{ll}_{opts}"
-        )
-    group:
-        "sciy"
-
-
-rule remind_solve_network:
-    input:
-        network=rules.remind_prepare_network.output["network"],
-    output:
-        network=RESULTS
-        + "networks/elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec_l{ll}_{opts}.nc",
-    log:
-        solver=normpath(
-            LOGS
-            + "solve_network/elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec_l{ll}_{opts}_solver.log"
-        ),
-        python=LOGS
-        + "solve_network/elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec_l{ll}_{opts}_python.log",
-        memory=LOGS
-        + "solve_network/elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec_l{ll}_{opts}_memory.log",
-    benchmark:
-        (
-            BENCHMARKS
-            + "solve_network/elec_s{simpl}_{clusters}_i{iteration}_y{year}_ec_l{ll}_{opts}"
-        )
-    group:
-        "sciy"
-    threads: 4
-    resources:
-        mem_mb=pypsa_eur.memory,
-    shadow:
-        "minimal"
-    script:
-        "scripts/solve_network.py"
-
-# Additional rule that solves all networks
-use rule pypsa_eur_solve_elec_networks as remind_solve_elec_networks with:
-    input:
-        expand(
-            rules.remind_solve_network.output["network"],
-            iteration=config["iteration"],
-            **config["scenario"],
-        ),
-
-rule remind_extract_coupling_parameters:
-    input:
-        networks = expand(
-            rules.remind_solve_network.output["network"],
-            **config["scenario"],
-            # for keeping {iteration} unexpanded
-            allow_missing=True,
-        ),
+        # no TD data for < 2020 and > 2050
+        original_costs=lambda w: f"data/costs_{np.clip(int(w['year']), a_min=2020, a_max=2050)}.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
-        "remind_weights"="../resources/no_scenario/i1/REMIND2PyPSA.gdx",
+        remind_data=RESOURCES + "i1/REMIND2PyPSAEUR.gdx",
     output:
-        capacity_factors = RESULTS + "coupling-parameter/i{iteration}/capacity_factors.csv",
-        market_values = RESULTS + "coupling-parameters/i{iteration}/market_values.csv",
-        gdx = RESULTS + "coupling-parameters/i{iteration}/coupling-parameters.gdx",
-    log: LOGS + "extract_coupling_parameters/i{iteration}.log"
-    benchmark: BENCHMARKS + "extract_coupling_parameters/i{iteration}"
-    script: "scripts/extract_coupling_parameters.py"
+        costs=RESOURCES + "i{iteration}/y{year}/costs.csv",
+    log:
+        LOGS + "i{iteration}/y{year}/import_REMIND_costs.log",
+    benchmark:
+        BENCHMARKS + "i{iteration}/y{year}/import_REMIND_costs"
+    group:
+        "iy"
+    script:
+        "scripts/import_REMIND_costs.py"
 
-# micromamba run --name pypsa-eur snakemake --profile <...> -s Snakemake_remind results//coupling-parameters/i<iteration>/coupling-parameters.gdx
+
+rule import_REMIND_load:
+    input:
+        load_timeseries=RESOURCES + "load.csv",
+        region_mapping="config/regionmapping_21_EU11.csv",
+        remind_data="resources/no_scenario/i1/REMIND2PyPSAEUR.gdx",
+    output:
+        load_timeseries=RESOURCES + "i{iteration}/y{year}/load.csv",
+    log:
+        LOGS + "i{iteration}/y{year}/import_REMIND_load.log",
+    benchmark:
+        BENCHMARKS + "i{iteration}/y{year}/import_REMIND_load"
+    group:
+        "iy"
+    script:
+        "scripts/import_REMIND_load.py"
+
+
+# # TODO need script to get to same format as original tech_costs
+
+# # TODO
+# # This rule overwrites parts of the network created from rule "remind_add_electricity" as part
+# # of the coupling with REMIND.
+# # The overwrites are:
+# # * <TODO: Add what is overwritten>
+# # rule remind_overwrite_elec_network:
+# #     input:
+# #         network=rules.remind_add_electricity.output[0],
+# #     output:
+# #         network=RESOURCES
+# #         + "networks/elec_i{iteration}_y{year}_remind-overwrites.nc",
+# #     log:
+# #         LOGS + "remind_overwrite_elec_network_i{iteration}_y{year}.log",
+# #     benchmark:
+# #         BENCHMARKS + "remind_overwrite_elec_network_i{iteration}_y{year}"
+# #     group:
+# #         "iy"
+
+
+# CO2 price is integrated into model either via config.yaml or via a wildcard
+# we do not want to modify the config.yaml, so we use an approach to pass the CO2 price via a wildcard.
+# For this we make use of the conditional execution from snakemake via checkpoints (see https://snakemake.readthedocs.io/en/stable/snakefiles/rules.html#data-dependent-conditional-execution), were first the checkpoint is executed
+# and then we construct based on the checkpoint results the actual rule call and its input which will then solve the networks
+# with their respective CO2 prices:
+# 1. checkpoint determine_co2_price_scenarios: extract CO2 prices from REMIND + combine with scenario from config.yaml
+# 2. rule solve_all_scenarios: Use the output of the checkpoint to solve all scenarios with specific CO2 prices
+checkpoint determine_co2_price_scenarios:
+    input:
+        region_mapping="config/regionmapping_21_EU11.csv",
+        remind_data="resources/{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
+    output:
+        co2_price_scenarios="resources/{scenario}/i{iteration}/co2_price_scenarios.csv",
+    log:
+        "logs/{scenario}/i{iteration}/determine_co2_price_scenarios.log",
+    benchmark:
+        "benchmarks/{scenario}/i{iteration}/determine_co2_price_scenarios"
+    script:
+        "scripts/determine_co2_price_scenarios.py"
+
+
+# snakemake -n -call -s Snakefile_remind solve_all_scenarios --config remind_scenario=no_scenario iteration=
+rule solve_all_scenarios:
+    input:
+        networks=lambda wildcards: expand(
+            "results/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
+            zip,
+            **pd.read_csv(
+                checkpoints.determine_co2_price_scenarios.get(
+                    scenario=config["run"]["name"],
+                    iteration=config["run"]["iteration"],
+                ).output["co2_price_scenarios"],
+                na_filter=False,
+            ).to_dict(orient="list")
+        ),
+
+
+# TODO align --config remind_scenario= iteration= with
+# calls to rules with wildcards like below
+rule extract_coupling_parameters:
+    input:
+        networks=rules.solve_all_scenarios.input["networks"],
+        region_mapping="config/regionmapping_21_EU11.csv",
+        remind_weights=RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
+    output:
+        capacity_factors=RESULTS
+        + "i{iteration}/coupling-parameter/capacity_factors.csv",
+        market_values=RESULTS + "i{iteration}/coupling-parameters/market_values.csv",
+        gdx=RESULTS + "i{iteration}/coupling-parameters/PyPSAEUR2REMIND.gdx",
+    log:
+        LOGS + "i{iteration}/extract_coupling_parameters.log",
+    benchmark:
+        BENCHMARKS + "i{iteration}/extract_coupling_parameters/"
+    script:
+        "scripts/extract_coupling_parameters.py"

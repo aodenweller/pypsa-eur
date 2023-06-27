@@ -26,7 +26,7 @@ scenario:
   clusters:  # number of nodes in Europe, any integer between 37 (1 node per country-zone) and several hundred
   - 4
   opts: # only relevant for PyPSA-Eur
-  - '1H'
+  - '1H-EpREMIND' #"-EpREMIND" is placeholder for setting the emissions prices through REMIND
   sector_opts: # this is where the main scenario settings are
   - ''
   #- Co2L0-3H-T-H-B-I-A-solar+p3-dist1
@@ -621,7 +621,7 @@ solving:
   options:
     formulation: kirchhoff
     clip_p_max_pu: 1.e-2
-    load_shedding: false
+    load_shedding: true
     noisy_costs: true
     skip_iterations: true
     track_iterations: false
