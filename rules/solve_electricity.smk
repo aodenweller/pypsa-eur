@@ -5,18 +5,19 @@
 
 rule solve_network:
     input:
-        network=RESOURCES + "networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
+        network=rules.prepare_network.output[0],
     output:
-        network=RESULTS + "networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
+        network=RESULTS + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
     log:
         solver=normpath(
-            LOGS + "solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_solver.log"
+            LOGS + "i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_solver.log"
         ),
         python=LOGS
-        + "solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_python.log",
+        + "i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_python.log",
     benchmark:
-        BENCHMARKS + "solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
+        BENCHMARKS + "i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
     threads: 4
+    group: "iy"
     resources:
         mem_mb=memory,
     shadow:
