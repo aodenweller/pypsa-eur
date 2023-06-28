@@ -166,6 +166,7 @@ rule import_REMIND_costs:
         "scripts/import_REMIND_costs.py"
 
 
+# Build load data time-series based on REMIND annual load per region and default PyPSA-EUR load profiles.
 rule import_REMIND_load:
     input:
         load_timeseries=RESOURCES + "load.csv",
@@ -181,6 +182,24 @@ rule import_REMIND_load:
         "iy"
     script:
         "scripts/import_REMIND_load.py"
+
+
+# Build csv with min capacities for PyPSA-EUR based on installed capacities from REMIND.
+# Used as RCL (Region-Carrier-Limits) contraints in PyPSA-EUR.
+rule import_REMIND_RCL_p_nom_limits:
+    input:
+        remind_data=RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
+        region_mapping="config/regionmapping_21_EU11.csv",
+    output:
+        RCL_p_nom_limits=RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
+    log:
+        LOGS + "i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits.log",
+    benchmark:
+        BENCHMARKS + "i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits"
+    group:
+        "iy"
+    script:
+        "scripts/import_REMIND_RCL_p_nom_limits.py"
 
 
 # # TODO need script to get to same format as original tech_costs
