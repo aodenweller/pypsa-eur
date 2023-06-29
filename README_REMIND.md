@@ -29,3 +29,15 @@ Extracted values are aggregated by REMIND region and mapped to REMIND technologi
 
 * Some mapping is 1:n from PyPSA-EUR:REMIND, see the mapping in the file.
 * some extracted parameters are weighted by the installed capacity in *REMIND* in from the run before PyPSA-EUR is called, where the weighing is between the different technologies mapped from 1 PyPSA-EUR tech -> n REMIND techs. Currently weighted are: generation shares, installed capacities
+
+
+from REMINd -> PyPSA-EUR
+
+* Dedicated scripts creating input files for PyPSA-EUR from the REMIND export ("REMIND2PyPSAEUR.gdx")
+* Output form is imitating original PyPSA-EUR files input format, trying to thereby create drop-in replacements for the original files
+* New files are then used in the PyPSA-EUR rules, by modifying the specified input files (but not the model scripts) in the Snakefile / <rules>.smk filesa
+* CO2 price via wildcard, placeholder in config.remind.yaml ; extract prices from REMIND and then create dataframe / file `resources/<scenario>/i<iteration>/co2_price_scnearios.csv` with all combinations of scenarios to be run in PyPSA-EUR
+* minimum capacities for generators are determined from REMIND per, in `import_REMIND_RCL_p_nom_limits.py`
+    * remind region
+    * aggregate of technologies "general_technology"
+    * the minimum capacities are then enforced with a >= constrained in `solve_network.py` and the new options for `{opts} = RCL`
