@@ -447,3 +447,104 @@ def update_config_with_sector_opts(config, sector_opts):
         if o.startswith("CF+"):
             l = o.split("+")[1:]
             update_config(config, parse(l))
+
+
+def get_technology_mapping(
+    fn, source: str = "REMIND-EU", target: str = "PyPSA-EUR"
+) -> dict:
+    """
+    Get a mapping between technologies in REMIND and PyPSA-EUR.
+
+    Some technologies may be mapped to generalised technologies.
+    Valid values for source and target are: remind, general, pypsa-eur.
+    Lower and uppercase are ignored.
+
+    Parameters
+    ----------
+    fn : str
+        Path to the technology mapping file.
+    source : str, optional
+        Technology mapping source, by default "remind-eu"
+    target : str, optional
+        Technology mapping target, by default "pypsa-eur"
+
+    Returns
+    -------
+    dict
+        Dictionary with source technologies as keys and a list of target technologies as values.
+    """
+    # Group by source first and aggregate targets to list
+    # as targets could be one or more technologies which would
+    # vanish if we just convert it to a dict
+    return (
+        pd.read_csv(fn)
+        .groupby(source.lower())[target.lower()]
+        .apply("unique")
+        .apply(list)
+        .to_dict()
+    )
+
+
+def get_region_mapping(
+    fn,
+    source: str = "REMIND-EU",
+    target: str = "PyPSA-EUR",
+) -> dict:
+    """
+    Get a mapping between regions in REMIND and PyPSA-EUR.
+
+    The mapping from REMIND-EU between regions and countries is read from file (fn),
+    which is directly taken from the REMIND-EU model.
+    The corresponding countries in PyPSA-EUR are determined using the country_converter.
+    Valid values for source and target are: remind, pypsa-eur.
+    Lower and uppercase are ignored.
+
+    Parameters
+    ----------
+    fn : str
+        Path to the region mapping file from REMIND-EU.
+    source : str, optional
+        Region mapping source, by default "remind-eu"
+    target : str, optional
+        Region mapping target, by default "pypsa-eur"
+    """
+    import country_converter as coco
+
+    # Create region mapping by loading the original mapping from REMIND-EU from file
+    # and then mapping ISO 3166-1 alpha-3 country codes to PyPSA-EUR ISO 3166-1 alpha-2 country codes
+    logger.info("Loading region mapping...")
+    region_mapping = pd.read_csv(fn, sep=";").rename(
+        columns={"RegionCode": "remind-eu"}
+    )
+
+    region_mapping["pypsa-eur"] = coco.convert(
+        names=region_mapping["CountryCode"], to="ISO2"
+    )
+    region_mapping = region_mapping[["pypsa-eur", "remind-eu"]]
+
+    # Append Kosovo to region mapping, not present in standard mapping and uses non-standard "KV" in PyPSA-EUR
+    logger.info(
+        "Manually adding Kosovo to region mapping (PyPSA-EUR: KV, REMIND-EU: part of NES region) ..."
+    )
+    region_mapping = pd.concat(
+        [
+            region_mapping,
+            pd.DataFrame(
+                {
+                    "remind-eu": "NES",
+                    "pypsa-eur": "KV",
+                },
+                columns=["pypsa-eur", "remind-eu"],
+                index=[0],
+            ),
+        ]
+    ).reset_index(drop=True)
+
+    region_mapping = (
+        region_mapping.groupby(source.lower())[target.lower()]
+        .apply("unique")
+        .apply(list)
+        .to_dict()
+    )
+
+    return region_mapping
