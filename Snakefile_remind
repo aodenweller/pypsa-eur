@@ -190,6 +190,7 @@ rule import_REMIND_RCL_p_nom_limits:
     input:
         remind_data=RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
         region_mapping="config/regionmapping_21_EU11.csv",
+        technology_mapping="config/technology_mapping.csv",
     output:
         RCL_p_nom_limits=RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
     log:
