@@ -33,9 +33,9 @@ load = pd.read_csv(snakemake.input["load_timeseries"], index_col=0)
 
 # Load REMIND-EU demand data
 remind_data = gt.Container(snakemake.input["remind_data"])
-demand = remind_data["vm_usableSe"].records
+demand = remind_data["v32_usableSeDisp"].records
 demand = demand.rename(
-    columns={"entySe": "sector", "ttot": "year", "all_regi": "region", "level": "value"}
+    columns={"all_enty": "sector", "ttot": "year", "all_regi": "region", "level": "value"}
 )
 demand = demand.loc[
     (demand["sector"] == "seel") & (demand["year"] == snakemake.wildcards["year"])
