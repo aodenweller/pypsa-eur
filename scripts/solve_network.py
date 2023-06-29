@@ -35,6 +35,8 @@ import pypsa
 import xarray as xr
 from _helpers import (
     configure_logging,
+    get_region_mapping,
+    get_technology_mapping,
     override_component_attrs,
     update_config_with_sector_opts,
 )
@@ -199,6 +201,79 @@ def prepare_network(n, solve_opts=None, config=None):
         add_co2_sequestration_limit(n, limit=limit)
 
     return n
+
+
+def add_RCL_constraints(n, config):
+    """
+    Add RCL (region & carrier limit) constraint to the network for region and
+    carrier groups.
+
+    Add a minimum level for generator nominal capacity per group of countries (=region) and group of carriers (=technology_group).
+    Similar idea as the CCL constraint.
+    Based on input csv file; functionality used for REMIND coupling.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    config : dict
+
+    Example config.remind.yaml
+    --------------------------
+    scenario:
+        opts: [1H-RCL]
+    """
+
+    logger.info(
+        "Adding generation capacity constraints (RCL) per carrier groups and country groups"
+    )
+    generators = n.generators.query("p_nom_extendable").rename_axis(
+        index="Generator-ext"
+    )
+
+    # Map generators to country groups (REMIND reginos) and carrier groups (general technologies aggregated from REMIND technologies)
+    generators["country"] = generators.bus.map(n.buses.country)
+    generators["region"] = generators["country"].map(
+        {
+            k: v[0]
+            for k, v in get_region_mapping(
+                snakemake.intput["region_mapping"],
+                source="PyPSA-EUR",
+                target="REMIND-EU",
+            ).items()
+        }
+    )
+    generators["general_technology"] = generators.carrier.map(
+        {
+            k: v[0]
+            for k, v in get_technology_mapping(
+                snakemake.input["technology_mapping"],
+                source="pypsa-eur",
+                target="general",
+            ).items()
+        }
+    )
+
+    grouper = [generators.region, generators.general_technology]
+    grouper = xr.DataArray(pd.MultiIndex.from_arrays(grouper), dims=["Generator-ext"])
+
+    # LHS: sum of generator nominal capacity per region / general technology
+    p_nom = n.model["Generator-p_nom"]
+    lhs = p_nom.groupby(grouper).sum()
+
+    # RHS: p_nom_min from REMIND-EU
+    p_nom_limits = pd.read_csv(
+        snakemake.input["RCL_p_nom_limits"],
+        index_col=["region_REMIND", "general_technology"],
+    )
+
+    # Determine overlapping indices to only create constraint for generator technologies which are actually constrained by the REMIND-EU
+    indexes = lhs.indexes["group"].intersection(p_nom_limits.index)
+    if indexes:
+        # Add constraint
+        n.model.add_constraints(
+            lhs.sel(group=indexes) >= p_nom_limits.loc[indexes, "p_nom_min"],
+            name="RCL_p_nom_min",
+        )
 
 
 def add_CCL_constraints(n, config):
@@ -580,6 +655,8 @@ def extra_functionality(n, snapshots):
         add_SAFE_constraints(n, config)
     if "CCL" in opts and n.generators.p_nom_extendable.any():
         add_CCL_constraints(n, config)
+    if "RCL" in opts and n.generators.p_nom_extendable.any():
+        add_RCL_constraints(n, config)
     reserve = config["electricity"].get("operational_reserve", {})
     if reserve.get("activate"):
         add_operational_reserve_margin(n, snapshots, config)

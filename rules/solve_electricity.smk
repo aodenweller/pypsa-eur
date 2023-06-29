@@ -5,7 +5,10 @@
 
 rule solve_network:
     input:
-        network=rules.prepare_network.output[0],
+        network=RESOURCES + "no_scenario/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
+        RCL_p_nom_limits = RESOURCES + "no_scenario/i{iteration}/y{year}/RCL_p_nom_limits.csv",
+        region_mapping="config/regionmapping_21_EU11.csv",
+        technology_mapping="config/technology_mapping.csv",
     output:
         network=RESULTS + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
     log:
