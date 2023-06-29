@@ -137,7 +137,7 @@ def _add_missing_carriers_from_costs(n, costs, carriers):
     n.import_components_from_dataframe(emissions, "Carrier")
 
 
-def load_costs(tech_costs, config, elec_config, Nyears=1.0, tech_costs_remind=None):
+def load_costs(tech_costs, config, elec_config, Nyears=1.0):
     # set all asset costs and other parameters
     costs = pd.read_csv(tech_costs, index_col=[0, 1]).sort_index()
 
@@ -198,15 +198,6 @@ def load_costs(tech_costs, config, elec_config, Nyears=1.0, tech_costs_remind=No
         if overwrites is not None:
             overwrites = pd.Series(overwrites)
             costs.loc[overwrites.index, attr] = overwrites
-
-    # REMIND coupling: Overwrite default costs
-    # TODO: Get rid of default cost parameters, get all costs from REMIND
-    if tech_costs_remind is not None:
-        # Read in costs from REMIND output
-        costs_remind = pd.read_csv(tech_costs_remind, index_col=[0, 1]).sort_index()
-        costs_remind = costs_remind.value.unstack()
-        # Overwrite costs
-        costs.update(costs_remind)
 
     return costs
 
@@ -391,12 +382,10 @@ def attach_conventional_generators(
         .join(costs, on="carrier", rsuffix="_r")
         .rename(index=lambda s: "C" + str(s))
     )
-    # Don't recalulate marginal costs as this comes from REMIND
-
-    #ppl["efficiency"] = ppl.efficiency.fillna(ppl.efficiency_r)
-    #ppl["marginal_cost"] = (
-    #    ppl.carrier.map(costs.VOM) + ppl.carrier.map(costs.fuel) / ppl.efficiency
-    #)
+    ppl["efficiency"] = ppl.efficiency.fillna(ppl.efficiency_r)
+    ppl["marginal_cost"] = (
+        ppl.carrier.map(costs.VOM) + ppl.carrier.map(costs.fuel) / ppl.efficiency
+    )
 
     logger.info(
         "Adding {} generators with capacities [GW] \n{}".format(
@@ -664,8 +653,8 @@ def attach_OPSD_renewables(n, tech_map):
         n.generators.p_nom_min.update(gens.bus.map(caps).dropna())
 
 
-def estimate_renewable_capacities(n, config, renewable_capacities_remind):
-    #year = config["electricity"]["estimate_renewable_capacities"]["year"]
+def estimate_renewable_capacities(n, config):
+    year = config["electricity"]["estimate_renewable_capacities"]["year"]
     tech_map = config["electricity"]["estimate_renewable_capacities"][
         "technology_mapping"
     ]
@@ -677,14 +666,11 @@ def estimate_renewable_capacities(n, config, renewable_capacities_remind):
     if not len(countries) or not len(tech_map):
         return
 
-    #capacities = pm.data.IRENASTAT().powerplant.convert_country_to_alpha2()
-    #capacities = capacities.query(
-    #    "Year == @year and Technology in @tech_map and Country in @countries"
-    #)
-    #capacities = capacities.groupby(["Technology", "Country"]).Capacity.sum()
-    
-    # Read renewable capacities from REMIND
-    capacities = pd.read_csv(renewable_capacities_remind).set_index(["Technology", "Country"])
+    capacities = pm.data.IRENASTAT().powerplant.convert_country_to_alpha2()
+    capacities = capacities.query(
+        "Year == @year and Technology in @tech_map and Country in @countries"
+    )
+    capacities = capacities.groupby(["Technology", "Country"]).Capacity.sum()
 
     logger.info(
         f"Heuristics applied to distribute renewable capacities [GW]: "
@@ -747,7 +733,6 @@ if __name__ == "__main__":
         snakemake.config["costs"],
         snakemake.config["electricity"],
         Nyears,
-        snakemake.input.tech_costs_remind
     )
     ppl = load_powerplants(snakemake.input.powerplants)
 
@@ -861,7 +846,7 @@ if __name__ == "__main__":
                 "technology_mapping"
             ]
             attach_OPSD_renewables(n, tech_map)
-        estimate_renewable_capacities(n, snakemake.config, snakemake.input.renewable_capacities_remind)
+        estimate_renewable_capacities(n, snakemake.config)
 
     update_p_nom_max(n)
 
