@@ -2,7 +2,8 @@
 
 * GAMS PYthon API
 
-Inside conda env
+Inside the existing PyPSA-EUR conda env, install the GAMS Python API:
+
 ```
 pip install gams --find-links /opt/gams/gams43.3_linux_x64_64_sfx/api/python/bdist
 ```
