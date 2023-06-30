@@ -243,7 +243,7 @@ def add_RCL_constraints(n, config):
         {
             k: v[0]
             for k, v in get_region_mapping(
-                snakemake.intput["region_mapping"],
+                snakemake.input["region_mapping"],
                 source="PyPSA-EUR",
                 target="REMIND-EU",
             ).items()
@@ -275,7 +275,7 @@ def add_RCL_constraints(n, config):
 
     # Determine overlapping indices to only create constraint for generator technologies which are actually constrained by the REMIND-EU
     indexes = lhs.indexes["group"].intersection(p_nom_limits.index)
-    if indexes:
+    if not indexes.empty:
         # Add constraint
         n.model.add_constraints(
             lhs.sel(group=indexes) >= p_nom_limits.loc[indexes, "p_nom_min"],
