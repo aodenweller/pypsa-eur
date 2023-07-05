@@ -261,17 +261,27 @@ def add_RCL_constraints(n, config):
     )
 
     grouper = [generators.region, generators.general_technology]
-    grouper = xr.DataArray(pd.MultiIndex.from_arrays(grouper), dims=["Generator-ext"])
-
-    # LHS: sum of generator nominal capacity per region / general technology
-    p_nom = n.model["Generator-p_nom"]
-    lhs = p_nom.groupby(grouper).sum()
 
     # RHS: p_nom_min from REMIND-EU
     p_nom_limits = pd.read_csv(
         snakemake.input["RCL_p_nom_limits"],
         index_col=["region_REMIND", "general_technology"],
     )
+    # Make sure the limit for p_nom_min does not exceed technical p_nom_max capacities
+    # If it does, reduce limits to p_nom_max, i.e. force full expansion of generators
+    # 0.999: small factor <~1 to make sure it can actually solve if p_nom_max is basis for constraint
+    p_nom_limits["p_nom_max"] = generators.groupby(grouper)["p_nom_max"].sum() * 0.999
+    if (p_nom_limits["p_nom_min"] > p_nom_limits["p_nom_max"]).any():
+        logger.info(
+            f"Relaxing RCL constraint as required p_nom_min exceeds some p_nom_max in model. Old limits:\n{p_nom_limits['p_nom_min']}"
+        )
+        p_nom_limits["p_nom_min"] = p_nom_limits.min(axis="columns")
+        logger.info(f"New limits:\n{p_nom_limits['p_nom_min']}")
+
+    # LHS: sum of generator nominal capacity per region / general technology
+    grouper = xr.DataArray(pd.MultiIndex.from_arrays(grouper), dims=["Generator-ext"])
+    p_nom = n.model["Generator-p_nom"]
+    lhs = p_nom.groupby(grouper).sum()
 
     # Determine overlapping indices to only create constraint for generator technologies which are actually constrained by the REMIND-EU
     indexes = lhs.indexes["group"].intersection(p_nom_limits.index)
