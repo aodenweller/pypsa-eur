@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# %%
 
 import logging
 from types import SimpleNamespace
@@ -7,7 +6,7 @@ from types import SimpleNamespace
 import country_converter as coco
 import numpy as np
 import pandas as pd
-from _helpers import configure_logging
+from _helpers import configure_logging, get_region_mapping
 from gams import transfer as gt
 
 logger = logging.getLogger(__name__)
@@ -79,53 +78,30 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = SimpleNamespace()
 
-        snakemake.wildcards = {
-            "year": "2040",
-            "iteration": 1
-        }
+        snakemake.wildcards = {"year": "2065", "iteration": 1}
 
         snakemake.input = {
-            "original_costs": "../data/costs_2040.csv",  # Reference costs used for ratios between technologies witout values from REMIND-EU
+            "original_costs": "../data/costs_2050.csv",  # Reference costs used for ratios between technologies witout values from REMIND-EU
             "region_mapping": "../config/regionmapping_21_EU11.csv",
             "remind_data": "../resources/no_scenario/i1/REMIND2PyPSAEUR.gdx",
         }
 
         snakemake.output = {
-            "costs": "../resources/no_scenario/i1/y2040/costs.csv",
+            "costs": "../resources/no_scenario/i1/y2065/costs.csv",
         }
-        
+
         snakemake.config = {"countries": ["DE", "FR", "PL"]}
-    
+
     else:
         configure_logging(snakemake)
-    
-    # Create region mapping by loading the original mapping from REMIND-EU from file
-    # and then mapping ISO 3166-1 alpha-3 country codes to PyPSA-EUR ISO 3166-1 alpha-2 country codes
-    logger.info("Loading region mapping and adding Kosovo (KV) manually.")
-    region_mapping = pd.read_csv(snakemake.input["region_mapping"], sep=";").rename(
-        columns={"RegionCode": "REMIND-EU"}
-    )
 
-    region_mapping["PyPSA-EUR"] = coco.convert(
-        names=region_mapping["CountryCode"], to="ISO2"
-    )
-    region_mapping = region_mapping[["PyPSA-EUR", "REMIND-EU"]]
-
-    # Append Kosovo to region mapping, not present in standard mapping and uses non-standard "KV" in PyPSA-EUR
-    region_mapping = pd.concat(
-        [
-            region_mapping,
-            pd.DataFrame(
-                {
-                    "REMIND-EU": "NES",
-                    "PyPSA-EUR": "KV",
-                },
-                columns=["PyPSA-EUR", "REMIND-EU"],
-                index=[0],
-            ),
-        ]
-    ).reset_index(drop=True)
-
+    # Load region mapping
+    region_mapping = pd.DataFrame(
+        get_region_mapping(
+            snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
+        )
+    ).T.reset_index()
+    region_mapping.columns = ["PyPSA-EUR", "REMIND-EU"]
     # Limit mapping to countries modelled with PyPSA-EUR
     region_mapping = region_mapping.loc[
         region_mapping["PyPSA-EUR"].isin(snakemake.config["countries"])
@@ -158,7 +134,9 @@ if __name__ == "__main__":
             "all_regi": "region",
         }
     )
-    discount_rate = discount_rate.loc[discount_rate["year"] == snakemake.wildcards["year"]]
+    discount_rate = discount_rate.loc[
+        discount_rate["year"] == snakemake.wildcards["year"]
+    ]
     discount_rate["parameter"] = "discount_rate"
     discount_rate["unit"] = "p.u."
     discount_rate = discount_rate[["region", "parameter", "value", "unit"]]
@@ -195,7 +173,7 @@ if __name__ == "__main__":
     fom["parameter"] = "FOM"
     fom["unit"] = "%/year"
     fom = fom[["region", "technology", "parameter", "value", "unit"]]
-    
+
     # Add variable O&M
     logger.info("... extracting VOM")
     vom = (
@@ -226,7 +204,8 @@ if __name__ == "__main__":
         }
     )
     co2_intensity = co2_intensity.loc[
-        (co2_intensity["to_carrier"] == "seel") & (co2_intensity["emission_type"] == "co2")
+        (co2_intensity["to_carrier"] == "seel")
+        & (co2_intensity["emission_type"] == "co2")
     ]
     # Unit conversion from Gt_C/TWa to t_CO2/MWh
     co2_intensity["value"] *= 1e9 * ((2 * 16 + 12) / 12) / 8760 / 1e6
@@ -235,7 +214,9 @@ if __name__ == "__main__":
     co2_intensity = co2_intensity.merge(
         pd.Series(costs["region"].unique(), name="region"), how="cross"
     )  # Add region to match columns with remaining data
-    co2_intensity = co2_intensity[["region", "technology", "parameter", "value", "unit"]]
+    co2_intensity = co2_intensity[
+        ["region", "technology", "parameter", "value", "unit"]
+    ]
 
     # Efficiencies; separated into two different variables in REMIND (constant & year-dependent)
     logger.info("... extracting efficiencies")
@@ -284,7 +265,9 @@ if __name__ == "__main__":
 
     fuel_costs = fuel_costs.merge(map_carrier_technology, on="carrier")
     fuel_costs["parameter"] = "fuel"
-    fuel_costs["unit"] = "USD/MWh_th"  # TODO check correct unit (should be per MWh_th input)
+    fuel_costs[
+        "unit"
+    ] = "USD/MWh_th"  # TODO check correct unit (should be per MWh_th input)
     fuel_costs = fuel_costs[["region", "technology", "parameter", "value", "unit"]]
 
     # Special treatment for nuclear:
@@ -292,13 +275,14 @@ if __name__ == "__main__":
     # * Efficiencies are given in TWa/Mt uranium, which we already apply to the fuel costs, thus set efficiency to 1
     fuel_costs = fuel_costs.set_index(["technology", "region"])
     efficiency = efficiency.set_index(["technology", "region"])
-    fuel_costs.loc[["fnrs","tnrs"], "value"] /= (efficiency.loc[["fnrs","tnrs"]]["value"])
-    fuel_costs.loc[["fnrs","tnrs"], "unit"] = "USD/MWh_el"
-    efficiency.loc[["fnrs","tnrs"], "value"] = 1
+    fuel_costs.loc[["fnrs", "tnrs"], "value"] /= efficiency.loc[["fnrs", "tnrs"]][
+        "value"
+    ]
+    fuel_costs.loc[["fnrs", "tnrs"], "unit"] = "USD/MWh_el"
+    efficiency.loc[["fnrs", "tnrs"], "value"] = 1
     fuel_costs = fuel_costs.reset_index()
     efficiency = efficiency.reset_index()
-    
-    
+
     logger.info("Calculating weighted technology costs...")
     weights = remind_data["v32_usableSeTeDisp"].records.rename(
         columns={
@@ -321,18 +305,19 @@ if __name__ == "__main__":
     weights["weight"] = weights["value"].div(
         weights.groupby(weights["general_technology"])["value"].transform("sum")
     )
-    # %%
+    
     # Combine all parameters before weighting, remove irrelevant values from outside REMIND regions
     df = pd.concat([costs, lifetime, fom, vom, co2_intensity, efficiency, fuel_costs])
     df["general_technology"] = df["technology"].map(map_remind_to_general)
     df = df.loc[
-        (df["region"].isin(weights["region"].unique())) & df["general_technology"].notnull()
+        (df["region"].isin(weights["region"].unique()))
+        & df["general_technology"].notnull()
     ]
-    # %%
     # weighted aggregation with weights per region and general technology
     df["weight"] = df.apply(
         lambda x: weights.loc[
-            (weights["region"] == x["region"]) & (weights["technology"] == x["technology"]),
+            (weights["region"] == x["region"])
+            & (weights["technology"] == x["technology"]),
             "weight",
         ].values[0],
         axis="columns",
@@ -349,9 +334,11 @@ if __name__ == "__main__":
         )
         .rename(columns={"weighted_value": "value"})
     )
-    # %%
+    
     # Map general technologies to PyPSA-EUR technologies
-    df = df.merge(map_general_to_pypsaeur, left_on="general_technology", right_on="general")
+    df = df.merge(
+        map_general_to_pypsaeur, left_on="general_technology", right_on="general"
+    )
     df = df.rename(columns={"PyPSA-EUR": "technology"})[
         ["technology", "parameter", "value", "unit"]
     ]
@@ -372,15 +359,17 @@ if __name__ == "__main__":
 
     df_base = df_base.reset_index()
 
-
-    # %%
     logger.info("Scaling costs for technologies not extracted from REMIND-EU...")
+
     # Scale costs for technologies which are not extracted from REMIND based on reference technologies
     # and their ratio to those technologies (basically allow for indirect learning for derived/related technologies)
     def calculate_scaled_value(row):
         if row["technology"] in scale_technologies_relative_to:
             reference_row = df_base.loc[
-                (df_base["technology"] == scale_technologies_relative_to[row["technology"]])
+                (
+                    df_base["technology"]
+                    == scale_technologies_relative_to[row["technology"]]
+                )
                 & (df_base["parameter"] == row["parameter"])
             ].squeeze()
 
@@ -395,7 +384,6 @@ if __name__ == "__main__":
                 row["further description"] = "Scaled value from REMIND-EU model"
 
         return row
-
 
     df_base = df_base.apply(calculate_scaled_value, axis="columns")
 
@@ -424,6 +412,5 @@ if __name__ == "__main__":
     if not df_base.query("parameter == 'lifetime'")["value"].between(10, 100).all():
         logger.warning("Lifetime values below 10 or above 100 years detected.")
 
-    # %%
     # Write results to file
     df_base.to_csv(snakemake.output["costs"], index=False)
