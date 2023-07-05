@@ -17,6 +17,8 @@ min_version("7.7")
 localrules:
     purge,
     dag,
+    determine_co2_price_scenarios,
+    
 
 
 wildcard_constraints:
