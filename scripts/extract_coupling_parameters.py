@@ -138,7 +138,7 @@ electricity_prices = []
 
 for fp in snakemake.input["networks"]:
     # Extract year from filename, format: elec_y<YYYY>_<morestuff>.nc
-    m = re.findall(r"elec_\S+_y([0-9]{4})_\S+\.nc", fp)
+    m = re.findall(r"y(\d{4})", fp)
     assert len(m) == 1, "Unable to extract year from network path"
     year = int(m[0])
 
