@@ -271,7 +271,10 @@ rule extract_coupling_parameters:
     output:
         capacity_factors=RESULTS
         + "i{iteration}/coupling-parameter/capacity_factors.csv",
+        generation_shares=RESULTS + "i{iteration}/coupling-parameters/generation_shares.csv",
+        installed_capacities=RESULTS + "i{iteration}/coupling-parameters/installed_capacities.csv",
         market_values=RESULTS + "i{iteration}/coupling-parameters/market_values.csv",
+        electricity_prices=RESULTS + "i{iteration}/coupling-parameters/electricity_prices.csv",
         gdx=RESULTS + "i{iteration}/coupling-parameters/PyPSAEUR2REMIND.gdx",
     log:
         LOGS + "i{iteration}/extract_coupling_parameters.log",
