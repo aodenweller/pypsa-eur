@@ -195,7 +195,7 @@ renewable:
       orientation:
         slope: 35.
         azimuth: 180.
-    capacity_per_sqkm: 1.7 # ScholzPhd Tab 4.3.1: 170 MW/km^2 and assuming 1% of the area can be used for solar PV panels
+    capacity_per_sqkm: 5.1 # Use 3% instead of 1% (REMIND-EU coupling) # ScholzPhd Tab 4.3.1: 170 MW/km^2 and assuming 1% of the area can be used for solar PV panels
     # Correction factor determined by comparing uncorrected area-weighted full-load hours to those
     # published in Supplementary Data to
     # Pietzcker, Robert Carl, et al. "Using the sun to decarbonize the power

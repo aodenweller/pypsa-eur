@@ -42,3 +42,12 @@ from REMINd -> PyPSA-EUR
     * remind region
     * aggregate of technologies "general_technology"
     * the minimum capacities are then enforced with a >= constrained in `solve_network.py` and the new options for `{opts} = RCL`
+
+## Changes to config.yaml (incomplete; TODO: update!)
+
+* Increas solar potential
+    ```
+    config["renewable"]["solar"]["capacity_per_sqkm"] = 1.7 (old) -> 5.1 (new)
+    ```
+    Reason: Limits to maximum potential were making model in some situations where REMIND-EU wanted to have a higher than permissible build-out of PV in the model.
+    The original value of 1.7 was with 1% land availability, the new value represents 3% land availability, following the estimate logic also used in the ENSPRESSO dataset by JRC.
