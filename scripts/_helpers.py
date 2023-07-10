@@ -595,6 +595,6 @@ def read_remind_data(file_path, variable_name, rename_columns={}):
             df.columns[len(data.domain) :]
         )  # Preserve all remaining column names, espc. "value" or "level" column name for parameters or variables
 
-    df = df.rename(columns=rename_columns)
+    df = df.rename(columns=rename_columns, errors="raise")
 
     return df
