@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # %%
+import logging
 import re
 from pathlib import Path
 
@@ -7,136 +8,112 @@ import country_converter as coco
 import numpy as np
 import pandas as pd
 import pypsa
+from _helpers import (
+    configure_logging,
+    get_region_mapping,
+    get_technology_mapping,
+    read_remind_data,
+)
 from gams import transfer as gt
 
-import logging
-from _helpers import configure_logging
-
 logger = logging.getLogger(__name__)
-if "snakemake" in globals():
+if not "snakemake" in globals():
+    from _helpers import mock_snakemake
+
+    snakemake = mock_snakemake(
+        "extract_coupling_parameters",
+        configfiles="config.remind.yaml",
+        iteration="1",
+    )
+
+    # mock_snakemake doesn't work with checkpoints
+    input_networks = [
+        f"../results/no_scenario/i1/y{year}/networks/elec_s_4_ec_lcopt_1H-RCL-Ep0.0.nc"
+        for year in [
+            2030,
+            2035,
+            2040,
+            2045,
+            2050,
+            2055,
+            2060,
+            2070,
+            2080,
+            2090,
+            2100,
+            2110,
+            2130,
+            2150,
+        ]
+    ]
+else:
+    input_networks = snakemake.input["networks"]
     configure_logging(snakemake)
 
 # Only Generation technologies (PyPSA "generator" "carriers")
 # Use a two step mapping approach between PyPSA-EUR and REMIND:
 # First mapping is aggregating PyPSA-EUR technologies to general technologies
 # Second mapping is disaggregating general technologies to REMIND technologies
-map_pypsaeur_to_general = {
-    "CCGT": "CCGT",
-    "OCGT": "OCGT",
-    "biomass": "biomass",
-    "coal": "all_coal",
-    "lignite": "all_coal",
-    "offwind-ac": "wind_offshore",
-    "offwind-dc": "wind_offshore",
-    "oil": "oil",
-    "onwind": "wind_onshore",
-    "solar": "solar_pv",
-    "nuclear": "nuclear",
-    "hydro": "hydro",
-    "ror": "hydro",
-}
+map_pypsaeur_to_general = get_technology_mapping(
+    snakemake.input["technology_mapping"],
+    source="PyPSA-EUR",
+    target="General",
+    flatten=True,
+)
+map_pypsaeur_to_general.pop("offwind")  # not needed
 
-map_general_to_remind = {
-    "CCGT": ["ngcc", "ngccc", "gaschp"],
-    "OCGT": ["ngt"],
-    "biomass": ["biochp", "bioigcc", "bioigccc"],
-    "all_coal": ["igcc", "igccc", "pc", "coalchp"],
-    "nuclear": ["tnrs", "fnrs"],
-    "oil": ["dot"],
-    "solar_pv": ["spv"],
-    "wind_offshore": ["windoff"],
-    "wind_onshore": ["wind"],
-    "hydro": ["hydro"],
-}
+map_general_to_remind = get_technology_mapping(
+    snakemake.input["technology_mapping"], source="General", target="REMIND-EU"
+)
 
 map_pypsaeur_to_remind_loads = {
     "AC": ["AC"],
 }
 
-# %%
-if "snakemake" not in globals():
-    # For testing only
-    # TODO remove after testing
-    from types import SimpleNamespace
-
-    snakemake = SimpleNamespace()
-    snakemake.input = {
-        "networks": [
-            "../results/no_scenario/networks/elec_s_4_y2025_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2030_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2035_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2040_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2045_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2050_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2055_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2060_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2070_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2080_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2090_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2100_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2110_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2130_i1_ec_lcopt_1H.nc",
-            "../results/no_scenario/networks/elec_s_4_y2150_i1_ec_lcopt_1H.nc",
-        ],
-        "region_mapping": "../config/regionmapping_21_EU11.csv",
-        "remind_weights": "../resources/no_scenario/i1/REMIND2PyPSAEUR.gdx",
-    }
-    snakemake.output = {
-        "capacity_factors": "../results/no_scenario/coupling-parameters/i1/capacity_factors.csv",
-        "generation_shares": "../results/no_scenario/coupling-parameters/i1/generation_shares.csv",
-        "installed_capacities": "../results/no_scenario/coupling-parameters/i1/installed_capacities.csv",
-        "market_values": "../results/no_scenario/coupling-parameters/i1/market_values.csv",
-        "electricity_prices": "../results/no_scenario/coupling-parameters/i1/electricity_prices.csv",
-        "gdx": "../results/no_scenario/coupling-parameters/i1/coupling-parameters.gdx",
-    }
-
-# Create region mapping by loading the original mapping from REMIND-EU from file
-# and then mapping ISO 3166-1 alpha-3 country codes to PyPSA-EUR ISO 3166-1 alpha-2 country codes
-region_mapping = pd.read_csv(snakemake.input["region_mapping"], sep=";").rename(
-    columns={"RegionCode": "REMIND-EU"}
+# Create region mapping
+region_mapping = get_region_mapping(
+    snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
 )
-region_mapping["PyPSA-EUR"] = coco.convert(
-    names=region_mapping["CountryCode"], to="ISO2"
-)
-region_mapping = region_mapping[["PyPSA-EUR", "REMIND-EU"]].set_index("PyPSA-EUR")
+region_mapping = pd.DataFrame(region_mapping).T.reset_index()
+region_mapping.columns = ["PyPSA-EUR", "REMIND-EU"]
+region_mapping = region_mapping.set_index("PyPSA-EUR")
+
 
 def check_for_mapping_completeness(n):
-    tmp_set = set(n.generators["carrier"]) - map_pypsaeur_to_general.keys()
+    tmp_set = (
+        set(n.generators["carrier"]) - map_pypsaeur_to_general.keys() - set(["load"])
+    )
     if tmp_set:
-        print(
-            f"The following technologies (carriers) are missing in the mapping PyPSA-EUR -> general technologies: "
-            f"{tmp_set}"
+        logger.info(
+            f"Technologies (carriers) missing from mapping PyPSA-EUR -> general technologies:\n {tmp_set}"
         )
 
     tmp_set = map_pypsaeur_to_general.values() - map_general_to_remind.keys()
     if tmp_set:
-        print(
-            f"The following technologies are missing in the mapping general technologies -> REMIND: "
-            f"{tmp_set}"
+        logger.info(
+            f"Technologies (carriers) missing from mapping General -> REMIND-EU:\n {tmp_set}"
         )
 
     tmp_set = set(n.loads["bus_carrier"]) - map_pypsaeur_to_remind_loads.keys()
     if tmp_set:
-        print(
-            f"The following technologies (carriers) are missing in the mapping PyPSA-EUR -> REMIND (loads): "
-            f"{tmp_set}"
+        logger.info(
+            f"Technologies (carriers) missing from mapping PyPSA-EUR -> REMIND-EU (loads):\n {tmp_set}"
         )
 
     tmp_set = set(n.buses["country"]) - set(region_mapping.index)
     if tmp_set:
-        print(
-            f"The following PyPSA-EUR countries have no mapping to REMIND-EU regions: "
-            f"{tmp_set}"
+        logger.info(
+            f"PyPSA-EUR countries without mapping to REMIND-EU regions::\n {tmp_set}"
         )
 
-# %%
+
 capacity_factors = []
 generation_shares = []
 installed_capacities = []
 market_values = []
 electricity_prices = []
 
-for fp in snakemake.input["networks"]:
+for fp in input_networks:
     # Extract year from filename, format: elec_y<YYYY>_<morestuff>.nc
     m = re.findall(r"y(\d{4})", fp)
     assert len(m) == 1, "Unable to extract year from network path"
@@ -175,16 +152,14 @@ for fp in snakemake.input["networks"]:
 
     # Calculate shares of technologies in annual generation
     generation_share = (
-        network.statistics(
+        network.statistics.supply(
             comps=["Generator"],
             groupby=["region", "general_carrier"],
-            aggregate_time="sum",
-        )["Supply"]
-        / network.statistics(
+        )
+        / network.statistics.supply(
             comps=["Generator"],
             groupby=["region", "general_carrier"],
-            aggregate_time="sum",
-        )["Supply"].sum()
+        ).sum()
     )
     generation_share = generation_share.to_frame("value").reset_index()
     generation_share["year"] = year
@@ -199,37 +174,27 @@ for fp in snakemake.input["networks"]:
     installed_capacities.append(installed_capacity)
 
     # Calculate the market values (round-about way as the intended method of the statistics module is not yet available)
-    market_value = (
-        network.statistics(
-            comps=["Generator"],
-            groupby=["region", "general_carrier"],
-            aggregate_time="sum",
-        )["Revenue"]
-        / network.statistics(
-            comps=["Generator"],
-            groupby=["region", "general_carrier"],
-            aggregate_time="sum",
-        )["Supply"]
+    market_value = network.statistics.market_value(
+        comps=["Generator"], groupby=["region", "general_carrier"]
     )
     market_value = market_value.to_frame("value").reset_index()
     market_value["year"] = year
     market_values.append(market_value)
 
     # Calculate load-weighted electricity prices based on bus marginal prices
-    electricity_price = network.statistics(
-        comps=["Load"], groupby=["region", "bus_carrier"], aggregate_time="sum"
-    )["Revenue"] / (
+    electricity_price = network.statistics.revenue(
+        comps=["Load"], groupby=["region", "bus_carrier"]
+    ) / (
         -1
-        * network.statistics(
-            comps=["Load"], groupby=["region", "bus_carrier"], aggregate_time="sum"
-        )["Withdrawal"]
+        * network.statistics.withdrawal(
+            comps=["Load"], groupby=["region", "bus_carrier"]
+        )
     )
     electricity_price = electricity_price.to_frame("value").reset_index()
     electricity_price["year"] = year
     electricity_prices.append(electricity_price)
 
 
-# %%
 ## Combine DataFrames to same format
 # Helper function
 def postprocess_dataframe(df):
@@ -279,51 +244,73 @@ def postprocess_dataframe(df):
 
     return df
 
+
 def weigh_by_REMIND_capacity(df):
-    """ 
-    Weighing here uses the capacities from REMIND
-    and calaculates the weights s.t. the sum of weights equals 1 for each group of carriers (= "general_carrier")
-    which are mapped against REMIND technologies.
+    """
+    Weighing here uses the capacities from REMIND and calaculates the weights
+    s.t.
+
+    the sum of weights equals 1 for each group of carriers (=
+    "general_carrier") which are mapped against REMIND technologies.
     """
     # Read gen shares from REMIND for weighing
-    capacity_weights = gt.Container(snakemake.input["remind_weights"]).data["v32_shSeElDisp"].records
-    
-    # Align naming, dtypes & reduce to required columns
-    capacity_weights = capacity_weights.rename(columns={"ttot":"year","all_regi":"region","all_te":"carrier"})
-    capacity_weights = capacity_weights.astype({"year": int, "level": float, "carrier": str, "region": str})
-    capacity_weights = capacity_weights[['year','region','carrier','level']]
-    capacity_weights["level"] = capacity_weights["level"].where(lambda x: x > np.finfo(float).eps, 0.0) # Remove very small values below EPS passed by GAMS
-     
+    capacity_weights = read_remind_data(
+        file_path=snakemake.input["remind_weights"],
+        variable_name="v32_shSeElDisp",
+        rename_columns={
+            "ttot": "year",
+            "all_regi": "region",
+            "all_te": "carrier",
+        },
+    )
+
+    # Align dtypes & reduce to required columns
+    capacity_weights = capacity_weights.astype(
+        {"year": int, "level": float, "carrier": str, "region": str}
+    )
+    capacity_weights = capacity_weights[["year", "region", "carrier", "level"]]
+    capacity_weights["level"] = capacity_weights["level"].where(
+        lambda x: x > np.finfo(float).eps, 0.0
+    )  # Remove very small values below EPS passed by GAMS
+
     # Map REMIND technologies to general_carriers
     capacity_weights["general_carrier"] = capacity_weights["carrier"].map(
-        {
-        lv:k for k,v in map_general_to_remind.items() for lv in v
-    }
+        {lv: k for k, v in map_general_to_remind.items() for lv in v}
     )
-    
+
     # Calculate weights for individual carrier based on total levels per shared "general_carrier" and individual share
-    general_carrier_weights = capacity_weights.groupby(["year","region","general_carrier"])["level"].sum()
-    general_carrier_weights = general_carrier_weights.where(lambda x: x != 0, 1) # avoid division by zero
+    general_carrier_weights = capacity_weights.groupby(
+        ["year", "region", "general_carrier"]
+    )["level"].sum()
+    general_carrier_weights = general_carrier_weights.where(
+        lambda x: x != 0, 1
+    )  # avoid division by zero
     general_carrier_weights.name = "general_carrier_weight"
 
-    capacity_weights = capacity_weights.join(general_carrier_weights,
-                          on=["year","region","general_carrier"],
-                          validate="m:1",
+    capacity_weights = capacity_weights.join(
+        general_carrier_weights,
+        on=["year", "region", "general_carrier"],
+        validate="m:1",
     )
-    capacity_weights["weight"] = capacity_weights["level"] / capacity_weights["general_carrier_weight"]
+    capacity_weights["weight"] = (
+        capacity_weights["level"] / capacity_weights["general_carrier_weight"]
+    )
 
     # Map weights to data to-be-weighted based on (year, region, carrier)
-    df = df.set_index(['year','region','carrier']).join(capacity_weights.set_index(['year','region','carrier']))
-    
+    df = df.set_index(["year", "region", "carrier"]).join(
+        capacity_weights.set_index(["year", "region", "carrier"])
+    )
+
     # Consistency checks
-    assert df['weight'].isna().sum() == 0, "Some weights are missing"
-    assert all(df["weight"]>=0.0), "Some weights are negative"
-    assert all(df["weight"]<=1.0), "Some weights are larger than 1.0"
-    
+    assert df["weight"].isna().sum() == 0, "Some weights are missing"
+    assert all(df["weight"] >= 0.0), "Some weights are negative"
+    assert all(df["weight"] <= 1.0), "Some weights are larger than 1.0"
+
     # Apply weights
     df["value"] *= df["weight"]
-    
+
     return df[["value"]].reset_index()
+
 
 # %%
 # Real combining happens here
@@ -334,13 +321,17 @@ market_values = postprocess_dataframe(market_values)
 electricity_prices = postprocess_dataframe(electricity_prices)
 
 # For loads only output AC (electricity) prices
-electricity_prices = electricity_prices.query("carrier == 'AC'").drop(columns=["carrier"])
-
+electricity_prices = electricity_prices.query("carrier == 'AC'").drop(
+    columns=["carrier"]
+)
+# %%
 # Special treatment: Weigh values of df based on installed capacities in REMIND
 generation_shares = weigh_by_REMIND_capacity(generation_shares)
 
-if any(generation_shares.groupby(["year","region"])["value"].sum() != 1.):
-    logger.warning("Sum of generation shares is not equal to 1.0 for each year and region.")
+if any(generation_shares.groupby(["year", "region"])["value"].sum() != 1.0):
+    logger.warning(
+        "Sum of generation shares is not equal to 1.0 for each year and region."
+    )
 
 # %%
 # Export as csv values (informative purposes only, coupling parameters below via GDX)

@@ -269,6 +269,7 @@ rule extract_coupling_parameters:
     input:
         networks=rules.solve_all_scenarios.input["networks"],
         region_mapping="config/regionmapping_21_EU11.csv",
+        technology_mapping="config/technology_mapping.csv",
         remind_weights=RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
         capacity_factors=RESULTS
