@@ -295,21 +295,22 @@ rule add_electricity:
             if str(fn).startswith("data/")
         },
         base_network=RESOURCES + "networks/base.nc",
-        tech_costs=RESOURCES + "i{iteration}/y{year}/costs.csv",
+        tech_costs="resources/{scenario}/i{iteration}/y{year}/costs.csv",
         regions=rules.build_bus_regions.output["regions_onshore"],
         powerplants=RESOURCES + "powerplants.csv",
         hydro_capacities=ancient("data/bundle/hydro_capacities.csv"),
         geth_hydro_capacities="data/geth2015_hydro_capacities.csv",
-        load=RESOURCES + "i{iteration}/y{year}/load.csv",
+        load="resources/{scenario}/i{iteration}/y{year}/load.csv",
         nuts3_shapes=RESOURCES + "nuts3_shapes.geojson",
     output:
-        RESOURCES + "i{iteration}/y{year}/networks/elec.nc",
+        "resources/{scenario}/i{iteration}/y{year}/networks/elec.nc",
     log:
-        LOGS + "i{iteration}/y{year}/add_electricity.log",
+        "logs/{scenario}/i{iteration}/y{year}/add_electricity.log",
     benchmark:
-        BENCHMARKS + "i{iteration}/y{year}/add_electricity"
+        "benchmarks/{scenario}/i{iteration}/y{year}/add_electricity"
     threads: 1
-    group: "iy"
+    group:
+        "iy"
     resources:
         mem_mb=5000,
     conda:
@@ -334,17 +335,18 @@ rule simplify_network:
         regions_onshore=rules.build_bus_regions.output["regions_onshore"],
         regions_offshore=rules.build_bus_regions.output["regions_offshore"],
     output:
-        network=RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}.nc",
-        regions_onshore=RESOURCES + "i{iteration}/y{year}/regions_onshore_elec_s{simpl}.geojson",
-        regions_offshore=RESOURCES + "i{iteration}/y{year}/regions_offshore_elec_s{simpl}.geojson",
-        busmap=RESOURCES + "i{iteration}/y{year}/busmap_elec_s{simpl}.csv",
-        connection_costs=RESOURCES + "i{iteration}/y{year}/connection_costs_s{simpl}.csv",
+        network="resources/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}.nc",
+        regions_onshore="resources/{scenario}/i{iteration}/y{year}/regions_onshore_elec_s{simpl}.geojson",
+        regions_offshore="resources/{scenario}/i{iteration}/y{year}/regions_offshore_elec_s{simpl}.geojson",
+        busmap="resources/{scenario}/i{iteration}/y{year}/busmap_elec_s{simpl}.csv",
+        connection_costs="resources/{scenario}/i{iteration}/y{year}/connection_costs_s{simpl}.csv",
     log:
-        LOGS + "i{iteration}/y{year}/simplify_network/elec_s{simpl}.log",
+        "logs/{scenario}/i{iteration}/y{year}/simplify_network/elec_s{simpl}.log",
     benchmark:
-        BENCHMARKS + "i{iteration}/y{year}/simplify_network/elec_s{simpl}"
+        "benchmarks/{scenario}/i{iteration}/y{year}/simplify_network/elec_s{simpl}"
     threads: 1
-    group: "iy"
+    group:
+        "iy"
     resources:
         mem_mb=4000,
     conda:
@@ -376,17 +378,18 @@ rule cluster_network:
         ),
         tech_costs=rules.add_electricity.input["tech_costs"],
     output:
-        network=RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}.nc",
-        regions_onshore=RESOURCES + "i{iteration}/y{year}/regions_onshore_elec_s{simpl}_{clusters}.geojson",
-        regions_offshore=RESOURCES + "i{iteration}/y{year}/regions_offshore_elec_s{simpl}_{clusters}.geojson",
-        busmap=RESOURCES + "i{iteration}/y{year}/busmap_elec_s{simpl}_{clusters}.csv",
-        linemap=RESOURCES + "i{iteration}/y{year}/linemap_elec_s{simpl}_{clusters}.csv",
+        network="resources/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}.nc",
+        regions_onshore="resources/{scenario}/i{iteration}/y{year}/regions_onshore_elec_s{simpl}_{clusters}.geojson",
+        regions_offshore="resources/{scenario}/i{iteration}/y{year}/regions_offshore_elec_s{simpl}_{clusters}.geojson",
+        busmap="resources/{scenario}/i{iteration}/y{year}/busmap_elec_s{simpl}_{clusters}.csv",
+        linemap="resources/{scenario}/i{iteration}/y{year}/linemap_elec_s{simpl}_{clusters}.csv",
     log:
-        LOGS + "i{iteration}/y{year}/cluster_network/elec_s{simpl}_{clusters}.log",
+        "logs/{scenario}/i{iteration}/y{year}/cluster_network/elec_s{simpl}_{clusters}.log",
     benchmark:
-        BENCHMARKS + "i{iteration}/y{year}/cluster_network/elec_s{simpl}_{clusters}"
+        "benchmarks/{scenario}/i{iteration}/y{year}/cluster_network/elec_s{simpl}_{clusters}"
     threads: 1
-    group: "iy"
+    group:
+        "iy"
     resources:
         mem_mb=6000,
     conda:
@@ -404,13 +407,14 @@ rule add_extra_components:
         network=rules.cluster_network.output["network"],
         tech_costs=rules.add_electricity.input["tech_costs"],
     output:
-        RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec.nc",
+        "resources/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec.nc",
     log:
-        LOGS + "i{iteration}/y{year}/add_extra_components/elec_s{simpl}_{clusters}.log",
+        "logs/{scenario}/i{iteration}/y{year}/add_extra_components/elec_s{simpl}_{clusters}.log",
     benchmark:
-        BENCHMARKS + "i{iteration}/y{year}/add_extra_components/elec_s{simpl}_{clusters}_ec"
+        "benchmarks/{scenario}/i{iteration}/y{year}/add_extra_components/elec_s{simpl}_{clusters}_ec"
     threads: 1
-    group: "iy"
+    group:
+        "iy"
     resources:
         mem_mb=3000,
     conda:
@@ -432,13 +436,14 @@ rule prepare_network:
         rules.add_extra_components.output[0],
         tech_costs=rules.add_electricity.input["tech_costs"],
     output:
-        RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
+        "resources/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
     log:
-        LOGS + "i{iteration}/y{year}/prepare_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.log",
+        "logs/{scenario}/i{iteration}/y{year}/prepare_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.log",
     benchmark:
-        BENCHMARKS + "i{iteration}/y{year}/prepare_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
+        "benchmarks/{scenario}/i{iteration}/y{year}/prepare_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
     threads: 1
-    group: "iy"
+    group:
+        "iy"
     resources:
         mem_mb=4000,
     conda:

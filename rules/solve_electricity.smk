@@ -12,22 +12,22 @@ rule solve_network:
             "co2_sequestration_potential", 200
         ),
     input:
-        network=RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
-        RCL_p_nom_limits = RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
+        network="resources/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
+        RCL_p_nom_limits="resources/{scenario}/i{iteration}/y{year}/RCL_p_nom_limits.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_mapping="config/technology_mapping.csv",
     output:
-        network=RESULTS + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
+        network="results/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
     log:
         solver=normpath(
-            LOGS + "i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_solver.log"
+            "logs/{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_solver.log"
         ),
-        python=LOGS
-        + "i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_python.log",
+        python="logs/{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_python.log",
     benchmark:
-        BENCHMARKS + "i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
+        "benchmarks/{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
     threads: 4
-    group: "iy"
+    group:
+        "iy"
     resources:
         mem_mb=memory,
     shadow:

@@ -12,7 +12,7 @@ logging:
 run:
   name: "no_scenario" # Used for distinguishing REMIND scenarios; extension via Snakefile_remind allows this to be overwritten by CLI
   disable_progressbar: true # set to true to disable the progressbar
-  shared_resources: false # set to true to share the default resources across runs
+  shared_resources: true # set to true to share the default resources across runs
   shared_cutouts: true # set to true to share the default cutout(s) across runs
 
 foresight: overnight # options are overnight, myopic, perfect (perfect is not yet implemented)

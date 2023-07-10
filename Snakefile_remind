@@ -17,8 +17,8 @@ min_version("7.7")
 localrules:
     purge,
     dag,
+    download_and_prepare,
     determine_co2_price_scenarios,
-    
 
 
 wildcard_constraints:
@@ -36,24 +36,14 @@ configfile: "config.remind.yaml"
 COSTS = f"data/costs_{config['costs']['year']}.csv"
 ATLITE_NPROCESSES = config["atlite"].get("nprocesses", 4)
 
-# Add an scenario identifier (for different REMIND scenarios) by calling
-# > snakemake ... --config remind_scenario=<scenario_identifier>
-# scenario-specific data will be stored in a subfolder called <scenario_identifier>
-# Implemented by allowing to overwrite configfile["run"]["name"] via CLI
-# If not overwritten, use default from config.remind.yaml
-config["run"]["name"] = config.get("remind_scenario", config["run"]["name"])
-
-# Add default value for "iteration" if not specified via CLI
-config["run"]["iteration"] = config.get("iteration", 0)
-
 run = config.get("run", {})
 RDIR = run["name"] + "/" if run.get("name") else ""
 CDIR = RDIR if not run.get("shared_cutouts") else ""
 
-LOGS = "logs/" + RDIR
-BENCHMARKS = "benchmarks/" + RDIR
+LOGS = "logs/" + RDIR if not run.get("shared_resources") else "resources/"
+BENCHMARKS = "benchmarks/" + RDIR if not run.get("shared_resources") else "resources/"
 RESOURCES = "resources/" + RDIR if not run.get("shared_resources") else "resources/"
-RESULTS = "results/" + RDIR
+RESULTS = "results/" + RDIR if not run.get("shared_resources") else "resources/"
 
 
 include: "rules/common.smk"
@@ -125,7 +115,15 @@ rule download_and_prepare:
         "Running this rule requires an internet connection for downloading "
         "datafiles for the model."
     input:
-        rules.add_electricity.input,
+        expand(
+            rules.retrieve_cost_data.output[0],
+            year=[2020, 2025, 2030, 2035, 2040, 2045, 2050],
+        ),
+        **{
+            k: v
+            for k, v in rules.add_electricity.input.items()
+            if "{scenario}" not in v
+        },
 
 
 # # This part contains all rules, which get data from REMIND between iterations.
@@ -155,13 +153,13 @@ rule import_REMIND_costs:
         # no TD data for < 2020 and > 2050
         original_costs=lambda w: f"data/costs_{np.clip(int(w['year']), a_min=2020, a_max=2050)}.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
-        remind_data=RESOURCES + "i1/REMIND2PyPSAEUR.gdx",
+        remind_data="resources/{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
-        costs=RESOURCES + "i{iteration}/y{year}/costs.csv",
+        costs="resources/{scenario}/i{iteration}/y{year}/costs.csv",
     log:
-        LOGS + "i{iteration}/y{year}/import_REMIND_costs.log",
+        "logs/{scenario}/i{iteration}/y{year}/import_REMIND_costs.log",
     benchmark:
-        BENCHMARKS + "i{iteration}/y{year}/import_REMIND_costs"
+        "benchmarks/{scenario}/i{iteration}/y{year}/import_REMIND_costs"
     group:
         "iy"
     script:
@@ -173,13 +171,13 @@ rule import_REMIND_load:
     input:
         load_timeseries=RESOURCES + "load.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
-        remind_data=RESOURCES + "i1/REMIND2PyPSAEUR.gdx",
+        remind_data="resources/{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
-        load_timeseries=RESOURCES + "i{iteration}/y{year}/load.csv",
+        load_timeseries="resources/{scenario}/i{iteration}/y{year}/load.csv",
     log:
-        LOGS + "i{iteration}/y{year}/import_REMIND_load.log",
+        "logs/{scenario}/i{iteration}/y{year}/import_REMIND_load.log",
     benchmark:
-        BENCHMARKS + "i{iteration}/y{year}/import_REMIND_load"
+        "benchmarks/{scenario}/i{iteration}/y{year}/import_REMIND_load"
     group:
         "iy"
     script:
@@ -190,40 +188,19 @@ rule import_REMIND_load:
 # Used as RCL (Region-Carrier-Limits) contraints in PyPSA-EUR.
 rule import_REMIND_RCL_p_nom_limits:
     input:
-        remind_data=RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
+        remind_data="resources/{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_mapping="config/technology_mapping.csv",
     output:
-        RCL_p_nom_limits=RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
+        RCL_p_nom_limits="resources/{scenario}/i{iteration}/y{year}/RCL_p_nom_limits.csv",
     log:
-        LOGS + "i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits.log",
+        "logs/{scenario}/i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits.log",
     benchmark:
-        BENCHMARKS + "i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits"
+        "benchmarks/{scenario}/i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits"
     group:
         "iy"
     script:
         "scripts/import_REMIND_RCL_p_nom_limits.py"
-
-
-# # TODO need script to get to same format as original tech_costs
-
-# # TODO
-# # This rule overwrites parts of the network created from rule "remind_add_electricity" as part
-# # of the coupling with REMIND.
-# # The overwrites are:
-# # * <TODO: Add what is overwritten>
-# # rule remind_overwrite_elec_network:
-# #     input:
-# #         network=rules.remind_add_electricity.output[0],
-# #     output:
-# #         network=RESOURCES
-# #         + "networks/elec_i{iteration}_y{year}_remind-overwrites.nc",
-# #     log:
-# #         LOGS + "remind_overwrite_elec_network_i{iteration}_y{year}.log",
-# #     benchmark:
-# #         BENCHMARKS + "remind_overwrite_elec_network_i{iteration}_y{year}"
-# #     group:
-# #         "iy"
 
 
 # CO2 price is integrated into model either via config.yaml or via a wildcard
@@ -255,8 +232,8 @@ rule solve_all_scenarios:
             zip,
             **pd.read_csv(
                 checkpoints.determine_co2_price_scenarios.get(
-                    scenario=config["run"]["name"],
-                    iteration=config["run"]["iteration"],
+                    scenario=wildcards["scenario"],
+                    iteration=wildcards["iteration"],
                 ).output["co2_price_scenarios"],
                 na_filter=False,
             ).to_dict(orient="list")
@@ -270,18 +247,17 @@ rule extract_coupling_parameters:
         networks=rules.solve_all_scenarios.input["networks"],
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_mapping="config/technology_mapping.csv",
-        remind_weights=RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
+        remind_weights="resources/{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
-        capacity_factors=RESULTS
-        + "i{iteration}/coupling-parameter/capacity_factors.csv",
-        generation_shares=RESULTS + "i{iteration}/coupling-parameters/generation_shares.csv",
-        installed_capacities=RESULTS + "i{iteration}/coupling-parameters/installed_capacities.csv",
-        market_values=RESULTS + "i{iteration}/coupling-parameters/market_values.csv",
-        electricity_prices=RESULTS + "i{iteration}/coupling-parameters/electricity_prices.csv",
-        gdx=RESULTS + "i{iteration}/coupling-parameters/PyPSAEUR2REMIND.gdx",
+        capacity_factors="results/{scenario}/i{iteration}/coupling-parameter/capacity_factors.csv",
+        generation_shares="results/{scenario}/i{iteration}/coupling-parameters/generation_shares.csv",
+        installed_capacities="results/{scenario}/i{iteration}/coupling-parameters/installed_capacities.csv",
+        market_values="results/{scenario}/i{iteration}/coupling-parameters/market_values.csv",
+        electricity_prices="results/{scenario}/i{iteration}/coupling-parameters/electricity_prices.csv",
+        gdx="results/{scenario}/i{iteration}/coupling-parameters/PyPSAEUR2REMIND.gdx",
     log:
-        LOGS + "i{iteration}/extract_coupling_parameters.log",
+        "logs/{scenario}/i{iteration}/extract_coupling_parameters.log",
     benchmark:
-        BENCHMARKS + "i{iteration}/extract_coupling_parameters/"
+        "benchmarks/{scenario}/i{iteration}/extract_coupling_parameters/"
     script:
         "scripts/extract_coupling_parameters.py"
