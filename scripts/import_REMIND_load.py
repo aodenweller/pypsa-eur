@@ -2,8 +2,12 @@
 import logging
 
 import pandas as pd
-from _helpers import configure_logging, get_region_mapping, mock_snakemake
-from gams import transfer as gt
+from _helpers import (
+    configure_logging,
+    get_region_mapping,
+    mock_snakemake,
+    read_remind_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +32,15 @@ if __name__ == "__main__":
     load = pd.read_csv(snakemake.input["load_timeseries"], index_col=0)
 
     # Load REMIND-EU demand data
-    remind_data = gt.Container(snakemake.input["remind_data"])
-    demand = remind_data["v32_usableSeDisp"].records
-    demand = demand.rename(
-        columns={
+    demand = read_remind_data(
+        snakemake.input["remind_data"],
+        "v32_usableSeDisp",
+        rename_columns={
             "all_enty": "sector",
             "ttot": "year",
             "all_regi": "region",
             "level": "value",
-        }
+        },
     )
     demand = demand.loc[
         (demand["sector"] == "seel") & (demand["year"] == snakemake.wildcards["year"])

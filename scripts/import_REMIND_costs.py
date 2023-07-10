@@ -6,8 +6,7 @@ from types import SimpleNamespace
 import country_converter as coco
 import numpy as np
 import pandas as pd
-from _helpers import configure_logging, get_region_mapping
-from gams import transfer as gt
+from _helpers import configure_logging, get_region_mapping, read_remind_data
 
 logger = logging.getLogger(__name__)
 
@@ -107,18 +106,17 @@ if __name__ == "__main__":
         region_mapping["PyPSA-EUR"].isin(snakemake.config["countries"])
     ]
 
-    logger.info("Loading REMIND data...")
-    remind_data = gt.Container(snakemake.input["remind_data"])
-
     # Read investment costs
     logger.info("... extracting investment costs")
-    costs = remind_data["vm_costTeCapital"].records.rename(
-        columns={
+    costs = read_remind_data(
+        file_path=snakemake.input["remind_data"],
+        variable_name="vm_costTeCapital",
+        rename_columns={
             "ttot": "year",
             "all_regi": "region",
             "all_te": "technology",
             "level": "value",
-        }
+        },
     )
     costs = costs.loc[costs["year"] == snakemake.wildcards["year"]]
     costs["value"] *= 1e6  # Unit conversion from TUSD/TW to USD/MW
@@ -128,11 +126,13 @@ if __name__ == "__main__":
 
     # Add discount rate
     logger.info("... extracting discount rate")
-    discount_rate = remind_data["p_r"].records.rename(
-        columns={
+    discount_rate = read_remind_data(
+        file_path=snakemake.input["remind_data"],
+        variable_name="p_r",
+        rename_columns={
             "ttot": "year",
             "all_regi": "region",
-        }
+        },
     )
     discount_rate = discount_rate.loc[
         discount_rate["year"] == snakemake.wildcards["year"]
@@ -143,32 +143,28 @@ if __name__ == "__main__":
 
     # Add lifetime
     logger.info("... extracting lifetime")
-    lifetime = (
-        remind_data["pm_data"]
-        .records.query("char == 'lifetime'")
-        .rename(
-            columns={
-                "all_regi": "region",
-                "all_te": "technology",
-            }
-        )
-    )
+    lifetime = read_remind_data(
+        file_path=snakemake.input["remind_data"],
+        variable_name="pm_data",
+        rename_columns={
+            "all_regi": "region",
+            "all_te": "technology",
+        },
+    ).query("char == 'lifetime'")
     lifetime["parameter"] = "lifetime"
     lifetime["unit"] = "years"
     lifetime = lifetime[["region", "technology", "parameter", "value", "unit"]]
 
     # Add fixed and variable O&M
     logger.info("... extracting FOM")
-    fom = (
-        remind_data["pm_data"]
-        .records.query("char == 'omf'")
-        .rename(
-            columns={
-                "all_regi": "region",
-                "all_te": "technology",
-            }
-        )
-    )
+    fom = read_remind_data(
+        file_path=snakemake.input["remind_data"],
+        variable_name="pm_data",
+        rename_columns={
+            "all_regi": "region",
+            "all_te": "technology",
+        },
+    ).query("char == 'omf'")
     fom["value"] *= 100  # Unit conversion from p.u. to %
     fom["parameter"] = "FOM"
     fom["unit"] = "%/year"
@@ -176,16 +172,14 @@ if __name__ == "__main__":
 
     # Add variable O&M
     logger.info("... extracting VOM")
-    vom = (
-        remind_data["pm_data"]
-        .records.query("char == 'omv'")
-        .rename(
-            columns={
-                "all_regi": "region",
-                "all_te": "technology",
-            }
-        )
-    )
+    vom = read_remind_data(
+        file_path=snakemake.input["remind_data"],
+        variable_name="pm_data",
+        rename_columns={
+            "all_regi": "region",
+            "all_te": "technology",
+        },
+    ).query("char == 'omv'")
     vom["value"] *= 1e6 / 8760  # Unit conversion from TUSD/TWa to USD/MWh
     vom["parameter"] = "VOM"
     vom[
@@ -195,14 +189,17 @@ if __name__ == "__main__":
 
     # Add CO2 intensities
     logger.info("... extracting CO2 intensities")
-    co2_intensity = remind_data["fm_dataemiglob"].records.rename(
-        columns={
+    co2_intensity = read_remind_data(
+        file_path=snakemake.input["remind_data"],
+        variable_name="fm_dataemiglob",
+        rename_columns={
             "all_te_2": "technology",
             "all_enty_0": "from_carrier",
             "all_enty_1": "to_carrier",
             "all_enty_3": "emission_type",
-        }
+        },
     )
+
     co2_intensity = co2_intensity.loc[
         (co2_intensity["to_carrier"] == "seel")
         & (co2_intensity["emission_type"] == "co2")
@@ -220,18 +217,25 @@ if __name__ == "__main__":
 
     # Efficiencies; separated into two different variables in REMIND (constant & year-dependent)
     logger.info("... extracting efficiencies")
-    efficiency = pd.concat(
-        [
-            remind_data["pm_eta_conv"].records,
-            remind_data["pm_dataeta"].records,
-        ]
-    ).rename(
-        columns={
+    pm_eta_conv = read_remind_data(
+        file_path=snakemake.input["remind_data"],
+        variable_name="pm_eta_conv",
+        rename_columns={
             "tall": "year",
             "all_regi": "region",
             "all_te": "technology",
-        }
+        },
     )
+    pm_dataeta = read_remind_data(
+        file_path=snakemake.input["remind_data"],
+        variable_name="pm_dataeta",
+        rename_columns={
+            "tall": "year",
+            "all_regi": "region",
+            "all_te": "technology",
+        },
+    )
+    efficiency = pd.concat([pm_eta_conv, pm_dataeta])
     efficiency = efficiency.loc[efficiency["year"] == snakemake.wildcards["year"]]
     efficiency["parameter"] = "efficiency"
     efficiency["unit"] = "p.u."  # TODO check correct unit
@@ -239,12 +243,14 @@ if __name__ == "__main__":
 
     # Fuel costs
     logger.info("... extracting fuel costs")
-    fuel_costs = remind_data["pm_PEPrice"].records.rename(
-        columns={
+    fuel_costs = read_remind_data(
+        file_path=snakemake.input["remind_data"],
+        variable_name="pm_PEPrice",
+        rename_columns={
             "ttot": "year",
             "all_regi": "region",
             "all_enty": "carrier",
-        }
+        },
     )
     fuel_costs = fuel_costs.loc[fuel_costs["year"] == snakemake.wildcards["year"]]
     # Unit conversion from TUSD/TWa to USD/MWh
@@ -252,14 +258,15 @@ if __name__ == "__main__":
 
     # Mapping for primary energy carriers to technologies for electricity generation
     map_carrier_technology = (
-        remind_data["pe2se"]
-        .records.query("all_enty_1 == 'seel'")
-        .rename(
-            columns={
+        read_remind_data(
+            file_path=snakemake.input["remind_data"],
+            variable_name="pe2se",
+            rename_columns={
                 "all_enty_0": "carrier",
                 "all_te_2": "technology",
-            }
+            },
         )
+        .query("all_enty_1 == 'seel'")
         .set_index("carrier")["technology"]
     )
 
@@ -284,14 +291,16 @@ if __name__ == "__main__":
     efficiency = efficiency.reset_index()
 
     logger.info("Calculating weighted technology costs...")
-    weights = remind_data["v32_usableSeTeDisp"].records.rename(
-        columns={
+    weights = read_remind_data(
+        file_path=snakemake.input["remind_data"],
+        variable_name="v32_usableSeTeDisp",
+        rename_columns={
             "ttot": "year",
             "all_regi": "region",
             "all_enty": "carrier",
             "all_te": "technology",
             "level": "value",
-        }
+        },
     )
     weights = weights.loc[
         (weights["year"] == snakemake.wildcards["year"])
@@ -305,7 +314,7 @@ if __name__ == "__main__":
     weights["weight"] = weights["value"].div(
         weights.groupby(weights["general_technology"])["value"].transform("sum")
     )
-    
+
     # Combine all parameters before weighting, remove irrelevant values from outside REMIND regions
     df = pd.concat([costs, lifetime, fom, vom, co2_intensity, efficiency, fuel_costs])
     df["general_technology"] = df["technology"].map(map_remind_to_general)
@@ -334,7 +343,7 @@ if __name__ == "__main__":
         )
         .rename(columns={"weighted_value": "value"})
     )
-    
+
     # Map general technologies to PyPSA-EUR technologies
     df = df.merge(
         map_general_to_pypsaeur, left_on="general_technology", right_on="general"

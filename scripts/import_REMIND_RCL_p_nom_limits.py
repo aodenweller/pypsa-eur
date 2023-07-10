@@ -4,7 +4,7 @@ import logging
 
 import numpy as np
 import pandas as pd
-from _helpers import configure_logging, get_technology_mapping
+from _helpers import configure_logging, get_technology_mapping, read_remind_data
 from gams import transfer as gt
 
 logger = logging.getLogger(__name__)
@@ -27,13 +27,14 @@ if __name__ == "__main__":
     configure_logging(snakemake)
 
     logger.info("Loading REMIND data ...")
-    remind_data = gt.Container(snakemake.input["remind_data"])
-    min_capacities = remind_data["p32_preInvCap"].records.rename(
-        columns={
+    min_capacities = read_remind_data(
+        snakemake.input["remind_data"],
+        "p32_preInvCap",
+        rename_columns={
             "tPy32": "year",
             "regPy32": "region_REMIND",
             "tePy32": "remind_technology",
-        }
+        },
     )
     min_capacities["value"] *= 1e6  # unit conversion: TW to MW
     min_capacities = min_capacities.loc[

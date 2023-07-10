@@ -4,90 +4,44 @@ import logging
 
 import country_converter as coco
 import pandas as pd
-from _helpers import configure_logging
-from gams import transfer as gt
+from _helpers import configure_logging, get_region_mapping, read_remind_data
 
 logger = logging.getLogger(__name__)
 
 from types import SimpleNamespace
 
-if __name__ == "__main__":
-    if "snakemake" not in globals():
-        snakemake = SimpleNamespace()
-        snakemake.input = {
-            "region_mapping": "../config/regionmapping_21_EU11.csv",
-            "remind_data": "../resources/no_scenario/i1/REMIND2PyPSAEUR.gdx",
-        }
-        snakemake.config = {
-            "countries": ["DE", "FR", "PL"],
-            "scenario": {
-                "year": [
-                    2025,
-                    2030,
-                    2035,
-                    2040,
-                    2045,
-                    2050,
-                    2055,
-                    2060,
-                    2070,
-                    2080,
-                    2090,
-                    2100,
-                    2110,
-                    2130,
-                    2150,
-                ],
-                "ll": ["copt"],
-                "simpl": [""],
-                "clusters": ["4"],
-                "opts": ["1H-EpREMIND"],
-            },
-        }
-        snakemake.wildcards = {
-            "scenario": "no_scenario",
-            "iteration": "1",
-        }
-        snakemake.output = {
-            "co2_price_scenarios": "../resources/no_scenario/i1/co2_price_scenarios.csv"
-        }
-    else:
-        configure_logging(snakemake)
+if "snakemake" not in globals():
+    from _helpers import mock_snakemake
+    
+    snakemake = mock_snakemake(
+        "determine_CO2_price_scenarios",
+        configfiles="config.remind.yaml",
+        iteration="1",
+        scenario="no_scenario",
+    )
+    
+configure_logging(snakemake)
 
-remind_data = gt.Container(snakemake.input["remind_data"])
-region_mapping = pd.read_csv(snakemake.input["region_mapping"], sep=";").rename(
-    columns={"RegionCode": "REMIND-EU"}
+# Load and transform region mapping
+region_mapping = get_region_mapping(
+    snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
 )
-region_mapping["PyPSA-EUR"] = coco.convert(
-    names=region_mapping["CountryCode"], to="ISO2"
-)
-region_mapping = region_mapping[["PyPSA-EUR", "REMIND-EU"]]
-
-# Append Kosovo to region mapping, not present in standard mapping and uses non-standard "KV" in PyPSA-EUR
-region_mapping = pd.concat(
-    [
-        region_mapping,
-        pd.DataFrame(
-            {
-                "REMIND-EU": "NES",
-                "PyPSA-EUR": "KV",
-            },
-            columns=["PyPSA-EUR", "REMIND-EU"],
-            index=[0],
-        ),
-    ]
-).reset_index(drop=True)
-
-# Limit mapping to countries modelled with PyPSA-EUR
+region_mapping = pd.DataFrame(region_mapping).T.reset_index()
+region_mapping.columns = ["PyPSA-EUR", "REMIND-EU"]
 region_mapping = region_mapping.loc[
     region_mapping["PyPSA-EUR"].isin(snakemake.config["countries"])
 ]
-df = remind_data["p_PriceCO2"].records.rename(
-    columns={
+# %%
+df = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="p_PriceCO2",
+    rename_columns={
         "tall": "year",
         "all_regi": "region",
-    }
+    },
 )
+
+# %%
 # Calculate mean co2 price across all regions overlapping between REMIND and PyPSA-EUR countries for each year
 df = (
     df.loc[df["region"].isin(region_mapping["REMIND-EU"])]
