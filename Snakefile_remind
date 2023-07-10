@@ -173,7 +173,7 @@ rule import_REMIND_load:
     input:
         load_timeseries=RESOURCES + "load.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
-        remind_data="resources/no_scenario/i1/REMIND2PyPSAEUR.gdx",
+        remind_data=RESOURCES + "i1/REMIND2PyPSAEUR.gdx",
     output:
         load_timeseries=RESOURCES + "i{iteration}/y{year}/load.csv",
     log:
