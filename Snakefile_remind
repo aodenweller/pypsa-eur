@@ -118,6 +118,7 @@ rule download_and_prepare:
             rules.retrieve_cost_data.output[0],
             year=[2020, 2025, 2030, 2035, 2040, 2045, 2050],
         ),
+        rules.build_electricity_demand.output[0],
         **{
             k: v
             for k, v in rules.add_electricity.input.items()
