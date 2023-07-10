@@ -249,7 +249,7 @@ rule extract_coupling_parameters:
         technology_mapping="config/technology_mapping.csv",
         remind_weights="resources/{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
-        capacity_factors="results/{scenario}/i{iteration}/coupling-parameter/capacity_factors.csv",
+        capacity_factors="results/{scenario}/i{iteration}/coupling-parameters/capacity_factors.csv",
         generation_shares="results/{scenario}/i{iteration}/coupling-parameters/generation_shares.csv",
         installed_capacities="results/{scenario}/i{iteration}/coupling-parameters/installed_capacities.csv",
         market_values="results/{scenario}/i{iteration}/coupling-parameters/market_values.csv",
