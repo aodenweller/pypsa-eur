@@ -450,7 +450,10 @@ def update_config_with_sector_opts(config, sector_opts):
 
 
 def get_technology_mapping(
-    fn, source: str = "REMIND-EU", target: str = "PyPSA-EUR"
+    fn,
+    source: str = "REMIND-EU",
+    target: str = "PyPSA-EUR",
+    flatten: bool = False,
 ) -> dict:
     """
     Get a mapping between technologies in REMIND and PyPSA-EUR.
@@ -464,25 +467,40 @@ def get_technology_mapping(
     fn : str
         Path to the technology mapping file.
     source : str, optional
-        Technology mapping source, by default "remind-eu"
+        Technology mapping source.
+        Valid values are: PyPSA-EUR, General, REMIND-EU.
+        Default "REMIND-EU".
     target : str, optional
-        Technology mapping target, by default "pypsa-eur"
+        Technology mapping target.
+        Valid values are: PyPSA-EUR, General, REMIND-EU.
+        Default "PyPSA-EUR".
+    flatten : bool, optional
+        Whether to try to flatten the mapping; only valid
+        if the mapping is unique for all keys.
+        Default False.
 
     Returns
     -------
     dict
-        Dictionary with source technologies as keys and a list of target technologies as values.
+        Dictionary with source technologies as keys and a list of target technologies (flatten = False) or a single element (flatten = True) as values.
     """
     # Group by source first and aggregate targets to list
     # as targets could be one or more technologies which would
     # vanish if we just convert it to a dict
-    return (
+    df = (
         pd.read_csv(fn)
         .groupby(source.lower())[target.lower()]
         .apply("unique")
         .apply(list)
-        .to_dict()
     )
+
+    if flatten:
+        if (df.apply(lambda x: len(x)) != 1).any():
+            logger.error(f"Cannot flatten mapping. Non-unique map contained:\n {df}")
+
+        df = df.apply(lambda x: x[0])
+
+    return df.to_dict()
 
 
 def get_region_mapping(
@@ -548,3 +566,35 @@ def get_region_mapping(
     )
 
     return region_mapping
+
+
+def read_remind_data(file_path, variable_name, rename_columns={}):
+    """
+    Auxiliary function for standardised reading of REMIND-EU data files to
+    pandas.DataFrame.
+
+    Here all values read are considered variable, i.e. use
+    "variable_name" also for what is considered a "parameter" in the GDX
+    file.
+    """
+    import re
+
+    from gams import transfer as gt
+
+    remind_data = gt.Container(file_path)
+
+    data = remind_data[variable_name]
+    df = data.records
+
+    # Hack to make weird column naming with GAMS API <= 42 comptaible with >= 43
+    # where columns where always numbered with "_<index>" even if no duplicate columns were present
+    # but we want to keep duplicate columns differentiation with "_1" and "_2" if columns with same names are present,
+    # e.g. for "pe2se" with two columns named "all_enty"
+    if max({i: data.domain.count(i) for i in data.domain}.values()) == 1:
+        df.columns = data.domain + list(
+            df.columns[len(data.domain) :]
+        )  # Preserve all remaining column names, espc. "value" or "level" column name for parameters or variables
+
+    df = df.rename(columns=rename_columns)
+
+    return df
