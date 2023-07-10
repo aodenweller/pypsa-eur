@@ -31,9 +31,9 @@ if __name__ == "__main__":
         snakemake.input["remind_data"],
         "p32_preInvCap",
         rename_columns={
-            "tPy32": "year",
-            "regPy32": "region_REMIND",
-            "tePy32": "remind_technology",
+            "ttot": "year",
+            "all_regi": "region_REMIND",
+            "all_te": "remind_technology",
         },
     )
     min_capacities["value"] *= 1e6  # unit conversion: TW to MW
