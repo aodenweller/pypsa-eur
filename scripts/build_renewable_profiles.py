@@ -372,4 +372,5 @@ if __name__ == "__main__":
         ds["profile"] = ds["profile"].where(ds["profile"] >= min_p_max_pu, 0)
 
     ds.to_netcdf(snakemake.output.profile)
-    client.shutdown()
+    if client:
+        client.shutdown()
