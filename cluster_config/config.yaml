@@ -1,0 +1,58 @@
+cluster:
+  mkdir -p logs/snakemake/{rule} &&
+  sbatch
+    --partition={resources.partition}
+    --qos={resources.qos}
+    --cpus-per-task={threads}
+    --mem={resources.mem_mb}
+    --job-name=Py-{rule}-{wildcards}
+    --output=logs/snakemake/{rule}/{rule}-{wildcards}-%j.out
+    --time={resources.time}
+set-resources:
+  retrieve_databundle:
+    partition: "io"
+    qos: "io"
+  retrieve_cutout:
+    partition: "io"
+    qos: "io"
+  retrieve_cost_data:
+    partition: "io"
+    qos: "io"
+  retrieve_natura_raster:
+    partition: "io"
+    qos: "io"
+  retrieve_electricity_demand:
+    partition: "io"
+    qos: "io"
+  retrieve_ship_raster:
+    partition: "io"
+    qos: "io"
+  determine_co2_price_scenarios:
+    partition: "io"
+    qos: "io"
+  solve_all_scenarios:
+    partition: "io"
+    qos: "io"
+  extract_coupling_parameters:
+    partition: "io"
+    qos: "io"
+    mem_mib: 1000
+    time: 5
+
+default-resources:
+  - partition=standard
+  - qos=short
+  - nodes=1
+  - mem_mib=500
+  - time=60
+restart-times: 3
+max-jobs-per-second: 10
+max-status-checks-per-second: 1
+local-cores: 1
+cores: 4
+latency-wait: 60
+jobs: 500
+keep-going: True
+rerun-incomplete: True
+printshellcmds: True
+scheduler: greedy
