@@ -17,7 +17,6 @@ min_version("7.7")
 localrules:
     purge,
     dag,
-    determine_co2_price_scenarios,
 
 
 wildcard_constraints:
@@ -240,8 +239,7 @@ rule solve_all_scenarios:
         ),
 
 
-# TODO align --config remind_scenario= iteration= with
-# calls to rules with wildcards like below
+# Extract coupling parameters from PyPSA-EUR runs for hand-over to next iteration of REMIND-EU
 rule extract_coupling_parameters:
     input:
         networks=rules.solve_all_scenarios.input["networks"],
