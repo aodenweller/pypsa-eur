@@ -11,34 +11,34 @@ cluster:
     --parsable # Allow canceling snakemake-submitted slum jobs using Ctrl+c
 set-resources:
   retrieve_databundle:
-    - partition="io"
-    - qos="io"
+    partition: "io"
+    qos: "io"
   retrieve_cutout:
-    - partition="io"
-    - qos="io"
+    partition: "io"
+    qos: "io"
   retrieve_cost_data:
-    - partition="io"
-    - qos="io"
+    partition: "io"
+    qos: "io"
   retrieve_natura_raster:
-    - partition="io"
-    - qos="io"
+    partition: "io"
+    qos: "io"
   retrieve_electricity_demand:
-    - partition="io"
-    - qos="io"
+    partition: "io"
+    qos: "io"
   retrieve_ship_raster:
-    - partition="io"
-    - qos="io"
+    partition: "io"
+    qos: "io"
   determine_co2_price_scenarios:
-    - partition="io"
-    - qos="io"
+    partition: "io"
+    qos: "io"
   solve_all_scenarios:
-    - partition="io"
-    - qos="io"
+    partition: "io"
+    qos: "io"
   extract_coupling_parameters:
-    - partition="io"
-    - qos="io"
-    - mem_mib=1000
-    - time=00:05:00"
+    partition: "io"
+    qos: "io"
+    mem_mib: 1000
+    time: "00:05:00"
 
 default-resources:
   - partition=standard
