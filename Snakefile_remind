@@ -78,29 +78,6 @@ rule dag:
         """
 
 
-# # Import PyPSA-EUR standard workflow as module
-# # Overwrite or inherit from rules below to adjust for REMIND coupling
-# module pypsa_eur:
-#     snakefile:
-#         # The unmodified PyPSA-EUR Snakefile
-#         "Snakefile"
-#     config:
-#         # "config.remind.yaml" is a modified version of the PyPSA-EUR config.yaml
-#         # and can directly be passed to the module
-#         config
-
-
-# # Import all rules from pypsa_eur module with prefix
-# use rule * from pypsa_eur as pypsa_eur_*
-
-
-# # Variables from pypsa_eur module, alias here for better readibility
-# BENCHMARKS = pypsa_eur.BENCHMARKS
-# LOGS = pypsa_eur.LOGS
-# RESOURCES = pypsa_eur.RESOURCES
-# RESULTS = pypsa_eur.RESULTS
-
-
 # Rule which downloads and prepares all files which will not change
 # during REMIND <-> PyPSA-EUR coupled iterations and repeating runs.
 # * Use for downloading on e.g. login node with internet connection
@@ -114,7 +91,7 @@ rule download_and_prepare:
         "datafiles for the model."
     input:
         expand(
-            rules.retrieve_cost_data.output[0],
+            "data/costs_{year}.csv",
             year=[2020, 2025, 2030, 2035, 2040, 2045, 2050],
         ),
         rules.build_electricity_demand.output[0],
@@ -128,15 +105,6 @@ rule download_and_prepare:
 # # This part contains all rules, which get data from REMIND between iterations.
 # # PyPSA-EUR networks are solved between iterations via snakemake calls:
 # # > snakemake -call -s Snakefile_remind --config iteration=<iteration> -- remind_solve_all_networks
-# #
-# # Most of the rules below are rules inherited from PyPSA-EUR, where input files change
-# # during the iterations between REMIND and PyPSA-EUR; therefore the input/output files of the rules
-# # are modified (but not the model setup itself, i.e. Python scripts).
-# # Some additional rules are created for helping to setup the model or to export results for use later by REMIND.
-# #
-# # Naming:
-# # * Original rules from PyPSA-EUR are prefixed as: pypsa_eur_<rulename>
-# # * New rules and modified rules (via inheritance "use rule ... as ... with") are prefixed as: remind_<rulename>
 # #
 # # Some of the new rules have additional wildcards:
 # # * {year}: Indicating the REMIND year for which the model is built
