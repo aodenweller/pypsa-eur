@@ -8,7 +8,7 @@ cluster:
     --cpus-per-task={threads}
     --job-name=PyPSAEUR-{rule}-{wildcards}
     --output=logs/snakemake/{rule}/{rule}-{wildcards}-%j.out
-    --parsable # Allow canceling snakemake-submitted slum jobs using Ctrl+c
+    --parsable
 set-resources:
   retrieve_databundle:
     partition: "io"
@@ -47,7 +47,7 @@ default-resources:
   - mem_mib=500
   - time="00:60:00"
 
-# Allow canceling of snakemake-submitted slurm jobs using Ctrl+c
+# Allow canceling of snakemake-submitted slurm jobs using Ctrl+c in combination with sbatch --parsable
 cluster-cancel: True
 jobs: 500
 keep-going: True
