@@ -48,7 +48,7 @@ default-resources:
   - time="00:60:00"
 
 # Allow canceling of snakemake-submitted slurm jobs using Ctrl+c in combination with sbatch --parsable
-cluster-cancel: True
+cluster-cancel: scancel
 jobs: 500
 keep-going: True
 latency-wait: 60
