@@ -6,6 +6,7 @@ from shutil import copyfile, move, rmtree
 import numpy as np
 import pandas as pd
 from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
+import http.client as http_client
 
 HTTP = HTTPRemoteProvider()
 
@@ -76,11 +77,26 @@ rule dag:
         """
 
 
-# Use the option --config internet_access=True for your snakemake call to download and prepare input files shared across iterations and scenarios
-# Without internet access snakemake will fail if these rules are included as it will try to check for modified remote input files.
-# This option can (and it is recommended to) be used by setting
-# --config internet_access="I'm running on a fracking cluster without internet access on the computing nodes, but this time I'm on the login node", but we use a more concise name here.
-if config.get("internet_access", False):
+# This part contains all rules which cause snakemake to try to access the internet
+# (e.g. for checking on updated files). Since this is not possible on some cluster systems,
+# with compute nodes without internet access, we check for internet access first.
+# If internet access is not available, we do not include these rules, therefore preventing
+# snakemake from trying to access the internet even in the background while building the DAG.
+def check_internet_access() -> bool:
+    # kudos to: https://stackoverflow.com/questions/3764291/how-can-i-see-if-theres-an-available-and-active-network-connection-in-python
+    conn = http_client.HTTPConnection(
+        "zenodo.org", timeout=5
+    )  # need access to zenodo anyway
+    try:
+        conn.request("HEAD", "/")
+        return True
+    except:
+        return False
+    finally:
+        conn.close()
+
+
+if check_internet_access():
 
     include: "rules/retrieve.smk"
 
