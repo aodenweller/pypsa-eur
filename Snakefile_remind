@@ -31,7 +31,6 @@ wildcard_constraints:
 configfile: "config.remind.yaml"
 
 
-COSTS = f"data/costs_{config['costs']['year']}.csv"
 ATLITE_NPROCESSES = config["atlite"].get("nprocesses", 4)
 
 run = config.get("run", {})
@@ -46,7 +45,6 @@ RESULTS = "results/" + RDIR if not run.get("shared_resources") else "resources/"
 
 include: "rules/common.smk"
 include: "rules/collect.smk"
-include: "rules/retrieve.smk"
 include: "rules/build_electricity.smk"
 include: "rules/solve_electricity.smk"
 include: "rules/postprocess.smk"
@@ -78,28 +76,36 @@ rule dag:
         """
 
 
-# Rule which downloads and prepares all files which will not change
-# during REMIND <-> PyPSA-EUR coupled iterations and repeating runs.
-# * Use for downloading on e.g. login node with internet connection
-# * will create some load ~30m - 1h for creating renewable profiles
-# run with:
-# > snakemake -call -s Snakefile_remind download_and_prepare
-rule download_and_prepare:
-    message:
-        "Downloading and preparing all single-execution rules. "
-        "Running this rule requires an internet connection for downloading "
-        "datafiles for the model."
-    input:
-        expand(
-            "data/costs_{year}.csv",
-            year=[2020, 2025, 2030, 2035, 2040, 2045, 2050],
-        ),
-        rules.build_electricity_demand.output[0],
-        **{
-            k: v
-            for k, v in rules.add_electricity.input.items()
-            if "{scenario}" not in v
-        },
+# Use the option --config internet_access=True for your snakemake call to download and prepare input files shared across iterations and scenarios
+# Without internet access snakemake will fail if these rules are included as it will try to check for modified remote input files.
+# This option can (and it is recommended to) be used by setting
+# --config internet_access="I'm running on a fracking cluster without internet access on the computing nodes, but this time I'm on the login node", but we use a more concise name here.
+if config.get("internet_access", False):
+
+    include: "rules/retrieve.smk"
+
+    # Rule which downloads and prepares all files which will not change
+    # during REMIND <-> PyPSA-EUR coupled iterations and repeating runs.
+    # * Use for downloading on e.g. login node with internet connection
+    # * will create some load ~30m - 1h for creating renewable profiles
+    # run with:
+    # > snakemake -call -s Snakefile_remind download_and_prepare
+    rule download_and_prepare:
+        message:
+            "Downloading and preparing all single-execution rules. "
+            "Running this rule requires an internet connection for downloading "
+            "datafiles for the model."
+        input:
+            expand(
+                "data/costs_{year}.csv",
+                year=[2020, 2025, 2030, 2035, 2040, 2045, 2050],
+            ),
+            rules.build_electricity_demand.output[0],
+            **{
+                k: v
+                for k, v in rules.add_electricity.input.items()
+                if "{scenario}" not in v
+            },
 
 
 # # This part contains all rules, which get data from REMIND between iterations.
