@@ -507,6 +507,7 @@ def get_region_mapping(
     fn,
     source: str = "REMIND-EU",
     target: str = "PyPSA-EUR",
+    flatten: bool = False,
 ) -> dict:
     """
     Get a mapping between regions in REMIND and PyPSA-EUR.
@@ -525,6 +526,10 @@ def get_region_mapping(
         Region mapping source, by default "remind-eu"
     target : str, optional
         Region mapping target, by default "pypsa-eur"
+    flatten : bool, optional
+        Whether to try to flatten the mapping; only valid
+        if the mapping is unique for all keys.
+        Default False.
     """
     import country_converter as coco
 
@@ -562,10 +567,15 @@ def get_region_mapping(
         region_mapping.groupby(source.lower())[target.lower()]
         .apply("unique")
         .apply(list)
-        .to_dict()
     )
 
-    return region_mapping
+    if flatten:
+        if (region_mapping.apply(lambda x: len(x)) != 1).any():
+            logger.error(f"Cannot flatten mapping. Non-unique map contained:\n {df}")
+
+        region_mapping = region_mapping.apply(lambda x: x[0])
+
+    return region_mapping.to_dict()
 
 
 def read_remind_data(file_path, variable_name, rename_columns={}):
@@ -586,14 +596,25 @@ def read_remind_data(file_path, variable_name, rename_columns={}):
     data = remind_data[variable_name]
     df = data.records
 
-    # Hack to make weird column naming with GAMS API <= 42 comptaible with >= 43
-    # where columns where always numbered with "_<index>" even if no duplicate columns were present
-    # but we want to keep duplicate columns differentiation with "_1" and "_2" if columns with same names are present,
-    # e.g. for "pe2se" with two columns named "all_enty"
-    if max({i: data.domain.count(i) for i in data.domain}.values()) == 1:
-        df.columns = data.domain + list(
-            df.columns[len(data.domain) :]
-        )  # Preserve all remaining column names, espc. "value" or "level" column name for parameters or variables
+    if df:
+        # Hack to make weird column naming with GAMS API <= 42 comptaible with >= 43
+        # where columns where always numbered with "_<index>" even if no duplicate columns were present
+        # but we want to keep duplicate columns differentiation with "_1" and "_2" if columns with same names are present,
+        # e.g. for "pe2se" with two columns named "all_enty"
+        if max({i: data.domain.count(i) for i in data.domain}.values()) == 1:
+            df.columns = data.domain + list(
+                df.columns[len(data.domain) :]
+            )  # Preserve all remaining column names, espc. "value" or "level" column name for parameters or variables
+    else:
+        # Handle empty records by creating an empty DataFrame to return
+
+        # assign last_column name based on the datatype of data
+        if isinstance(data, gt.Parameter):
+            last_column_name = "value"
+        elif isinstance(data, gt.Variable):
+            last_column_name = "level"
+
+        df = pd.DataFrame(columns=data.domain + [last_column_name])
 
     df = df.rename(columns=rename_columns, errors="raise")
 
