@@ -215,9 +215,12 @@ def add_RCL_constraints(n, config):
     Add RCL (region & carrier limit) constraint to the network for region and
     carrier groups.
 
-    Add a minimum level for generator nominal capacity per group of countries (=region) and group of carriers (=technology_group).
-    Similar idea as the CCL constraint.
-    Based on input csv file; functionality used for REMIND coupling.
+    The RCL constraint consists of two individual constraints:
+    1. Add a maximum level for generator nominal capacity per group of countries (=region) and group of carriers (=technology_group) which affects the "RCL" generators, i.e. copies of generators attach to each bus specifically for this constraint which have no capital_cost; this constraint limits their maximum expansion.
+    2. Add a minimum level for generator nominal capacity per group of countries (=region) and group of carriers (=technology_group), which affects the "RCL" generators and their original counterparts with capital_cost > 0, this constraint ensures the minimum expansion of RCL generators and allows the other generators to be extended beyond if necessary.
+
+    The RCL_p_nom_limits.csv file thus provides the minimum capacity that will be installed.
+    For cases of non-extendable generators with fixed capacity, their capacities are taken into account and subtracted from the RCL constraints values, such that the RCL generators are extended to exactly the RCL_p_nom_limits.csv values minus existing capacities.
 
     Parameters
     ----------
@@ -231,65 +234,97 @@ def add_RCL_constraints(n, config):
     """
 
     logger.info(
-        "Adding generation capacity constraints (RCL) per carrier groups and country groups"
+        "Adding generation capacity constraints (RCL) per carrier groups (general_technology) and country groups (REMIND regions)."
     )
-    generators = n.generators.query("p_nom_extendable").rename_axis(
-        index="Generator-ext"
-    )
+    generators = n.generators.copy().rename_axis(index="Generator-ext")
 
-    # Map generators to country groups (REMIND reginos) and carrier groups (general technologies aggregated from REMIND technologies)
+    # Map generators to country groups (REMIND regions) and carrier groups (general technologies aggregated from REMIND technologies)
     generators["country"] = generators.bus.map(n.buses.country)
-    generators["region"] = generators["country"].map(
-        {
-            k: v[0]
-            for k, v in get_region_mapping(
-                snakemake.input["region_mapping"],
-                source="PyPSA-EUR",
-                target="REMIND-EU",
-            ).items()
-        }
+    generators["region_REMIND"] = generators["country"].map(
+        get_region_mapping(
+            snakemake.input["region_mapping"],
+            source="PyPSA-EUR",
+            target="REMIND-EU",
+            flatten=True,
+        )
     )
     generators["general_technology"] = generators.carrier.map(
-        {
-            k: v[0]
-            for k, v in get_technology_mapping(
-                snakemake.input["technology_mapping"],
-                source="pypsa-eur",
-                target="general",
-            ).items()
-        }
+        get_technology_mapping(
+            snakemake.input["technology_mapping"],
+            source="pypsa-eur",
+            target="general",
+            flatten=True,
+        )
     )
-
-    grouper = [generators.region, generators.general_technology]
 
     # RHS: p_nom_min from REMIND-EU
     p_nom_limits = pd.read_csv(
         snakemake.input["RCL_p_nom_limits"],
         index_col=["region_REMIND", "general_technology"],
-    )
-    # Make sure the limit for p_nom_min does not exceed technical p_nom_max capacities
-    # If it does, reduce limits to p_nom_max, i.e. force full expansion of generators
-    # 0.999: small factor <~1 to make sure it can actually solve if p_nom_max is basis for constraint
-    p_nom_limits["p_nom_max"] = generators.groupby(grouper)["p_nom_max"].sum() * 0.999
-    if (p_nom_limits["p_nom_min"] > p_nom_limits["p_nom_max"]).any():
-        logger.info(
-            f"Relaxing RCL constraint as required p_nom_min exceeds some p_nom_max in model. Old limits:\n{p_nom_limits['p_nom_min']}"
-        )
-        p_nom_limits["p_nom_min"] = p_nom_limits.min(axis="columns")
-        logger.info(f"New limits:\n{p_nom_limits['p_nom_min']}")
+    )["p_nom_min"]
+
+    ## 1. Constraint: Maximum capacity for RCL generators
+
+    # Get all RCL generators and their non-RCL counterparts; apply the constraint to their combined p_nom_opt
+    idx_rcl = n.generators.query("index.str.contains(r' \(RCL\)')").index
+    generators_rcl = generators.loc[idx_rcl]
+    grouper_rcl = [
+        generators_rcl["region_REMIND"],
+        generators_rcl["general_technology"],
+    ]
 
     # LHS: sum of generator nominal capacity per region / general technology
-    grouper = xr.DataArray(pd.MultiIndex.from_arrays(grouper), dims=["Generator-ext"])
-    p_nom = n.model["Generator-p_nom"]
-    lhs = p_nom.groupby(grouper).sum()
+    grouper_rcl = xr.DataArray(
+        pd.MultiIndex.from_arrays(grouper_rcl), dims=["Generator-ext"]
+    )
+    p_nom_rcl = n.model["Generator-p_nom"].loc[generators_rcl.index]
+    lhs_rcl = p_nom_rcl.groupby(grouper_rcl).sum()
 
     # Determine overlapping indices to only create constraint for generator technologies which are actually constrained by the REMIND-EU
-    indexes = lhs.indexes["group"].intersection(p_nom_limits.index)
-    if not indexes.empty:
+    indexes_rcl = lhs_rcl.indexes["group"].intersection(p_nom_limits.index)
+    if not indexes_rcl.empty:
         # Add constraint
         n.model.add_constraints(
-            lhs.sel(group=indexes) >= p_nom_limits.loc[indexes, "p_nom_min"],
-            name="RCL_p_nom_min",
+            lhs_rcl.sel(group=indexes_rcl) <= p_nom_limits.loc[indexes_rcl],
+            name="RCL_p_nom_max",
+        )
+
+    ## 2. Constraint: Minimum capacity for RCL generators and non-RCL counterparts
+    # Get all RCL generators and their non-RCL counterparts; apply the constraint to their combined p_nom_opt
+    idx_pairs = idx_rcl.append(idx_rcl.str.replace(" (RCL)", ""))
+    generators_pairs = generators.loc[idx_pairs]
+
+    # Substract existing capacities for non-extendable generators
+    p_nom_limits = p_nom_limits.sub(
+        generators_pairs.query("p_nom_extendable == False")
+        .groupby(["region_REMIND", "general_technology"])["p_nom"]
+        .sum(),
+        fill_value=0,
+    )
+
+    # Only consider extendable generators; non-extendable generators do not have variables in n.model["Generator-p_nom"]
+    generators_pairs = generators_pairs.query("p_nom_extendable == True")
+    grouper_pairs = [
+        generators_pairs["region_REMIND"],
+        generators_pairs["general_technology"],
+    ]
+
+    # LHS: sum of generator nominal capacity per region / general technology
+    grouper_pairs = xr.DataArray(
+        pd.MultiIndex.from_arrays(grouper_pairs), dims=["Generator-ext"]
+    )
+    p_nom_pairs = n.model["Generator-p_nom"].loc[
+        generators_pairs.query("p_nom_extendable == True").index
+    ]
+    lhs_pairs = p_nom_pairs.groupby(grouper_pairs).sum()
+
+    # Determine overlapping indices to only create constraint for generator technologies which are actually constrained by the REMIND-EU
+    indexes_pairs = lhs_pairs.indexes["group"].intersection(p_nom_limits.index)
+    if not indexes_pairs.empty:
+        # Add constraint
+        n.model.add_constraints(
+            lhs_pairs.sel(group=indexes_pairs) >= p_nom_limits.loc[indexes_pairs],
+            name="RCL-and-counterparts_p_nom_min",
         )
 
 
@@ -737,14 +772,15 @@ if __name__ == "__main__":
         from _helpers import mock_snakemake
 
         snakemake = mock_snakemake(
-            "solve_sector_network",
-            configfiles="test/config.overnight.yaml",
+            "solve_network",
+            configfiles="config.remind.yaml",
             simpl="",
-            opts="",
-            clusters="5",
-            ll="v1.5",
-            sector_opts="CO2L0-24H-T-H-B-I-A-solar+p3-dist1",
-            planning_horizons="2030",
+            opts="1H-RCL-0.0",
+            clusters="4",
+            ll="copt",
+            scenario="test",
+            iteration="1",
+            year="2040",
         )
     configure_logging(snakemake)
     if "sector_opts" in snakemake.wildcards.keys():

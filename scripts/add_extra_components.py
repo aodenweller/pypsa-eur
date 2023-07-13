@@ -55,7 +55,7 @@ import logging
 import numpy as np
 import pandas as pd
 import pypsa
-from _helpers import configure_logging
+from _helpers import configure_logging, get_region_mapping, get_technology_mapping
 from add_electricity import load_costs, sanitize_carriers
 
 idx = pd.IndexSlice
@@ -225,11 +225,60 @@ def attach_hydrogen_pipelines(n, costs, extendable_carriers):
     )
 
 
+def attach_RCL_generators(n, fp_p_nom_limits, fp_region_mapping, fp_technology_mapping):
+    """
+    Add additional generators to network for the RCL constraint used in the
+    REMIND-EU <-> PyPSA-EUR coupling.
+    """
+
+    p_nom_limits = pd.read_csv(fp_p_nom_limits)
+    region_mapping = get_region_mapping(
+        fp_region_mapping, source="REMIND-EU", target="PyPSA-Eur"
+    )
+    technology_mapping = get_technology_mapping(
+        fp_technology_mapping, source="General", target="PyPSA-Eur"
+    )
+
+    # Apply mapping from REMIND/general to PyPSA-EUR countries and carriers
+    p_nom_limits["country"] = p_nom_limits["region_REMIND"].map(region_mapping)
+    p_nom_limits["carrier"] = p_nom_limits["general_technology"].map(technology_mapping)
+
+    # Flatten country column entries such that all lists are converted into individual rows
+    p_nom_limits = p_nom_limits.explode("country").explode("carrier")
+    # Add country-reference to generators for mapping
+    n.generators["country"] = n.generators["bus"].map(n.buses["country"])
+
+    # Select all generators from n.generators where the combination of country and carrier can be found in p_nom_limits
+    rcl_generators = n.generators.join(
+        p_nom_limits.set_index(["country", "carrier"]),
+        on=["country", "carrier"],
+        how="right",
+        rsuffix="_rcl",
+    ).dropna(subset=["p_nom_max"])
+
+    # Modify properties of to-be-added RCL generators which differ from the original generators
+    rcl_generators.index = rcl_generators.index + " (RCL)"
+    rcl_generators["capital_cost"] = 1.0  # small value to help solver
+    rcl_generators["p_nom_extendable"] = True
+    rcl_generators["p_nom_min"] = 0.0
+    rcl_generators["p_nom_max"] = np.inf
+
+    # Finally add RCL generators to network
+    n.madd("Generator", rcl_generators.index, **rcl_generators)
+
+
 if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
-        snakemake = mock_snakemake("add_extra_components", simpl="", clusters=5)
+        snakemake = mock_snakemake(
+            "add_extra_components",
+            simpl="",
+            clusters=4,
+            scenario="test",
+            iteration=1,
+            year=2040,
+        )
     configure_logging(snakemake)
 
     n = pypsa.Network(snakemake.input.network)
@@ -244,7 +293,12 @@ if __name__ == "__main__":
     attach_storageunits(n, costs, extendable_carriers, max_hours)
     attach_stores(n, costs, extendable_carriers)
     attach_hydrogen_pipelines(n, costs, extendable_carriers)
-
+    attach_RCL_generators(
+        n,
+        snakemake.input["RCL_p_nom_limits"],
+        snakemake.input["region_mapping"],
+        snakemake.input["technology_mapping"],
+    )
     sanitize_carriers(n, snakemake.config)
 
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
