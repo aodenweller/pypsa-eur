@@ -28,24 +28,18 @@ set-resources:
   retrieve_ship_raster:
     partition: "io"
     qos: "io"
-  determine_co2_price_scenarios:
-    partition: "io"
-    qos: "io"
-  solve_all_scenarios:
-    partition: "io"
-    qos: "io"
   extract_coupling_parameters:
-    partition: "io"
-    qos: "io"
     mem_mib: 1000
     time: "00:05:00"
+  build_renewable_profiles:
+    time: "00:60:00"
 
 default-resources:
-  - partition=standard
-  - qos=short
+  - partition=priority
+  - qos=priority
   - nodes=1
   - mem_mib=500
-  - time="00:60:00"
+  - time="00:10:00"
 
 # Allow canceling of snakemake-submitted slurm jobs using Ctrl+c in combination with sbatch --parsable
 cluster-cancel: scancel
