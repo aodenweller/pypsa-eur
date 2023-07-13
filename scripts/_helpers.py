@@ -596,7 +596,7 @@ def read_remind_data(file_path, variable_name, rename_columns={}):
     data = remind_data[variable_name]
     df = data.records
 
-    if df.empty:
+    if df is not None and not df.empty:
         # Hack to make weird column naming with GAMS API <= 42 comptaible with >= 43
         # where columns where always numbered with "_<index>" even if no duplicate columns were present
         # but we want to keep duplicate columns differentiation with "_1" and "_2" if columns with same names are present,
