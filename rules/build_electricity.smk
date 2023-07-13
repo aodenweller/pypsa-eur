@@ -406,6 +406,9 @@ rule add_extra_components:
     input:
         network=rules.cluster_network.output["network"],
         tech_costs=rules.add_electricity.input["tech_costs"],
+        RCL_p_nom_limits="resources/{scenario}/i{iteration}/y{year}/RCL_p_nom_limits.csv",
+        region_mapping="config/regionmapping_21_EU11.csv",
+        technology_mapping="config/technology_mapping.csv",
     output:
         "resources/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec.nc",
     log:
