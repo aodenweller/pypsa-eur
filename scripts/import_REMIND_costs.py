@@ -75,24 +75,16 @@ map_general_to_pypsaeur = pd.DataFrame(
 
 if __name__ == "__main__":
     if "snakemake" not in globals():
-        snakemake = SimpleNamespace()
+        from _helpers import mock_snakemake
 
-        snakemake.wildcards = {"year": "2065", "iteration": 1}
+        snakemake = mock_snakemake(
+            "import_REMIND_costs",
+            year="2060",
+            iteration="1",
+            scenario="PyPSA_base_testOneRegi_2023-07-14_01.17.50",
+        )
 
-        snakemake.input = {
-            "original_costs": "../data/costs_2050.csv",  # Reference costs used for ratios between technologies witout values from REMIND-EU
-            "region_mapping": "../config/regionmapping_21_EU11.csv",
-            "remind_data": "../resources/no_scenario/i1/REMIND2PyPSAEUR.gdx",
-        }
-
-        snakemake.output = {
-            "costs": "../resources/no_scenario/i1/y2065/costs.csv",
-        }
-
-        snakemake.config = {"countries": ["DE", "FR", "PL"]}
-
-    else:
-        configure_logging(snakemake)
+    configure_logging(snakemake)
 
     # Load region mapping
     region_mapping = pd.DataFrame(
@@ -343,6 +335,17 @@ if __name__ == "__main__":
         )
         .rename(columns={"weighted_value": "value"})
     )
+
+    # check if there are multiple units per parameter
+    if len(df) != len(df.explode("unit")):
+        problematic_technologies = (
+            df["unit"].apply(len).where(lambda x: x != 1).dropna().index
+        )
+        logger.warning(
+            f"Multiple units per parameter detected. Please check: {problematic_technologies}"
+        )
+    # Turn unit column entries from lists caused by pd.unique to strings
+    df = df.explode("unit")
 
     # Map general technologies to PyPSA-EUR technologies
     df = df.merge(
