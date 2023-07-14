@@ -11,16 +11,36 @@ logger = logging.getLogger(__name__)
 from types import SimpleNamespace
 
 if "snakemake" not in globals():
-    from _helpers import mock_snakemake
-    
-    snakemake = mock_snakemake(
-        "determine_CO2_price_scenarios",
-        configfiles="config.remind.yaml",
-        iteration="1",
-        scenario="no_scenario",
-    )
-    
-configure_logging(snakemake)
+    from types import SimpleNamespace
+
+    # mock_snakemake doesn't work with checkpoints
+    snakemake = SimpleNamespace()
+    snakemake.wildcards = {
+        "scenario": "no_scenario",
+        "iteration": "1",
+    }
+
+    snakemake.config = {
+        "countries": ["DE"],
+        "scenario": {
+            "simpl": [""],
+            "ll": ["copt"],
+            "clusters": [4],
+            "opts": ["1H-RCL-EpREMIND"],
+            "year": [2020, 2025, 2030, 2035, 2040, 2045, 2050],
+        },
+    }
+
+    snakemake.input = {
+        "region_mapping": "../config/regionmapping_21_EU11.csv",
+        "remind_data": "../resources/no_scenario/i2/REMIND2PyPSAEUR.gdx",
+    }
+
+    snakemake.output = {
+        "co2_price_scenarios": "../resources/no_scenario/i1/co2_price_scenarios.csv",
+    }
+else:
+    configure_logging(snakemake)
 
 # Load and transform region mapping
 region_mapping = get_region_mapping(

@@ -12,19 +12,19 @@ rule solve_network:
             "co2_sequestration_potential", 200
         ),
     input:
-        network="resources/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
-        RCL_p_nom_limits="resources/{scenario}/i{iteration}/y{year}/RCL_p_nom_limits.csv",
+        network=SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
+        RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_mapping="config/technology_mapping.csv",
     output:
         network="results/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
     log:
         solver=normpath(
-            "logs/{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_solver.log"
+            LOGS + "{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_solver.log"
         ),
-        python="logs/{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_python.log",
+        python=LOGS + "{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_python.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
+        BENCHMARKS + "{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
     threads: 4
     group:
         "iy"

@@ -149,9 +149,9 @@ if config["enable"].get("build_cutout", False):
         output:
             protected("cutouts/" + CDIR + "{cutout}.nc"),
         log:
-            "logs/" + CDIR + "build_cutout/{cutout}.log",
+            LOGS + "" + CDIR + "build_cutout/{cutout}.log",
         benchmark:
-            "benchmarks/" + CDIR + "build_cutout_{cutout}"
+            BENCHMARKS + "" + CDIR + "build_cutout_{cutout}"
         threads: ATLITE_NPROCESSES
         resources:
             mem_mb=ATLITE_NPROCESSES * 1000,
@@ -295,19 +295,19 @@ rule add_electricity:
             if str(fn).startswith("data/")
         },
         base_network=RESOURCES + "networks/base.nc",
-        tech_costs="resources/{scenario}/i{iteration}/y{year}/costs.csv",
+        tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",
         regions=rules.build_bus_regions.output["regions_onshore"],
         powerplants=RESOURCES + "powerplants.csv",
         hydro_capacities=ancient("data/bundle/hydro_capacities.csv"),
         geth_hydro_capacities="data/geth2015_hydro_capacities.csv",
-        load="resources/{scenario}/i{iteration}/y{year}/load.csv",
+        load=SCENARIO_RESOURCES + "i{iteration}/y{year}/load.csv",
         nuts3_shapes=RESOURCES + "nuts3_shapes.geojson",
     output:
-        "resources/{scenario}/i{iteration}/y{year}/networks/elec.nc",
+        SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec.nc",
     log:
-        "logs/{scenario}/i{iteration}/y{year}/add_electricity.log",
+        LOGS + "{scenario}/i{iteration}/y{year}/add_electricity.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/y{year}/add_electricity"
+        BENCHMARKS + "{scenario}/i{iteration}/y{year}/add_electricity"
     threads: 1
     group:
         "iy"
@@ -335,15 +335,15 @@ rule simplify_network:
         regions_onshore=rules.build_bus_regions.output["regions_onshore"],
         regions_offshore=rules.build_bus_regions.output["regions_offshore"],
     output:
-        network="resources/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}.nc",
-        regions_onshore="resources/{scenario}/i{iteration}/y{year}/regions_onshore_elec_s{simpl}.geojson",
-        regions_offshore="resources/{scenario}/i{iteration}/y{year}/regions_offshore_elec_s{simpl}.geojson",
-        busmap="resources/{scenario}/i{iteration}/y{year}/busmap_elec_s{simpl}.csv",
-        connection_costs="resources/{scenario}/i{iteration}/y{year}/connection_costs_s{simpl}.csv",
+        network=SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}.nc",
+        regions_onshore=SCENARIO_RESOURCES + "i{iteration}/y{year}/regions_onshore_elec_s{simpl}.geojson",
+        regions_offshore=SCENARIO_RESOURCES + "i{iteration}/y{year}/regions_offshore_elec_s{simpl}.geojson",
+        busmap=SCENARIO_RESOURCES + "i{iteration}/y{year}/busmap_elec_s{simpl}.csv",
+        connection_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/connection_costs_s{simpl}.csv",
     log:
-        "logs/{scenario}/i{iteration}/y{year}/simplify_network/elec_s{simpl}.log",
+        LOGS + "{scenario}/i{iteration}/y{year}/simplify_network/elec_s{simpl}.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/y{year}/simplify_network/elec_s{simpl}"
+        BENCHMARKS + "{scenario}/i{iteration}/y{year}/simplify_network/elec_s{simpl}"
     threads: 1
     group:
         "iy"
@@ -378,15 +378,15 @@ rule cluster_network:
         ),
         tech_costs=rules.add_electricity.input["tech_costs"],
     output:
-        network="resources/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}.nc",
-        regions_onshore="resources/{scenario}/i{iteration}/y{year}/regions_onshore_elec_s{simpl}_{clusters}.geojson",
-        regions_offshore="resources/{scenario}/i{iteration}/y{year}/regions_offshore_elec_s{simpl}_{clusters}.geojson",
-        busmap="resources/{scenario}/i{iteration}/y{year}/busmap_elec_s{simpl}_{clusters}.csv",
-        linemap="resources/{scenario}/i{iteration}/y{year}/linemap_elec_s{simpl}_{clusters}.csv",
+        network=SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}.nc",
+        regions_onshore=SCENARIO_RESOURCES + "i{iteration}/y{year}/regions_onshore_elec_s{simpl}_{clusters}.geojson",
+        regions_offshore=SCENARIO_RESOURCES + "i{iteration}/y{year}/regions_offshore_elec_s{simpl}_{clusters}.geojson",
+        busmap=SCENARIO_RESOURCES + "i{iteration}/y{year}/busmap_elec_s{simpl}_{clusters}.csv",
+        linemap=SCENARIO_RESOURCES + "i{iteration}/y{year}/linemap_elec_s{simpl}_{clusters}.csv",
     log:
-        "logs/{scenario}/i{iteration}/y{year}/cluster_network/elec_s{simpl}_{clusters}.log",
+        LOGS + "{scenario}/i{iteration}/y{year}/cluster_network/elec_s{simpl}_{clusters}.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/y{year}/cluster_network/elec_s{simpl}_{clusters}"
+        BENCHMARKS + "{scenario}/i{iteration}/y{year}/cluster_network/elec_s{simpl}_{clusters}"
     threads: 1
     group:
         "iy"
@@ -406,15 +406,15 @@ rule add_extra_components:
     input:
         network=rules.cluster_network.output["network"],
         tech_costs=rules.add_electricity.input["tech_costs"],
-        RCL_p_nom_limits="resources/{scenario}/i{iteration}/y{year}/RCL_p_nom_limits.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_mapping="config/technology_mapping.csv",
+        RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
     output:
-        "resources/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec.nc",
+        SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec.nc",
     log:
-        "logs/{scenario}/i{iteration}/y{year}/add_extra_components/elec_s{simpl}_{clusters}.log",
+        LOGS + "{scenario}/i{iteration}/y{year}/add_extra_components/elec_s{simpl}_{clusters}.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/y{year}/add_extra_components/elec_s{simpl}_{clusters}_ec"
+        BENCHMARKS + "{scenario}/i{iteration}/y{year}/add_extra_components/elec_s{simpl}_{clusters}_ec"
     threads: 1
     group:
         "iy"
@@ -439,11 +439,11 @@ rule prepare_network:
         rules.add_extra_components.output[0],
         tech_costs=rules.add_electricity.input["tech_costs"],
     output:
-        "resources/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
+        SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
     log:
-        "logs/{scenario}/i{iteration}/y{year}/prepare_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.log",
+        LOGS + "{scenario}/i{iteration}/y{year}/prepare_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/y{year}/prepare_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
+        BENCHMARKS + "{scenario}/i{iteration}/y{year}/prepare_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
     threads: 1
     group:
         "iy"

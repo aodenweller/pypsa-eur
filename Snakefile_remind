@@ -34,14 +34,15 @@ configfile: "config.remind.yaml"
 
 ATLITE_NPROCESSES = config["atlite"].get("nprocesses", 4)
 
-run = config.get("run", {})
-RDIR = run["name"] + "/" if run.get("name") else ""
-CDIR = RDIR if not run.get("shared_cutouts") else ""
+RDIR = "{scenario}/"
+CDIR = RDIR if not config.get("run", {}).get("shared_cutouts") else ""
 
-LOGS = "logs/" + RDIR if not run.get("shared_resources") else "logs/"
-BENCHMARKS = "benchmarks/" + RDIR if not run.get("shared_resources") else "benchmarks/"
-RESOURCES = "resources/" + RDIR if not run.get("shared_resources") else "resources/"
-RESULTS = "results/" + RDIR if not run.get("shared_resources") else "results/"
+LOGS = "logs/"
+BENCHMARKS = "benchmarks/"
+RESOURCES = "resources/" + ("" if config.get("run",{}).get("shared_resources", True) else RDIR)
+RESULTS = "results/"
+
+SCENARIO_RESOURCES = "resources/" + RDIR
 
 
 include: "rules/common.smk"
@@ -142,13 +143,13 @@ rule import_REMIND_costs:
         # no TD data for < 2020 and > 2050
         original_costs=lambda w: f"data/costs_{np.clip(int(w['year']), a_min=2020, a_max=2050)}.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
-        remind_data="resources/{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
+        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
-        costs="resources/{scenario}/i{iteration}/y{year}/costs.csv",
+        costs=RESOURCES + "{scenario}/i{iteration}/y{year}/costs.csv",
     log:
-        "logs/{scenario}/i{iteration}/y{year}/import_REMIND_costs.log",
+        LOGS + "{scenario}/i{iteration}/y{year}/import_REMIND_costs.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/y{year}/import_REMIND_costs"
+        BENCHMARKS + "{scenario}/i{iteration}/y{year}/import_REMIND_costs"
     group:
         "iy"
     script:
@@ -160,13 +161,13 @@ rule import_REMIND_load:
     input:
         load_timeseries=RESOURCES + "load.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
-        remind_data="resources/{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
+        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
-        load_timeseries="resources/{scenario}/i{iteration}/y{year}/load.csv",
+        load_timeseries=SCENARIO_RESOURCES + "i{iteration}/y{year}/load.csv",
     log:
-        "logs/{scenario}/i{iteration}/y{year}/import_REMIND_load.log",
+        LOGS + "{scenario}/i{iteration}/y{year}/import_REMIND_load.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/y{year}/import_REMIND_load"
+        BENCHMARKS + "{scenario}/i{iteration}/y{year}/import_REMIND_load"
     group:
         "iy"
     script:
@@ -177,15 +178,15 @@ rule import_REMIND_load:
 # Used as RCL (Region-Carrier-Limits) contraints in PyPSA-EUR.
 rule import_REMIND_RCL_p_nom_limits:
     input:
-        remind_data="resources/{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
+        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_mapping="config/technology_mapping.csv",
     output:
-        RCL_p_nom_limits="resources/{scenario}/i{iteration}/y{year}/RCL_p_nom_limits.csv",
+        RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
     log:
-        "logs/{scenario}/i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits.log",
+        LOGS + "{scenario}/i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits"
+        BENCHMARKS + "{scenario}/i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits"
     group:
         "iy"
     script:
@@ -202,13 +203,13 @@ rule import_REMIND_RCL_p_nom_limits:
 checkpoint determine_co2_price_scenarios:
     input:
         region_mapping="config/regionmapping_21_EU11.csv",
-        remind_data="resources/{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
+        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
-        co2_price_scenarios="resources/{scenario}/i{iteration}/co2_price_scenarios.csv",
+        co2_price_scenarios=SCENARIO_RESOURCES + "i{iteration}/co2_price_scenarios.csv",
     log:
-        "logs/{scenario}/i{iteration}/determine_co2_price_scenarios.log",
+        LOGS + "{scenario}/i{iteration}/determine_co2_price_scenarios.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/determine_co2_price_scenarios"
+        BENCHMARKS + "{scenario}/i{iteration}/determine_co2_price_scenarios"
     script:
         "scripts/determine_CO2_price_scenarios.py"
 
@@ -235,7 +236,7 @@ rule extract_coupling_parameters:
         networks=rules.solve_all_scenarios.input["networks"],
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_mapping="config/technology_mapping.csv",
-        remind_weights="resources/{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
+        remind_weights=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
         capacity_factors="results/{scenario}/i{iteration}/coupling-parameters/capacity_factors.csv",
         generation_shares="results/{scenario}/i{iteration}/coupling-parameters/generation_shares.csv",
@@ -244,8 +245,8 @@ rule extract_coupling_parameters:
         electricity_prices="results/{scenario}/i{iteration}/coupling-parameters/electricity_prices.csv",
         gdx="results/{scenario}/i{iteration}/coupling-parameters/PyPSAEUR2REMIND.gdx",
     log:
-        "logs/{scenario}/i{iteration}/extract_coupling_parameters.log",
+        LOGS + "{scenario}/i{iteration}/extract_coupling_parameters.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/extract_coupling_parameters/"
+        BENCHMARKS + "{scenario}/i{iteration}/extract_coupling_parameters/"
     script:
         "scripts/extract_coupling_parameters.py"
