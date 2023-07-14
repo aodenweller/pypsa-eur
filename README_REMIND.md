@@ -1,25 +1,64 @@
 # Installation 
 
+* Install micromamba, see [documentation for details](https://mamba.readthedocs.io/en/latest/installation.html#micromamba)
+* Create micromamba env for PyPSA-EUR (`environment.yaml` file comes from PyPSA-EUR repository):
+```
+source /home/jhampp/software/micromamba_1.4.2/etc/profile.d/micromamba.sh
+micromamba create --file envs/environment.yaml
+```
 * GAMS PYthon API
 
-Inside the existing PyPSA-EUR conda env, install the GAMS Python API:
+Inside the existing PyPSA-EUR conda env, install the GAMS Python API.
+You need the path for the current gams installation.
+Given the changes in the GAMS API over the recent versions, it is recommend you use GAMS >= 42.X API for Python.
 
+Check available gams versions
 ```
-pip install gams --find-links /opt/gams/gams43.3_linux_x64_64_sfx/api/python/bdist
+module avail gams
 ```
-
-substitute `/opt/gams/...` with correct path to GAMS directory, e.g. `dirname $(which gams)`
-
+Load highest version, e.g. `gams/43.4.1`
+```
+module load gams/43.4.1
+```
+Find path to GAMS directory:
+```
+dirname $(which gams)
+```
+Yielding something like `/p/system/packages/gams/43.4.1`.
+Activate PyPSA-EUR environment to install GAMS API in there:
+```
+micromamba activate pypsa-eur
+```
+Install API, substitute the GAMS path according to point to the same base directory where `dirname $(which gams)` points to:
+```
+pip install gams --find-links /p/system/packages/gams/43.4.1/api/python/bdist
+```
 Details see here: https://www.gams.com/latest/docs/API_PY_GETTING_STARTED.html
 
 * Setup CPLEX
-
-For now, add CPLEX bin directory to path
+For now, add CPLEX bin directory to path, in `~/.bashrc` add the following line:
+```
+export PATH=/home/adrianod/software/cplex/cplex/bin/x86-64_linux:$PATH
+```
+and install the Python package into the `pypsa-eur` environment:
+```
+micromamba activate pypsa-eur
+python /home/adrianod/cplex/python/setup.py install
+```
 
 * Install micromamba and set environment directory accordingly (see instructions by @euronion elsewhere)
+* The cplex Python API must be installed in the conda environment and possible to import, e.g. `python -m 'import cplex'` must be possible in the conda environment
 
 * regional mapping: currently stored in `config/regionmapping_21_EU11.csv` is mapping for REMIND-EU, used to map between PyPSA-EUR countries and REMIND-EU regions. Location configured via Snakefile.
+* technology mapping stored in `config/technology_mapping.csv` used by multiple rules
 
+
+## Cluster configuration
+
+Due to specific nature of PIK cluster, the following resources specific to the cluster are set:
+* `partition` and `qos` for rules `extract_coupling_parameter` (which through the checkpoing becomes dependent on internet connection) and all retrieve rules.
+    * Using this combination of `partition` and `qos` runs these rules on the cluster login node, thus granting them limited internet access
+    * These `qsub` modifiers can be set by CLI for Snakemake (thus keeping them out of the `Snakefile`) or inside the `Snakefile`
 
 ## coupling parameters
 
