@@ -6,44 +6,38 @@ from types import SimpleNamespace
 import country_converter as coco
 import numpy as np
 import pandas as pd
-from _helpers import configure_logging, get_region_mapping, read_remind_data
+from _helpers import (
+    configure_logging,
+    get_region_mapping,
+    get_technology_mapping,
+    read_remind_data,
+)
 
 logger = logging.getLogger(__name__)
 
-# TODO mapping hard-coded for now and redundant with extract_coupling_parameters.py
-# TODO remove redundancy and outsource into external file
 # Only Generation technologies (PyPSA "generator" "carriers")
 # Use a two step mapping approach between PyPSA-EUR and REMIND:
 # First mapping is aggregating PyPSA-EUR technologies to general technologies
 # Second mapping is disaggregating general technologies to REMIND technologies
+map_pypsaeur_to_general = get_technology_mapping(
+    snakemake.input["technology_mapping"],
+    source="PyPSA-EUR",
+    target="General",
+    flatten=True,
+)
+
+# Remove elements with keys:
+# offwind-ac, offwind-dc: Technologies already mapped through "offwind"
+# lignite, ror: Technologies not directly mapped, but indirectly through scale_technologies_relative_to
 map_pypsaeur_to_general = {
-    "CCGT": "CCGT",
-    "OCGT": "OCGT",
-    "biomass": "biomass",
-    "coal": "all_coal",
-    "offwind": "wind_offshore",
-    "oil": "oil",
-    "onwind": "wind_onshore",
-    "solar": "solar_pv",
-    "nuclear": "nuclear",
-    "hydro": "hydro",
-    # Technologies not directly mapped, but indirectly through scale_technologies_relative_to
-    # "lignite": "all_coal",
-    # "ror": "hydro",
+    k: v
+    for k, v in map_pypsaeur_to_general.items()
+    if k not in ["offwind-ac", "offwind-dc", "ror", "lignite"]
 }
 
-map_general_to_remind = {
-    "CCGT": ["ngcc", "ngccc", "gaschp"],
-    "OCGT": ["ngt"],
-    "biomass": ["biochp", "bioigcc", "bioigccc"],
-    "all_coal": ["igcc", "igccc", "pc", "coalchp"],
-    "nuclear": ["tnrs", "fnrs"],
-    "oil": ["dot"],
-    "solar_pv": ["spv"],
-    "wind_offshore": ["windoff"],
-    "wind_onshore": ["wind"],
-    "hydro": ["hydro"],
-}
+map_general_to_remind = get_technology_mapping(
+    snakemake.input["technology_mapping"], source="General", target="REMIND-EU"
+)
 
 # Technologies not present in REMIND, scale these technologies based on development
 # of their reference technologies (preserve the ratio the technologies see in the
@@ -423,6 +417,14 @@ if __name__ == "__main__":
     # Lifetime should be between 10 and 100 years (guess)
     if not df_base.query("parameter == 'lifetime'")["value"].between(10, 100).all():
         logger.warning("Lifetime values below 10 or above 100 years detected.")
+
+    # No values should be negative
+    if df_base["value"].lt(0).any():
+        logger.error(
+            "Negative values detected for:\n{}".format(
+                df_base.loc[df_base["value"].lt(0)]
+            )
+        )
 
     # Write results to file
     df_base.to_csv(snakemake.output["costs"], index=False)
