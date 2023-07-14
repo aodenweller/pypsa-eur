@@ -20,11 +20,11 @@ rule solve_network:
         network="results/{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
     log:
         solver=normpath(
-            "logs/{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_solver.log"
+            LOGS + "{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_solver.log"
         ),
-        python="logs/{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_python.log",
+        python=LOGS + "{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_python.log",
     benchmark:
-        "benchmarks/{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
+        BENCHMARKS + "{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
     threads: 4
     group:
         "iy"

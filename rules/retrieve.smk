@@ -43,7 +43,7 @@ if config["enable"].get("retrieve_cutout", True):
         output:
             protected("cutouts/" + CDIR + "{cutout}.nc"),
         log:
-            "logs/" + CDIR + "retrieve_cutout_{cutout}.log",
+            LOGS + "" + CDIR + "retrieve_cutout_{cutout}.log",
         resources:
             mem_mb=5000,
         retries: 2
