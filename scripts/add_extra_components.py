@@ -257,14 +257,34 @@ def attach_RCL_generators(n, fp_p_nom_limits, fp_region_mapping, fp_technology_m
     ).dropna(subset=["p_nom_max"])
 
     # Modify properties of to-be-added RCL generators which differ from the original generators
-    rcl_generators.index = rcl_generators.index + " (RCL)"
+    old_generators = rcl_generators.index
+    rcl_generators.index = old_generators + " (RCL)"
     rcl_generators["capital_cost"] = 1.0  # small value to help solver
     rcl_generators["p_nom_extendable"] = True
     rcl_generators["p_nom_min"] = 0.0
+    rcl_generators["p_nom"] = 0.0
     rcl_generators["p_nom_max"] = np.inf
 
     # Finally add RCL generators to network
     n.madd("Generator", rcl_generators.index, **rcl_generators)
+
+    # Transfer time-dependent dispatch limits which are not transfered thorugh n.madd(...)
+    n.pnl("Generator")["p_min_pu"] = pd.merge(
+        n.pnl("Generator")["p_min_pu"],
+        n.pnl("Generator")["p_min_pu"][
+            old_generators.intersection(n.pnl("Generator")["p_min_pu"].columns)
+        ].rename(columns=lambda x: x + " (RCL)"),
+        left_index=True,
+        right_index=True,
+    )
+    n.pnl("Generator")["p_max_pu"] = pd.merge(
+        n.pnl("Generator")["p_max_pu"],
+        n.pnl("Generator")["p_max_pu"][
+            old_generators.intersection(n.pnl("Generator")["p_max_pu"].columns)
+        ].rename(columns=lambda x: x + " (RCL)"),
+        left_index=True,
+        right_index=True,
+    )
 
 
 if __name__ == "__main__":
