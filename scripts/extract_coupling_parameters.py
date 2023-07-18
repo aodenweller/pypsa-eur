@@ -2,9 +2,7 @@
 # %%
 import logging
 import re
-from pathlib import Path
 
-import country_converter as coco
 import numpy as np
 import pandas as pd
 import pypsa
@@ -24,11 +22,12 @@ if not "snakemake" in globals():
         "extract_coupling_parameters",
         configfiles="config.remind.yaml",
         iteration="1",
+        scenario="PyPSA_base_testOneRegi_2023-07-17_16.36.56",
     )
 
     # mock_snakemake doesn't work with checkpoints
     input_networks = [
-        f"../results/no_scenario/i1/y{year}/networks/elec_s_4_ec_lcopt_1H-RCL-Ep0.0.nc"
+        f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_1H-RCL-Ep0.0.nc"
         for year in [
             2030,
             2035,
@@ -106,12 +105,14 @@ def check_for_mapping_completeness(n):
             f"PyPSA-EUR countries without mapping to REMIND-EU regions::\n {tmp_set}"
         )
 
+# %%
 
 capacity_factors = []
 generation_shares = []
 installed_capacities = []
 market_values = []
 electricity_prices = []
+electricity_loads = []
 
 for fp in input_networks:
     # Extract year from filename, format: elec_y<YYYY>_<morestuff>.nc
@@ -193,6 +194,15 @@ for fp in input_networks:
     electricity_price = electricity_price.to_frame("value").reset_index()
     electricity_price["year"] = year
     electricity_prices.append(electricity_price)
+    
+    electricity_load = (-1) * network.statistics.withdrawal(
+        comps=["Load"], groupby=["region", "bus_carrier"]
+    )
+    electricity_load = electricity_load.to_frame("value").reset_index()
+    electricity_load["year"] = year
+    electricity_loads.append(electricity_load)
+
+# %%
 
 
 ## Combine DataFrames to same format
@@ -319,9 +329,13 @@ generation_shares = postprocess_dataframe(generation_shares)
 installed_capacities = postprocess_dataframe(installed_capacities)
 market_values = postprocess_dataframe(market_values)
 electricity_prices = postprocess_dataframe(electricity_prices)
+electricity_loads = postprocess_dataframe(electricity_loads)
 
 # For loads only output AC (electricity) prices
 electricity_prices = electricity_prices.query("carrier == 'AC'").drop(
+    columns=["carrier"]
+)
+electricity_loads = electricity_loads.query("carrier == 'AC'").drop(
     columns=["carrier"]
 )
 # %%
@@ -341,6 +355,7 @@ for fn, df in {
     "installed_capacities": installed_capacities,
     "market_values": market_values,
     "electricity_prices": electricity_prices,
+    "electricity_loads": electricity_loads,
 }.items():
     df.to_csv(snakemake.output[fn], index=False)
 
