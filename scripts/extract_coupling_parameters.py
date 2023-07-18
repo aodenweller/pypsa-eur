@@ -105,6 +105,7 @@ def check_for_mapping_completeness(n):
             f"PyPSA-EUR countries without mapping to REMIND-EU regions::\n {tmp_set}"
         )
 
+
 # %%
 
 capacity_factors = []
@@ -112,7 +113,10 @@ generation_shares = []
 installed_capacities = []
 market_values = []
 electricity_prices = []
+
+# Values used for reporting but not for coupling
 electricity_loads = []
+optimal_capacities = []
 
 for fp in input_networks:
     # Extract year from filename, format: elec_y<YYYY>_<morestuff>.nc
@@ -194,13 +198,19 @@ for fp in input_networks:
     electricity_price = electricity_price.to_frame("value").reset_index()
     electricity_price["year"] = year
     electricity_prices.append(electricity_price)
-    
+
     electricity_load = (-1) * network.statistics.withdrawal(
         comps=["Load"], groupby=["region", "bus_carrier"]
     )
     electricity_load = electricity_load.to_frame("value").reset_index()
     electricity_load["year"] = year
     electricity_loads.append(electricity_load)
+
+    optimal_capacity = (
+        network.statistics()["Optimal Capacity"].to_frame("value").reset_index()
+    )
+    optimal_capacity["year"] = year
+    optimal_capacities.append(optimal_capacity)
 
 # %%
 
@@ -330,14 +340,19 @@ installed_capacities = postprocess_dataframe(installed_capacities)
 market_values = postprocess_dataframe(market_values)
 electricity_prices = postprocess_dataframe(electricity_prices)
 electricity_loads = postprocess_dataframe(electricity_loads)
+optimal_capacities = (
+    pd.concat(optimal_capacities)
+    .rename(columns={"level_0": "type"})
+    .set_index(["year", "type", "carrier"])
+    .sort_index()["value"]
+    .reset_index()
+)
 
 # For loads only output AC (electricity) prices
 electricity_prices = electricity_prices.query("carrier == 'AC'").drop(
     columns=["carrier"]
 )
-electricity_loads = electricity_loads.query("carrier == 'AC'").drop(
-    columns=["carrier"]
-)
+electricity_loads = electricity_loads.query("carrier == 'AC'").drop(columns=["carrier"])
 # %%
 # Special treatment: Weigh values of df based on installed capacities in REMIND
 generation_shares = weigh_by_REMIND_capacity(generation_shares)
@@ -356,6 +371,7 @@ for fn, df in {
     "market_values": market_values,
     "electricity_prices": electricity_prices,
     "electricity_loads": electricity_loads,
+    "optimal_capacities": optimal_capacities,
 }.items():
     df.to_csv(snakemake.output[fn], index=False)
 
