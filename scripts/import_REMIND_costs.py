@@ -15,70 +15,71 @@ from _helpers import (
 
 logger = logging.getLogger(__name__)
 
-# Only Generation technologies (PyPSA "generator" "carriers")
-# Use a two step mapping approach between PyPSA-EUR and REMIND:
-# First mapping is aggregating PyPSA-EUR technologies to general technologies
-# Second mapping is disaggregating general technologies to REMIND technologies
-map_pypsaeur_to_general = get_technology_mapping(
-    snakemake.input["technology_mapping"],
-    source="PyPSA-EUR",
-    target="General",
-    flatten=True,
-)
-
-# Remove elements with keys:
-# offwind-ac, offwind-dc: Technologies already mapped through "offwind"
-# lignite, ror: Technologies not directly mapped, but indirectly through scale_technologies_relative_to
-map_pypsaeur_to_general = {
-    k: v
-    for k, v in map_pypsaeur_to_general.items()
-    if k not in ["offwind-ac", "offwind-dc", "ror", "lignite"]
-}
-
-map_general_to_remind = get_technology_mapping(
-    snakemake.input["technology_mapping"], source="General", target="REMIND-EU"
-)
-
-# Technologies not present in REMIND, scale these technologies based on development
-# of their reference technologies (preserve the ratio the technologies see in the
-# original PyPSA-EUR cost data and apply that ratio to the new costs)
-
-scale_technologies_relative_to = {
-    "solar-rooftop": "solar",
-    "solar-utility": "solar",
-    "PHS": "hydro",
-    "ror": "hydro",
-    "lignite": "coal",
-    "offwind-ac-connection-submarine": "offwind",
-    "offwind-ac-connection-underground": "offwind",
-    "offwind-ac-station": "offwind",
-    "offwind-dc-connection-submarine": "offwind",
-    "offwind-dc-connection-underground": "offwind",
-    "offwind-dc-station": "offwind",
-}
-
-
-# Inverted maps required here
-map_remind_to_general = {lv: k for k, v in map_general_to_remind.items() for lv in v}
-map_general_to_pypsaeur = pd.DataFrame(
-    {
-        "PyPSA-EUR": map_pypsaeur_to_general.keys(),
-        "general": map_pypsaeur_to_general.values(),
-    }
-)
-
 if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
         snakemake = mock_snakemake(
             "import_REMIND_costs",
-            year="2060",
-            iteration="1",
-            scenario="PyPSA_base_testOneRegi_2023-07-14_01.17.50",
+            year="2150",
+            iteration="3",
+            scenario="PyPSA_base_testOneRegi_2023-07-17_16.36.56",
         )
 
     configure_logging(snakemake)
+
+    # Only Generation technologies (PyPSA "generator" "carriers")
+    # Use a two step mapping approach between PyPSA-EUR and REMIND:
+    # First mapping is aggregating PyPSA-EUR technologies to general technologies
+    # Second mapping is disaggregating general technologies to REMIND technologies
+    map_pypsaeur_to_general = get_technology_mapping(
+        snakemake.input["technology_mapping"],
+        source="PyPSA-EUR",
+        target="General",
+        flatten=True,
+    )
+
+    # Remove elements with keys:
+    # offwind-ac, offwind-dc: Technologies already mapped through "offwind"
+    # lignite, ror: Technologies not directly mapped, but indirectly through scale_technologies_relative_to
+    map_pypsaeur_to_general = {
+        k: v
+        for k, v in map_pypsaeur_to_general.items()
+        if k not in ["offwind-ac", "offwind-dc", "ror", "lignite"]
+    }
+
+    map_general_to_remind = get_technology_mapping(
+        snakemake.input["technology_mapping"], source="General", target="REMIND-EU"
+    )
+
+    # Technologies not present in REMIND, scale these technologies based on development
+    # of their reference technologies (preserve the ratio the technologies see in the
+    # original PyPSA-EUR cost data and apply that ratio to the new costs)
+
+    scale_technologies_relative_to = {
+        "solar-rooftop": "solar",
+        "solar-utility": "solar",
+        "PHS": "hydro",
+        "ror": "hydro",
+        "lignite": "coal",
+        "offwind-ac-connection-submarine": "offwind",
+        "offwind-ac-connection-underground": "offwind",
+        "offwind-ac-station": "offwind",
+        "offwind-dc-connection-submarine": "offwind",
+        "offwind-dc-connection-underground": "offwind",
+        "offwind-dc-station": "offwind",
+    }
+
+    # Inverted maps required here
+    map_remind_to_general = {
+        lv: k for k, v in map_general_to_remind.items() for lv in v
+    }
+    map_general_to_pypsaeur = pd.DataFrame(
+        {
+            "PyPSA-EUR": map_pypsaeur_to_general.keys(),
+            "general": map_pypsaeur_to_general.values(),
+        }
+    )
 
     # Load region mapping
     region_mapping = pd.DataFrame(
@@ -287,22 +288,46 @@ if __name__ == "__main__":
             "all_te": "technology",
             "level": "value",
         },
-    )
-    weights = weights.loc[
-        (weights["year"] == snakemake.wildcards["year"])
-        & (weights["carrier"] == "seel")
-        & (weights["region"].isin(region_mapping["REMIND-EU"]))
+    ).query(
+        "carrier == 'seel' and region.isin(@region_mapping['REMIND-EU'])",
+        engine="python",
+    )[
+        ["year", "region", "technology", "value"]
     ]
-
     weights["general_technology"] = weights["technology"].map(map_remind_to_general)
 
     # Calculate weight per technology and region based on aggregated general technology
     weights["weight"] = weights["value"].div(
-        weights.groupby(weights["general_technology"])["value"].transform("sum")
+        weights.groupby(["year", "general_technology"])["value"].transform("sum")
     )
+
+    # If non of the technologies of a general_technology are built, the weight becomes NaN which
+    # we want to avoid, else costs could be NaN or 0.
+    # Instead forward and backward fill the values with the weight of the previous / next time step year
+    weights = (
+        weights.set_index(["technology", "region", "year"])[["weight"]]
+        .sort_index()
+        .fillna(method="ffill")
+        .fillna(method="bfill")["weight"]
+        .reset_index()
+    )
+
+    # After filling NaN values, now limit weights to the year of interest
+    weights = weights.loc[(weights["year"] == snakemake.wildcards["year"])]
 
     # Combine all parameters before weighting, remove irrelevant values from outside REMIND regions
     df = pd.concat([costs, lifetime, fom, vom, co2_intensity, efficiency, fuel_costs])
+
+    # For each region and technology pair, add the region-specific discount_rate as an additional row
+    df = pd.concat(
+        [
+            df,
+            df[["region", "technology"]]
+            .merge(discount_rate, on="region")
+            .drop_duplicates(),
+        ]
+    )
+
     df["general_technology"] = df["technology"].map(map_remind_to_general)
     df = df.loc[
         (df["region"].isin(weights["region"].unique()))
@@ -355,15 +380,16 @@ if __name__ == "__main__":
 
     # Overwrite original cost data with REMIND extracted cost data
     # Keep original values for data which is not available in REMIND
+    # and add new values from REMIND which have previously not existed (e.g. discount rate)
     df_base = pd.read_csv(snakemake.input["original_costs"]).set_index(
         ["technology", "parameter"]
     )
     df_base["original_value"] = df_base[
         "value"
     ]  # use this later to scale some technologies
-    df_base.update(df.set_index(["technology", "parameter"]))
-
-    df_base = df_base.reset_index()
+    df_base = (
+        df.set_index(["technology", "parameter"]).combine_first(df_base).reset_index()
+    )
 
     logger.info("Scaling costs for technologies not extracted from REMIND-EU...")
 
@@ -402,16 +428,20 @@ if __name__ == "__main__":
     if not df_base.query("parameter == 'FOM'")["value"].between(0, 100).all():
         logger.warning("Fixed O&M values below 0 or above 100% detected.")
 
-    # VOM, investment, CO2 intensity and fuel cost should always be positive
+    # discount_rate must always be greater 0
+    if not df_base.query("parameter == 'discount_rate'")["value"].gt(0).all():
+        logger.warning("discount rate values <= 0 detected.")
+
+    # discount rate, VOM, investment, CO2 intensity and fuel cost should always be positive
     if (
-        df_base.query("parameter in ['VOM', 'investment', 'CO2 intensity', 'fuel']")[
-            "value"
-        ]
+        df_base.query(
+            "parameter in ['discount_rate', 'VOM', 'investment', 'CO2 intensity', 'fuel']"
+        )["value"]
         .lt(0)
         .any()
     ):
         logger.warning(
-            "Negative values detected for VOM, investment, CO2 intensity or fuel."
+            "Negative values detected for discount rate, VOM, investment, CO2 intensity or fuel."
         )
 
     # Lifetime should be between 10 and 100 years (guess)
