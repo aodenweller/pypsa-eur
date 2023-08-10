@@ -241,7 +241,7 @@ rule extract_coupling_parameters:
     output:
         capacity_factors=RESULTS + "{scenario}/i{iteration}/validation/capacity_factors.csv",
         generation_shares=RESULTS + "{scenario}/i{iteration}/validation/generation_shares.csv",
-        installed_capacities=RESULTS + "{scenario}/i{iteration}/validation/installed_capacities.csv",
+        preinstalled_capacities=RESULTS + "{scenario}/i{iteration}/validation/preinstalled_capacities.csv",
         market_values=RESULTS + "{scenario}/i{iteration}/validation/market_values.csv",
         electricity_prices=RESULTS + "{scenario}/i{iteration}/validation/electricity_prices.csv",
         electricity_loads=RESULTS + "{scenario}/i{iteration}/validation/electricity_loads.csv",

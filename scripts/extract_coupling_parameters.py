@@ -21,8 +21,8 @@ if not "snakemake" in globals():
     snakemake = mock_snakemake(
         "extract_coupling_parameters",
         configfiles="config.remind.yaml",
-        iteration="1",
-        scenario="PyPSA_base_testOneRegi_2023-07-17_16.36.56",
+        iteration="3",
+        scenario="PyPSA_base_testOneRegi_2023-08-09_22.38.49",
     )
 
     # mock_snakemake doesn't work with checkpoints
@@ -111,7 +111,7 @@ def check_for_mapping_completeness(n):
 capacity_factors = []
 generation_shares = []
 generations = []
-installed_capacities = []
+preinstalled_capacities = []
 market_values = []
 electricity_prices = []
 
@@ -155,6 +155,10 @@ for fp in input_networks:
         network.buses["carrier"]
     )
 
+    # For separating generators which are RCL and those which are not (capacities reported separately)
+    network.generators["RCL"] = False
+    network.generators.loc[network.generators.index.str.contains("RCL"), "RCL"] = True
+
     # Now make sure we have all carriers in the mapping
     check_for_mapping_completeness(network)
 
@@ -191,13 +195,16 @@ for fp in input_networks:
     generation_share["year"] = year
     generation_shares.append(generation_share)
 
-    # Calculate technology installed capacities
-    installed_capacity = network.statistics(
-        comps=["Generator"], groupby=["region", "general_carrier"]
+    # Calculate technology pre-installed capacities
+    # RCL-capacities are <= pre-installed capacities provided from REMIND, choose RCL capacities here
+    # as starter; these are first expanded before the same carriers but non-RCL are installed (due to 0 costs)
+    preinstalled_capacity = network.statistics(
+        comps=["Generator"], groupby=["RCL", "region", "general_carrier"]
     )["Optimal Capacity"]
-    installed_capacity = installed_capacity.to_frame("value").reset_index()
-    installed_capacity["year"] = year
-    installed_capacities.append(installed_capacity)
+    preinstalled_capacity = preinstalled_capacity.to_frame("value").reset_index()
+    preinstalled_capacity["year"] = year
+    preinstalled_capacity = preinstalled_capacity.query("RCL == True")
+    preinstalled_capacities.append(preinstalled_capacity)
 
     # Calculate the market values (round-about way as the intended method of the statistics module is not yet available)
     market_value = network.statistics.market_value(
@@ -240,11 +247,14 @@ for fp in input_networks:
 
 ## Combine DataFrames to same format
 # Helper function
-def postprocess_dataframe(df):
+def postprocess_dataframe(df, map_to_remind=True):
     """
     General function to postprocess the dataframes, combines the network-
     specific results into one dataframe removes excess columns / sets index and
     sorts by region + year.
+
+    map_to_remind: bool, default True
+        Whether to map the general carrier names to REMIND carrier names.
     """
     df = pd.concat(df)
     df = df.rename(
@@ -280,10 +290,11 @@ def postprocess_dataframe(df):
         dg["carrier"] = new_carriers
         return dg
 
-    # Map carriers to REMIND technologies
-    df = df.groupby(["year", "region", "carrier"], group_keys=False).apply(
-        map_carriers_for_remind
-    )
+    if map_to_remind:
+        # Map carriers to REMIND technologies
+        df = df.groupby(["year", "region", "carrier"], group_keys=False).apply(
+            map_carriers_for_remind
+        )
 
     return df
 
@@ -359,19 +370,15 @@ def weigh_by_REMIND_capacity(df):
 # Real combining happens here
 capacity_factors = postprocess_dataframe(capacity_factors)
 generation_shares = postprocess_dataframe(generation_shares)
-installed_capacities = postprocess_dataframe(installed_capacities)
 market_values = postprocess_dataframe(market_values)
 electricity_prices = postprocess_dataframe(electricity_prices)
 electricity_loads = postprocess_dataframe(electricity_loads)
-
 # Only reporting for plotting, not coupled, therefore other treatment
-generations = (
-    pd.concat(generations)
-    .rename(columns={"general_carrier": "carrier"})
-    .set_index(["year", "region", "carrier"])
-    .sort_index()["value"]
-    .reset_index()
+preinstalled_capacities = postprocess_dataframe(
+    preinstalled_capacities, map_to_remind=False
 )
+generations = postprocess_dataframe(generations, map_to_remind=False)
+
 optimal_capacities = (
     pd.concat(optimal_capacities)
     .rename(columns={"level_0": "type", "general_carrier": "carrier"})
@@ -399,7 +406,7 @@ if any(generation_shares.groupby(["year", "region"])["value"].sum() != 1.0):
 for fn, df in {
     "capacity_factors": capacity_factors,
     "generation_shares": generation_shares,
-    "installed_capacities": installed_capacities,
+    "preinstalled_capacities": preinstalled_capacities,
     "market_values": market_values,
     "electricity_prices": electricity_prices,
     "electricity_loads": electricity_loads,
