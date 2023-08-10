@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 import logging
 from types import SimpleNamespace
 
@@ -21,9 +20,9 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_costs",
-            year="2150",
-            iteration="3",
-            scenario="PyPSA_base_testOneRegi_2023-07-17_16.36.56",
+            year="2080",
+            iteration="2",
+            scenario="PyPSA_base_testOneRegi_2023-08-09_22.38.49",
         )
 
     configure_logging(snakemake)
@@ -304,13 +303,28 @@ if __name__ == "__main__":
     # If non of the technologies of a general_technology are built, the weight becomes NaN which
     # we want to avoid, else costs could be NaN or 0.
     # Instead forward and backward fill the values with the weight of the previous / next time step year
-    weights = (
-        weights.set_index(["technology", "region", "year"])[["weight"]]
-        .sort_index()
-        .fillna(method="ffill")
-        .fillna(method="bfill")["weight"]
-        .reset_index()
+    weights["weight"] = (
+        weights.groupby(["year", "region", "technology"])["weight"].ffill().bfill()
     )
+
+    if weights["weight"].isna().any():
+        # In rare cases, where none of the technologies of a general_technology is built in *any* previous year,
+        # a backup weight is calculated as 1 / number of technologies in the general_technology
+        # and then assigned to fill the NaN values
+        backup_weights = (
+            1
+            / weights.groupby(["general_technology", "year", "region"])["value"].count()
+        ).to_frame("backup_weight")
+        weights = weights.set_index(["year", "region", "general_technology"]).join(
+            backup_weights
+        )
+        weights["weight"] = weights["weight"].fillna(weights["backup_weight"])
+        weights = weights.reset_index()
+
+        # To future editor: Remove this warning if you disagree
+        logging.warning(
+            "NaN values in weights were filled with backup weights. This is should not happen very often and is probably a mistake."
+        )
 
     # After filling NaN values, now limit weights to the year of interest
     weights = weights.loc[(weights["year"] == snakemake.wildcards["year"])]
