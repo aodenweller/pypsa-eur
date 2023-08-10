@@ -93,7 +93,7 @@ def check_for_mapping_completeness(n):
             f"Technologies (carriers) missing from mapping General -> REMIND-EU:\n {tmp_set}"
         )
 
-    tmp_set = set(n.loads["bus_carrier"]) - map_pypsaeur_to_remind_loads.keys()
+    tmp_set = set(n.loads["general_carrier"]) - map_pypsaeur_to_remind_loads.keys()
     if tmp_set:
         logger.info(
             f"Technologies (carriers) missing from mapping PyPSA-EUR -> REMIND-EU (loads):\n {tmp_set}"
@@ -135,11 +135,24 @@ for fp in input_networks:
     network.generators["region"] = network.generators["bus"].map(
         network.buses["region"]
     )
+    network.stores["region"] = network.stores["bus"].map(network.buses["region"])
+    network.storage_units["region"] = network.storage_units["bus"].map(
+        network.buses["region"]
+    )
+    network.links["region"] = network.links["bus0"].map(network.buses["region"])
+    network.lines["region"] = network.lines["bus0"].map(network.buses["region"])
+    network.loads["region"] = network.loads["bus"].map(network.buses["region"])
+
     network.generators["general_carrier"] = network.generators["carrier"].map(
         map_pypsaeur_to_general
     )
-    network.loads["region"] = network.loads["bus"].map(network.buses["region"])
-    network.loads["bus_carrier"] = network.loads["bus"].map(network.buses["carrier"])
+    network.stores["general_carrier"] = network.stores["carrier"]
+    network.storage_units["general_carrier"] = network.storage_units["carrier"]
+    network.links["general_carrier"] = network.links["carrier"]
+    network.lines["general_carrier"] = network.lines["carrier"]
+    network.loads["general_carrier"] = network.loads["bus"].map(
+        network.buses["carrier"]
+    )
 
     # Now make sure we have all carriers in the mapping
     check_for_mapping_completeness(network)
@@ -188,11 +201,11 @@ for fp in input_networks:
 
     # Calculate load-weighted electricity prices based on bus marginal prices
     electricity_price = network.statistics.revenue(
-        comps=["Load"], groupby=["region", "bus_carrier"]
+        comps=["Load"], groupby=["region", "general_carrier"]
     ) / (
         -1
         * network.statistics.withdrawal(
-            comps=["Load"], groupby=["region", "bus_carrier"]
+            comps=["Load"], groupby=["region", "general_carrier"]
         )
     )
     electricity_price = electricity_price.to_frame("value").reset_index()
@@ -200,15 +213,17 @@ for fp in input_networks:
     electricity_prices.append(electricity_price)
 
     electricity_load = (-1) * network.statistics.withdrawal(
-        comps=["Load"], groupby=["region", "bus_carrier"]
+        comps=["Load"], groupby=["region", "general_carrier"]
     )
     electricity_load = electricity_load.to_frame("value").reset_index()
     electricity_load["year"] = year
     electricity_loads.append(electricity_load)
 
-    optimal_capacity = (
-        network.statistics()["Optimal Capacity"].to_frame("value").reset_index()
+    optimal_capacity = network.statistics.optimal_capacity(
+        comps=["Generator", "Load", "Link", "Line", "Store", "StorageUnit"],
+        groupby=["region", "general_carrier"],
     )
+    optimal_capacity = optimal_capacity.to_frame("value").reset_index()
     optimal_capacity["year"] = year
     optimal_capacities.append(optimal_capacity)
 
@@ -225,7 +240,7 @@ def postprocess_dataframe(df):
     """
     df = pd.concat(df)
     df = df.rename(
-        columns={"general_carrier": "carrier", "bus_carrier": "carrier"}
+        columns={"general_carrier": "carrier"}
     )  # different auxiliary columns have different names; rename for consistency
 
     df = df.set_index(
@@ -342,7 +357,7 @@ electricity_prices = postprocess_dataframe(electricity_prices)
 electricity_loads = postprocess_dataframe(electricity_loads)
 optimal_capacities = (
     pd.concat(optimal_capacities)
-    .rename(columns={"level_0": "type"})
+    .rename(columns={"level_0": "type", "general_carrier": "carrier"})
     .set_index(["year", "type", "carrier"])
     .sort_index()["value"]
     .reset_index()
