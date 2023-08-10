@@ -358,7 +358,7 @@ electricity_loads = postprocess_dataframe(electricity_loads)
 optimal_capacities = (
     pd.concat(optimal_capacities)
     .rename(columns={"level_0": "type", "general_carrier": "carrier"})
-    .set_index(["year", "type", "carrier"])
+    .set_index(["year", "region", "type", "carrier"])
     .sort_index()["value"]
     .reset_index()
 )
