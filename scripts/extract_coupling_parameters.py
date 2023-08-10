@@ -110,6 +110,7 @@ def check_for_mapping_completeness(n):
 
 capacity_factors = []
 generation_shares = []
+generations = []
 installed_capacities = []
 market_values = []
 electricity_prices = []
@@ -167,6 +168,13 @@ for fp in input_networks:
     capacity_factor = capacity_factor.to_frame("value").reset_index()
     capacity_factor["year"] = year
     capacity_factors.append(capacity_factor)
+
+    generation = network.statistics.supply(
+        comps=["Generator"], groupby=["region", "general_carrier"]
+    )
+    generation = generation.to_frame("value").reset_index()
+    generation["year"] = year
+    generations.append(generation)
 
     # Calculate shares of technologies in annual generation
     generation_share = (
@@ -355,6 +363,15 @@ installed_capacities = postprocess_dataframe(installed_capacities)
 market_values = postprocess_dataframe(market_values)
 electricity_prices = postprocess_dataframe(electricity_prices)
 electricity_loads = postprocess_dataframe(electricity_loads)
+
+# Only reporting for plotting, not coupled, therefore other treatment
+generations = (
+    pd.concat(generations)
+    .rename(columns={"general_carrier": "carrier"})
+    .set_index(["year", "region", "carrier"])
+    .sort_index()["value"]
+    .reset_index()
+)
 optimal_capacities = (
     pd.concat(optimal_capacities)
     .rename(columns={"level_0": "type", "general_carrier": "carrier"})
@@ -386,6 +403,7 @@ for fn, df in {
     "market_values": market_values,
     "electricity_prices": electricity_prices,
     "electricity_loads": electricity_loads,
+    "generations": generations,
     "optimal_capacities": optimal_capacities,
 }.items():
     df.to_csv(snakemake.output[fn], index=False)

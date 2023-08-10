@@ -245,6 +245,7 @@ rule extract_coupling_parameters:
         market_values=RESULTS + "{scenario}/i{iteration}/market_values.csv",
         electricity_prices=RESULTS + "{scenario}/i{iteration}/electricity_prices.csv",
         electricity_loads=RESULTS + "{scenario}/i{iteration}/electricity_loads.csv",
+        generations=RESULTS + "{scenario}/i{iteration}/generations.csv",
         optimal_capacities=RESULTS + "{scenario}/i{iteration}/optimal_capacities.csv",
         gdx=RESULTS + "{scenario}/i{iteration}/PyPSAEUR2REMIND.gdx",
     log:
