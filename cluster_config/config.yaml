@@ -28,6 +28,9 @@ set-resources:
   retrieve_ship_raster:
     partition: "io"
     qos: "io"
+  build_powerplants:
+    partition: "io"
+    qos: "io"
   extract_coupling_parameters:
     mem_mib: 5000
     time: "00:05:00"
