@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# %%
 import logging
 from types import SimpleNamespace
 
@@ -296,16 +297,27 @@ if __name__ == "__main__":
     weights["general_technology"] = weights["technology"].map(map_remind_to_general)
 
     # Calculate weight per technology and region based on aggregated general technology
-    weights["weight"] = weights["value"].div(
-        weights.groupby(["year", "general_technology"])["value"].transform("sum")
+    weights = weights.merge(
+        weights.groupby(["year", "region", "general_technology"])["value"]
+        .sum()
+        .rename("general_technology_sum"),
+        on=["year", "region", "general_technology"],
     )
+    # set very small values to nan (prevent weird weights based on very small total capacities)
+    weights["general_technology_sum"] = weights["general_technology_sum"].where(
+        lambda x: x > 1e-4
+    )
+    weights["weight"] = weights["value"] / weights["general_technology_sum"]
 
     # If non of the technologies of a general_technology are built, the weight becomes NaN which
     # we want to avoid, else costs could be NaN or 0.
     # Instead forward and backward fill the values with the weight of the previous / next time step year
-    weights["weight"] = (
-        weights.groupby(["year", "region", "technology"])["weight"].ffill().bfill()
-    )
+    weights["weight"] = weights.groupby(["year", "region", "technology"])[
+        "weight"
+    ].ffill()
+    weights["weight"] = weights.groupby(["year", "region", "technology"])[
+        "weight"
+    ].bfill()
 
     if weights["weight"].isna().any():
         # In rare cases, where none of the technologies of a general_technology is built in *any* previous year,
@@ -319,7 +331,7 @@ if __name__ == "__main__":
             backup_weights
         )
         weights["weight"] = weights["weight"].fillna(weights["backup_weight"])
-        weights = weights.reset_index()
+        weights = weights[["technology", "weight"]].reset_index()
 
         # To future editor: Remove this warning if you disagree
         logging.warning(
@@ -343,18 +355,15 @@ if __name__ == "__main__":
     )
 
     df["general_technology"] = df["technology"].map(map_remind_to_general)
-    df = df.loc[
-        (df["region"].isin(weights["region"].unique()))
-        & df["general_technology"].notnull()
-    ]
-    # weighted aggregation with weights per region and general technology
-    df["weight"] = df.apply(
-        lambda x: weights.loc[
-            (weights["region"] == x["region"])
-            & (weights["technology"] == x["technology"]),
-            "weight",
-        ].values[0],
-        axis="columns",
+    # Limit to region of interest and only consider technologies with weights
+    df = df.query(
+        "region.isin(@weights.region.unique()) and general_technology.notnull()"
+    )
+
+    # %%
+    # Adds weights to df for weighted aggregation with weights per region and general technology
+    df = df.merge(
+        weights[["region", "technology", "weight"]], on=["region", "technology"]
     )
     df["weighted_value"] = df["value"] * df["weight"]
     df = (
