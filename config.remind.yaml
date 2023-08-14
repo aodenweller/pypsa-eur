@@ -10,6 +10,7 @@ logging:
   format: '%(levelname)s:%(name)s:%(message)s'
 
 run:
+  name: "" # use this to keep track of runs with different settings
   disable_progressbar: true # set to true to disable the progressbar
   shared_resources: true # set to true to share the default resources across runs
   shared_cutouts: true # set to true to share the default cutout(s) across runs
@@ -29,11 +30,27 @@ scenario:
   year: [2025, 2030, 2035, 2040, 2045, 2050, 2055, 2060, 2070, 2080, 2090, 2100, 2110, 2130, 2150]
   sector_opts:
   - ''
+  # to really understand the options here, look in scripts/prepare_sector_network.py
+  # Co2Lx specifies the CO2 target in x% of the 1990 values; default will give default (5%);
+  # Co2L0p25 will give 25% CO2 emissions; Co2Lm0p05 will give 5% negative emissions
+  # xH is the temporal resolution; 3H is 3-hourly, i.e. one snapshot every 3 hours
+  # single letters are sectors: T for land transport, H for building heating,
+  # B for biomass supply, I for industry, shipping and aviation,
+  # A for agriculture, forestry and fishing
+  # solar+c0.5 reduces the capital cost of solar to 50\% of reference value
+  # solar+p3 multiplies the available installable potential by factor 3
+  # seq400 sets the potential of CO2 sequestration to 400 Mt CO2 per year
+  # dist{n} includes distribution grids with investment cost of n times cost in data/costs.csv
+  # for myopic/perfect foresight cb states the carbon budget in GtCO2 (cumulative
+  # emissions throughout the transition path in the timeframe determined by the
+  # planning_horizons), be:beta decay; ex:exponential decay
+  # cb40ex0 distributes a carbon budget of 40 GtCO2 following an exponential
+  # decay with initial growth rate 0
   planning_horizons: # investment years for myopic and perfect; for overnight, year of cost assumptions can be different and is defined under 'costs'
   - ''
 
-
 countries: ['DE']
+#countries: ['AL', 'AT', 'BA', 'BE', 'BG', 'CH', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GB', 'GR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'ME', 'MK', 'NL', 'NO', 'PL', 'PT', 'RO', 'RS', 'SE', 'SI', 'SK']
 
 snapshots:
   start: "2013-01-01"
@@ -50,6 +67,18 @@ enable:
   build_natura_raster: false
   retrieve_natura_raster: true
   custom_busmap: false
+
+# CO2 budget as a fraction of 1990 emissions
+# this is over-ridden if CO2Lx is set in sector_opts
+# this is also over-ridden if cb is set in sector_opts
+# co2_budget:
+#   2020: 0.701
+#   2025: 0.524
+#   2030: 0.297
+#   2035: 0.150
+#   2040: 0.071
+#   2045: 0.032
+#   2050: 0.000
 
 electricity:
   voltages: [220., 300., 380.]
@@ -226,12 +255,14 @@ lines:
     380.: "Al/St 240/40 4-bundle 380.0"
   s_max_pu: 0.7
   s_nom_max: .inf
+  max_extension: .inf
   length_factor: 1.25
   under_construction: 'zero' # 'zero': set capacity to zero, 'remove': remove, 'keep': with full capacity
 
 links:
   p_max_pu: 1.0
   p_nom_max: .inf
+  max_extension: .inf
   include_tyndp: true
   under_construction: 'zero' # 'zero': set capacity to zero, 'remove': remove, 'keep': with full capacity
 
