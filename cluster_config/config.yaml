@@ -31,9 +31,6 @@ set-resources:
   build_powerplants:
     partition: "io"
     qos: "io"
-  extract_coupling_parameters:
-    mem_mib: 5000
-    time: "00:05:00"
   build_renewable_profiles:
     time: "00:60:00"
 
