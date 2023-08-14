@@ -97,21 +97,21 @@ include: "rules/retrieve.smk"
 # run with:
 # > snakemake -call -s Snakefile_remind download_and_prepare
 rule download_and_prepare:
-message:
-    "Downloading and preparing all single-execution rules. "
-    "Running this rule requires an internet connection for downloading "
-    "datafiles for the model."
-input:
-    expand(
-        "data/costs_{year}.csv",
-        year=[2020, 2025, 2030, 2035, 2040, 2045, 2050],
-    ),
-    rules.build_electricity_demand.output[0],
-    **{
-        k: v
-        for k, v in rules.add_electricity.input.items()
-        if "{scenario}" not in v
-    },
+    message:
+        "Downloading and preparing all single-execution rules. "
+        "Running this rule requires an internet connection for downloading "
+        "datafiles for the model."
+    input:
+        expand(
+            "data/costs_{year}.csv",
+            year=[2020, 2025, 2030, 2035, 2040, 2045, 2050],
+        ),
+        rules.build_electricity_demand.output[0],
+        **{
+            k: v
+            for k, v in rules.add_electricity.input.items()
+            if "{scenario}" not in v
+        },
 
 
 # # This part contains all rules, which get data from REMIND between iterations.
