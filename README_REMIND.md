@@ -1,7 +1,7 @@
 # Installation 
 
-* Install micromamba, see [documentation for details](https://mamba.readthedocs.io/en/latest/installation.html#micromamba)
-* Create micromamba env for PyPSA-EUR (`environment.yaml` file comes from PyPSA-EUR repository):
+* Install micromamba, see [documentation for details](https://mamba.readthedocs.io/en/latest/installation.html#micromamba) including adding micromamba to your `.bashrc`
+* Create micromamba env for PyPSA-EUR (`environment.yaml` file comes from PyPSA-EUR repository, located in `pypsa-eur/envs/`):
 ```
 source /home/jhampp/software/micromamba_1.4.2/etc/profile.d/micromamba.sh
 micromamba create --file envs/environment.yaml
@@ -43,8 +43,10 @@ export PATH=/home/adrianod/software/cplex/cplex/bin/x86-64_linux:$PATH
 and install the Python package into the `pypsa-eur` environment:
 ```
 micromamba activate pypsa-eur
-python /home/adrianod/cplex/python/setup.py install
+python /home/adrianod/software/cplex/python/setup.py install
 ```
+
+(maybe alternatively `pip instal cplex` also works instead installing from local `setup.py`? Not tested yet though.)
 
 * Install micromamba and set environment directory accordingly (see instructions by @euronion elsewhere)
 * The cplex Python API must be installed in the conda environment and possible to import, e.g. `python -m 'import cplex'` must be possible in the conda environment
