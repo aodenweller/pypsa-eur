@@ -254,6 +254,6 @@ rule extract_coupling_parameters:
         BENCHMARKS + "{scenario}/i{iteration}/extract_coupling_parameters/"
     resources:
         mem_mib=lambda wildcards, attempt: attempt * 10000,
-        time: "00:10:00"
+        time="00:10:00"
     script:
         "scripts/extract_coupling_parameters.py"
