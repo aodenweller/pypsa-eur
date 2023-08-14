@@ -62,6 +62,9 @@ rule base_network:
     params:
         countries=config["countries"],
         snapshots=config["snapshots"],
+        lines=config["lines"],
+        links=config["links"],
+        transformers=config["transformers"],
     input:
         eg_buses="data/entsoegridkit/buses.csv",
         eg_lines="data/entsoegridkit/lines.csv",
@@ -254,6 +257,24 @@ rule build_renewable_profiles:
         "../scripts/build_renewable_profiles.py"
 
 
+rule build_monthly_prices:
+    input:
+        co2_price_raw="data/validation/emission-spot-primary-market-auction-report-2019-data.xls",
+        fuel_price_raw="data/validation/energy-price-trends-xlsx-5619002.xlsx",
+    output:
+        co2_price=RESOURCES + "co2_price.csv",
+        fuel_price=RESOURCES + "monthly_fuel_price.csv",
+    log:
+        LOGS + "build_monthly_prices.log",
+    threads: 1
+    resources:
+        mem_mb=5000,
+    conda:
+        "../envs/environment.yaml"
+    script:
+        "../scripts/build_monthly_prices.py"
+
+
 rule build_hydro_profile:
     params:
         hydro=config["renewable"]["hydro"],
@@ -274,6 +295,30 @@ rule build_hydro_profile:
         "../scripts/build_hydro_profile.py"
 
 
+if config["lines"]["dynamic_line_rating"]["activate"]:
+
+    rule build_line_rating:
+        input:
+            base_network=RESOURCES + "networks/base.nc",
+            cutout="cutouts/"
+            + CDIR
+            + config["lines"]["dynamic_line_rating"]["cutout"]
+            + ".nc",
+        output:
+            output=RESOURCES + "networks/line_rating.nc",
+        log:
+            LOGS + "build_line_rating.log",
+        benchmark:
+            BENCHMARKS + "build_line_rating"
+        threads: ATLITE_NPROCESSES
+        resources:
+            mem_mb=ATLITE_NPROCESSES * 1000,
+        conda:
+            "../envs/environment.yaml"
+        script:
+            "../scripts/build_line_rating.py"
+
+
 rule add_electricity:
     params:
         length_factor=config["lines"]["length_factor"],
@@ -281,7 +326,7 @@ rule add_electricity:
         countries=config["countries"],
         renewable=config["renewable"],
         electricity=config["electricity"],
-        conventional=config.get("conventional", {}),
+        conventional=config["conventional"],
         costs=config["costs"],
     input:
         **{
@@ -291,15 +336,21 @@ rule add_electricity:
         **{
             f"conventional_{carrier}_{attr}": fn
             for carrier, d in config.get("conventional", {None: {}}).items()
+            if carrier in config["electricity"]["conventional_carriers"]
             for attr, fn in d.items()
             if str(fn).startswith("data/")
         },
         base_network=RESOURCES + "networks/base.nc",
+        line_rating=RESOURCES + "networks/line_rating.nc"
+        if config["lines"]["dynamic_line_rating"]["activate"]
+        else RESOURCES + "networks/base.nc",
         tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",
         regions=rules.build_bus_regions.output["regions_onshore"],
         powerplants=RESOURCES + "powerplants.csv",
         hydro_capacities=ancient("data/bundle/hydro_capacities.csv"),
         geth_hydro_capacities="data/geth2015_hydro_capacities.csv",
+        unit_commitment="data/unit_commitment.csv",
+        fuel_price=RESOURCES + "monthly_fuel_price.csv",
         load=SCENARIO_RESOURCES + "i{iteration}/y{year}/load.csv",
         nuts3_shapes=RESOURCES + "nuts3_shapes.geojson",
     output:
@@ -312,7 +363,7 @@ rule add_electricity:
     group:
         "iy"
     resources:
-        mem_mb=5000,
+        mem_mb=10000,
     conda:
         "../envs/environment.yaml"
     script:
@@ -348,7 +399,7 @@ rule simplify_network:
     group:
         "iy"
     resources:
-        mem_mb=4000,
+        mem_mb=12000,
     conda:
         "../envs/environment.yaml"
     script:
@@ -391,7 +442,7 @@ rule cluster_network:
     group:
         "iy"
     resources:
-        mem_mb=6000,
+        mem_mb=10000,
     conda:
         "../envs/environment.yaml"
     script:
@@ -419,7 +470,7 @@ rule add_extra_components:
     group:
         "iy"
     resources:
-        mem_mb=3000,
+        mem_mb=4000,
     conda:
         "../envs/environment.yaml"
     script:
@@ -438,6 +489,7 @@ rule prepare_network:
     input:
         rules.add_extra_components.output[0],
         tech_costs=rules.add_electricity.input["tech_costs"],
+        co2_price=RESOURCES + "co2_price.csv",
     output:
         SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
     log:

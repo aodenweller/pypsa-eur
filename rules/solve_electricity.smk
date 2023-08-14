@@ -16,6 +16,7 @@ rule solve_network:
         RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_mapping="config/technology_mapping.csv",
+        config=RESULTS + "config.yaml",
     output:
         network=RESULTS + "{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
     log:
@@ -30,6 +31,7 @@ rule solve_network:
         "iy"
     resources:
         mem_mb=memory,
+        walltime=config["solving"].get("walltime", "12:00:00"),
     shadow:
         "minimal"
     conda:
@@ -59,7 +61,8 @@ rule solve_operations_network:
         )
     threads: 4
     resources:
-        mem_mb=(lambda w: 5000 + 372 * int(w.clusters)),
+        mem_mb=(lambda w: 10000 + 372 * int(w.clusters)),
+        walltime=config["solving"].get("walltime", "12:00:00"),
     shadow:
         "minimal"
     conda:
