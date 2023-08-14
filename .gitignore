@@ -19,6 +19,7 @@ gurobi.log
 /notebooks
 /data
 /cutouts
+/workbench
 
 doc/_build
 
@@ -73,3 +74,9 @@ doc/_build
 data/costs_*
 
 merger-todos.md
+
+/renv
+.RData
+.Rhistory
+.Rprofile
+renv.lock
