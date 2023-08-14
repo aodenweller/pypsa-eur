@@ -38,7 +38,7 @@ scenario:
   clusters:
   - 4  # REMIND coupling specific
   opts:  # REMIND coupling specific
-  - '1H-RCL-EpREMIND' #"-EpREMIND" is placeholder for setting the emissions prices through REMIND
+  - '3H-RCL-EpREMIND' #"-EpREMIND" is placeholder for setting the emissions prices through REMIND
   year: [2025, 2030, 2035, 2040, 2045, 2050, 2055, 2060, 2070, 2080, 2090, 2100, 2110, 2130, 2150]
   sector_opts:
   - ''
@@ -229,7 +229,7 @@ conventional:
   unit_commitment: false
   dynamic_fuel_price: false
   nuclear:
-    p_max_pu: "data/nuclear_p_max_pu.csv" # float of file name
+    p_max_pu: 0.9
 
 # docs in https://pypsa-eur.readthedocs.io/en/latest/configuration.html#lines
 lines:
