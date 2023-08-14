@@ -44,7 +44,7 @@ rule copy_config:
     resources:
         mem_mb=1000,
     benchmark:
-        BENCHMARKS + "copy_config"
+        BENCHMARKS + "{scenario}/i{iteration}/copy_config"
     conda:
         "../envs/environment.yaml"
     script:
