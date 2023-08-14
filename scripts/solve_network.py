@@ -37,7 +37,6 @@ from _helpers import (
     configure_logging,
     get_region_mapping,
     get_technology_mapping,
-    override_component_attrs,
     update_config_with_sector_opts,
 )
 
