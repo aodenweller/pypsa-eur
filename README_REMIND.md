@@ -54,6 +54,19 @@ python /home/adrianod/software/cplex/python/setup.py install
 * regional mapping: currently stored in `config/regionmapping_21_EU11.csv` is mapping for REMIND-EU, used to map between PyPSA-EUR countries and REMIND-EU regions. Location configured via Snakefile.
 * technology mapping stored in `config/technology_mapping.csv` used by multiple rules
 
+# Updating to newest PyPSA-EUR version
+
+(Suggested method for large number of changes; often `git` should automatically be able to merge the two code basis by pulling from `upstream/master`,
+but some issues could arise where changes to the configuration / code base were made which are not considered conflicts, thus leading
+to silend errors / problems when running the REMIND-coupled PyPSA-EUR version.
+
+* Download REMIND-coupled PyPSA-EUR and original (upstream) version of PyPSA-EUR you want to update to into separate folders
+* Use a programm to compare the two repository folders, e.g. "Meld" or "GitLens" for VSCode and see what changes were made and whether the should be compatible with the code-base changes made for the REMIND-coupling
+* Special attention has to be given to the following files:
+    * `configs/config.default.yaml` -> configuration changes might be relevant to be transfered into `config/config.remind.yaml`
+    * `Snakefile`-> changes might be relevant to be transfered into `Snakefile_remind`
+    * Changes to `.smk` files: Paths for `resources` and `results` in most cases need to consider wildcards `{scenario}, {year}, {iteration}`. These need to be added to new files which are specific to these wildcards which are introduced as dependencies into `.smk` files
+    * `solve_network.py`: Whether `RCL` constraint implementation is still compatible with changes made
 
 ## Cluster configuration
 
