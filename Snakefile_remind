@@ -88,51 +88,30 @@ rule sync:
         """
 
 
-# This part contains all rules which cause snakemake to try to access the internet
-# (e.g. for checking on updated files). Since this is not possible on some cluster systems,
-# with compute nodes without internet access, we check for internet access first.
-# If internet access is not available, we do not include these rules, therefore preventing
-# snakemake from trying to access the internet even in the background while building the DAG.
-def check_internet_access() -> bool:
-    # kudos to: https://stackoverflow.com/questions/3764291/how-can-i-see-if-theres-an-available-and-active-network-connection-in-python
-    conn = http_client.HTTPConnection(
-        "zenodo.org", timeout=5
-    )  # need access to zenodo anyway
-    try:
-        conn.request("HEAD", "/")
-        return True
-    except:
-        return False
-    finally:
-        conn.close()
+include: "rules/retrieve.smk"
 
-
-if check_internet_access():
-
-    include: "rules/retrieve.smk"
-
-    # Rule which downloads and prepares all files which will not change
-    # during REMIND <-> PyPSA-EUR coupled iterations and repeating runs.
-    # * Use for downloading on e.g. login node with internet connection
-    # * will create some load ~30m - 1h for creating renewable profiles
-    # run with:
-    # > snakemake -call -s Snakefile_remind download_and_prepare
-    rule download_and_prepare:
-        message:
-            "Downloading and preparing all single-execution rules. "
-            "Running this rule requires an internet connection for downloading "
-            "datafiles for the model."
-        input:
-            expand(
-                "data/costs_{year}.csv",
-                year=[2020, 2025, 2030, 2035, 2040, 2045, 2050],
-            ),
-            rules.build_electricity_demand.output[0],
-            **{
-                k: v
-                for k, v in rules.add_electricity.input.items()
-                if "{scenario}" not in v
-            },
+# Rule which downloads and prepares all files which will not change
+# during REMIND <-> PyPSA-EUR coupled iterations and repeating runs.
+# * Use for downloading on e.g. login node with internet connection
+# * will create some load ~30m - 1h for creating renewable profiles
+# run with:
+# > snakemake -call -s Snakefile_remind download_and_prepare
+rule download_and_prepare:
+message:
+    "Downloading and preparing all single-execution rules. "
+    "Running this rule requires an internet connection for downloading "
+    "datafiles for the model."
+input:
+    expand(
+        "data/costs_{year}.csv",
+        year=[2020, 2025, 2030, 2035, 2040, 2045, 2050],
+    ),
+    rules.build_electricity_demand.output[0],
+    **{
+        k: v
+        for k, v in rules.add_electricity.input.items()
+        if "{scenario}" not in v
+    },
 
 
 # # This part contains all rules, which get data from REMIND between iterations.
@@ -263,7 +242,7 @@ rule extract_coupling_parameters:
     benchmark:
         BENCHMARKS + "{scenario}/i{iteration}/extract_coupling_parameters/"
     resources:
-        mem_mib=lambda wildcards, attempt: attempt * 10000,
-        time="00:10:00"
+        mem_mb=lambda wildcards, attempt: attempt * 10000,
+        walltime="00:10:00"
     script:
         "scripts/extract_coupling_parameters.py"

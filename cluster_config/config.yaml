@@ -4,7 +4,7 @@ cluster:
     --partition={resources.partition}
     --qos={resources.qos}
     --mem={resources.mem_mb}
-    --time={resources.time}
+    --time={resources.walltime}
     --cpus-per-task={threads}
     --job-name=PyPSAEUR-{rule}-{wildcards}
     --output=logs/snakemake/{rule}/{rule}-{wildcards}-%j.out
@@ -32,14 +32,14 @@ set-resources:
     partition: "io"
     qos: "io"
   build_renewable_profiles:
-    time: "00:60:00"
+    walltime: "00:60:00"
 
 default-resources:
   - partition=priority
   - qos=priority
   - nodes=1
-  - mem_mib=500
-  - time="00:10:00"
+  - mem_mb=500
+  - walltime="00:10:00"
 
 # Allow canceling of snakemake-submitted slurm jobs using Ctrl+c in combination with sbatch --parsable
 cluster-cancel: scancel

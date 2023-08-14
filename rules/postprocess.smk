@@ -39,7 +39,7 @@ rule copy_config:
     params:
         RDIR=RDIR,
     output:
-        RESULTS + "config.yaml",
+        RESULTS + "{scenario}/i{iteration}/config.yaml",
     threads: 1
     resources:
         mem_mb=1000,
