@@ -29,7 +29,7 @@ wildcard_constraints:
     iteration="[0-9]+",
 
 
-configfile: "config.remind.yaml"
+configfile: "config/config.remind.yaml"
 
 
 ATLITE_NPROCESSES = config["atlite"].get("nprocesses", 4)
