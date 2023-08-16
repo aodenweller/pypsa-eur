@@ -636,7 +636,7 @@ solving:
       threads: 4
       method: 2 # barrier
       crossover: 0
-      BarConvTol: 1.e-6
+      BarConvTol: 1.e-4
       Seed: 123
       AggFill: 0
       PreDual: 0
@@ -667,7 +667,7 @@ solving:
       threads: 4
       lpmethod: 4 # barrier
       solutiontype: 2 # non basic solution, ie no crossover
-      barrier.convergetol: 1.e-5
+      barrier.convergetol: 1.e-4
       feasopt.tolerance: 1.e-6
     cbc-default: {} # Used in CI
     glpk-default: {} # Used in CI
