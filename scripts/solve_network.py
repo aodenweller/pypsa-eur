@@ -215,9 +215,10 @@ def add_RCL_constraints(n, config):
     Add RCL (region & carrier limit) constraint to the network for region and
     carrier groups.
 
-    The RCL constraint consists of two individual constraints:
+    The RCL constraint consists of three individual constraints:
     1. Add a maximum level for generator nominal capacity per group of countries (=region) and group of carriers (=technology_group) which affects the "RCL" generators, i.e. copies of generators attach to each bus specifically for this constraint which have no capital_cost; this constraint limits their maximum expansion.
     2. (Currently deactivated to not force RCL capacities) Add a minimum level for generator nominal capacity per group of countries (=region) and group of carriers (=technology_group), which affects the "RCL" generators and their original counterparts with capital_cost > 0, this constraint ensures the minimum expansion of RCL generators and allows the other generators to be extended beyond if necessary.
+    3. Add a maximum level for generator nominal capacity for each bus containing a RCL generator, which affects the original generators and the RCL counterpart which ensures their combined capacity not to be extended beyond p_nom_max of the original generator.
 
     The RCL_p_nom_limits.csv file thus provides the minimum capacity that will be installed.
     For cases of non-extendable generators with fixed capacity, their capacities are taken into account and subtracted from the RCL constraints values, such that the RCL generators are extended to exactly the RCL_p_nom_limits.csv values minus existing capacities.
@@ -326,6 +327,29 @@ def add_RCL_constraints(n, config):
     #         lhs_pairs.sel(group=indexes_pairs) >= p_nom_limits.loc[indexes_pairs],
     #         name="RCL-and-counterparts_p_nom_min",
     #     )
+    
+    # 3. Constraint: p_nom_max of original generator applies to RCL generator as well
+    # Assumptions:
+    # - each RCL generator has a non-RCL generator counterpart
+    # - all generators (RCL and non-RCL counterparts) are extendable
+    # - p_nom_max of non-RCL generator should apply to original+RCL generator together
+
+    # Get all RCL generators and their non-RCL counterparts; apply the constraint to their combined p_nom_opt
+    idx_rcl = n.generators.query("index.str.contains(r' \(RCL\)')").index
+    generators_rcl = n.generators.loc[idx_rcl]
+    generators_nonrcl = n.generators.loc[idx_rcl.str.replace(" \(RCL\)", "")]
+
+    # LHS: sum of generator nominal capacity per region / general technology
+    p_nom_rcl = n.model["Generator-p_nom"].loc[generators_rcl.index]
+    p_nom_nonrcl = n.model["Generator-p_nom"].loc[generators_nonrcl.index]
+    p_nom_max = generators_nonrcl["p_nom_max"].values
+
+    # Add constraint
+    if not idx_rcl.empty:
+        n.model.add_constraints(
+            p_nom_rcl + p_nom_nonrcl <= p_nom_max,
+            name="RCL+nonRCL_p_nom_max",
+        )
 
 
 def add_CCL_constraints(n, config):
@@ -780,9 +804,9 @@ if __name__ == "__main__":
             opts="1H-RCL-Ep0.0",
             clusters="4",
             ll="copt",
-            scenario="PyPSA_base_testOneRegi_Markup_2023-08-14_17.21.21",
-            iteration="3",
-            year="2030",
+            scenario="PyPSA_base_testOneRegi_2023-08-14_17.17.57",
+            iteration="1",
+            year="2025",
         )
     configure_logging(snakemake)
     if "sector_opts" in snakemake.wildcards.keys():
@@ -819,3 +843,5 @@ if __name__ == "__main__":
 
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
     n.export_to_netcdf(snakemake.output[0])
+
+# %%

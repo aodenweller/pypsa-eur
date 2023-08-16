@@ -255,12 +255,15 @@ def attach_RCL_generators(n, fp_p_nom_limits, fp_region_mapping, fp_technology_m
         how="right",
         rsuffix="_rcl",
     ).dropna(subset=["p_nom_max"])
+    
+    # Only consider RCL constraint for generators which are extendable
+    rcl_generators = rcl_generators[rcl_generators["p_nom_extendable"] == True]
 
     # Modify properties of to-be-added RCL generators which differ from the original generators
     old_generators = rcl_generators.index
     rcl_generators.index = old_generators + " (RCL)"
-    rcl_generators["capital_cost"] *= 0.1 # small positive cost: should not be deployed for free for only few hours, but should definetly be deployed before regular capacities are built
-    rcl_generators["p_nom_extendable"] = True
+    rcl_generators["capital_cost"] = 100 # small positive cost: should not be deployed for free for only few hours, but should definetly be deployed before regular capacities are built
+    #rcl_generators["p_nom_extendable"] = True
     rcl_generators["p_nom_min"] = 0.0
     rcl_generators["p_nom"] = 0.0
     rcl_generators["p_nom_max"] = np.inf
