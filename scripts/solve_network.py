@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: : 2017-2023 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
+# %%
 """
 Solves optimal operation and capacity for a network with the option to
 iteratively optimize while updating line reactances.
@@ -216,7 +217,7 @@ def add_RCL_constraints(n, config):
 
     The RCL constraint consists of two individual constraints:
     1. Add a maximum level for generator nominal capacity per group of countries (=region) and group of carriers (=technology_group) which affects the "RCL" generators, i.e. copies of generators attach to each bus specifically for this constraint which have no capital_cost; this constraint limits their maximum expansion.
-    2. Add a minimum level for generator nominal capacity per group of countries (=region) and group of carriers (=technology_group), which affects the "RCL" generators and their original counterparts with capital_cost > 0, this constraint ensures the minimum expansion of RCL generators and allows the other generators to be extended beyond if necessary.
+    2. (Currently deactivated to not force RCL capacities) Add a minimum level for generator nominal capacity per group of countries (=region) and group of carriers (=technology_group), which affects the "RCL" generators and their original counterparts with capital_cost > 0, this constraint ensures the minimum expansion of RCL generators and allows the other generators to be extended beyond if necessary.
 
     The RCL_p_nom_limits.csv file thus provides the minimum capacity that will be installed.
     For cases of non-extendable generators with fixed capacity, their capacities are taken into account and subtracted from the RCL constraints values, such that the RCL generators are extended to exactly the RCL_p_nom_limits.csv values minus existing capacities.
@@ -288,43 +289,43 @@ def add_RCL_constraints(n, config):
             name="RCL_p_nom_max",
         )
 
-    ## 2. Constraint: Minimum capacity for RCL generators and non-RCL counterparts
-    # Get all RCL generators and their non-RCL counterparts; apply the constraint to their combined p_nom_opt
-    idx_pairs = idx_rcl.append(idx_rcl.str.replace(" (RCL)", ""))
-    generators_pairs = generators.loc[idx_pairs]
+    # ## 2. Constraint: Minimum capacity for RCL generators and non-RCL counterparts
+    # # Get all RCL generators and their non-RCL counterparts; apply the constraint to their combined p_nom_opt
+    # idx_pairs = idx_rcl.append(idx_rcl.str.replace(" (RCL)", ""))
+    # generators_pairs = generators.loc[idx_pairs]
 
-    # Substract existing capacities for non-extendable generators
-    p_nom_limits = p_nom_limits.sub(
-        generators_pairs.query("p_nom_extendable == False")
-        .groupby(["region_REMIND", "general_technology"])["p_nom"]
-        .sum(),
-        fill_value=0,
-    )
+    # # Substract existing capacities for non-extendable generators
+    # p_nom_limits = p_nom_limits.sub(
+    #     generators_pairs.query("p_nom_extendable == False")
+    #     .groupby(["region_REMIND", "general_technology"])["p_nom"]
+    #     .sum(),
+    #     fill_value=0,
+    # )
 
-    # Only consider extendable generators; non-extendable generators do not have variables in n.model["Generator-p_nom"]
-    generators_pairs = generators_pairs.query("p_nom_extendable == True")
-    grouper_pairs = [
-        generators_pairs["region_REMIND"],
-        generators_pairs["general_technology"],
-    ]
+    # # Only consider extendable generators; non-extendable generators do not have variables in n.model["Generator-p_nom"]
+    # generators_pairs = generators_pairs.query("p_nom_extendable == True")
+    # grouper_pairs = [
+    #     generators_pairs["region_REMIND"],
+    #     generators_pairs["general_technology"],
+    # ]
 
-    # LHS: sum of generator nominal capacity per region / general technology
-    grouper_pairs = xr.DataArray(
-        pd.MultiIndex.from_arrays(grouper_pairs), dims=["Generator-ext"]
-    )
-    p_nom_pairs = n.model["Generator-p_nom"].loc[
-        generators_pairs.query("p_nom_extendable == True").index
-    ]
-    lhs_pairs = p_nom_pairs.groupby(grouper_pairs).sum()
+    # # LHS: sum of generator nominal capacity per region / general technology
+    # grouper_pairs = xr.DataArray(
+    #     pd.MultiIndex.from_arrays(grouper_pairs), dims=["Generator-ext"]
+    # )
+    # p_nom_pairs = n.model["Generator-p_nom"].loc[
+    #     generators_pairs.query("p_nom_extendable == True").index
+    # ]
+    # lhs_pairs = p_nom_pairs.groupby(grouper_pairs).sum()
 
-    # Determine overlapping indices to only create constraint for generator technologies which are actually constrained by the REMIND-EU
-    indexes_pairs = lhs_pairs.indexes["group"].intersection(p_nom_limits.index)
-    if not indexes_pairs.empty:
-        # Add constraint
-        n.model.add_constraints(
-            lhs_pairs.sel(group=indexes_pairs) >= p_nom_limits.loc[indexes_pairs],
-            name="RCL-and-counterparts_p_nom_min",
-        )
+    # # Determine overlapping indices to only create constraint for generator technologies which are actually constrained by the REMIND-EU
+    # indexes_pairs = lhs_pairs.indexes["group"].intersection(p_nom_limits.index)
+    # if not indexes_pairs.empty:
+    #     # Add constraint
+    #     n.model.add_constraints(
+    #         lhs_pairs.sel(group=indexes_pairs) >= p_nom_limits.loc[indexes_pairs],
+    #         name="RCL-and-counterparts_p_nom_min",
+    #     )
 
 
 def add_CCL_constraints(n, config):
@@ -767,21 +768,21 @@ def solve_network(n, config, solving, opts="", **kwargs):
 
     return n
 
-
+# %%
 if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
         snakemake = mock_snakemake(
             "solve_network",
-            configfiles="config.remind.yaml",
+            configfiles="config/config.remind.yaml",
             simpl="",
-            opts="1H-RCL-0.0",
+            opts="1H-RCL-Ep0.0",
             clusters="4",
             ll="copt",
-            scenario="test",
-            iteration="1",
-            year="2040",
+            scenario="PyPSA_base_testOneRegi_Markup_2023-08-14_17.21.21",
+            iteration="3",
+            year="2030",
         )
     configure_logging(snakemake)
     if "sector_opts" in snakemake.wildcards.keys():
