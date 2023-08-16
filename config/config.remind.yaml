@@ -602,7 +602,7 @@ solving:
   #tmpdir: "path/to/tmp"
   options:
     clip_p_max_pu: 1.e-2
-    load_shedding: true  # REMIND coupling specific
+    load_shedding: 1 # in EUR/kWh; REMIND coupling specific
     noisy_costs: true
     skip_iterations: true
     rolling_horizon: false
