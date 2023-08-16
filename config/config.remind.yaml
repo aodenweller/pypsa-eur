@@ -38,7 +38,7 @@ scenario:
   clusters:
   - 4  # REMIND coupling specific
   opts:  # REMIND coupling specific
-  - '3H-RCL-EpREMIND' #"-EpREMIND" is placeholder for setting the emissions prices through REMIND
+  - '1H-RCL-EpREMIND' #"-EpREMIND" is placeholder for setting the emissions prices through REMIND
   year: [2025, 2030, 2035, 2040, 2045, 2050, 2055, 2060, 2070, 2080, 2090, 2100, 2110, 2130, 2150]
   sector_opts:
   - ''
