@@ -228,6 +228,7 @@ renewable:
 conventional:
   unit_commitment: false
   dynamic_fuel_price: false
+  default_efficiencies: true # REMIND-specific: Remove efficiencies from existing powerplants s.t. it is filled with values from costs.csv which are REMIND-coupled
   nuclear:
     p_max_pu: 0.9
 

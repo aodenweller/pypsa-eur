@@ -436,6 +436,8 @@ def attach_conventional_generators(
         .join(costs, on="carrier", rsuffix="_r")
         .rename(index=lambda s: "C" + str(s))
     )
+    if conventional_params["default_efficiencies"]:
+        ppl["efficiency"] = np.nan
     ppl["efficiency"] = ppl.efficiency.fillna(ppl.efficiency_r)
 
     if unit_commitment is not None:
@@ -807,7 +809,11 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
-        snakemake = mock_snakemake("add_electricity")
+        snakemake = mock_snakemake("add_electricity",
+                                   scenario="PyPSA_base_testOneRegi_Markup_2023-08-14_17.21.21",
+                                   iteration="3",
+                                   year="2030",
+                                   )
     configure_logging(snakemake)
 
     params = snakemake.params
