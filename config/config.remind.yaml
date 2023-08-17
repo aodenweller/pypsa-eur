@@ -6,6 +6,11 @@
 version: 0.8.1
 tutorial: false
 
+# REMIND coupling specific
+remind_coupling:
+  extract_coupling_parameters:
+    cutoff_market_values: 0.98 # false (to deactivate) or value, e.g.: 0.98 indicating quantile of market_prices at which calculation is cutoff
+
 logging:
   level: INFO
   format: '%(levelname)s:%(name)s:%(message)s'

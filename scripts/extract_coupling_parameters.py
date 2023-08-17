@@ -20,9 +20,9 @@ if not "snakemake" in globals():
 
     snakemake = mock_snakemake(
         "extract_coupling_parameters",
-        configfiles="config.remind.yaml",
-        iteration="3",
-        scenario="PyPSA_base_testOneRegi_2023-08-09_22.38.49",
+        configfiles="config/config.remind.yaml",
+        iteration="1",
+        scenario="PyPSA_base_testOneRegi_2023-08-14_17.17.57",
     )
 
     # mock_snakemake doesn't work with checkpoints
@@ -105,8 +105,6 @@ def check_for_mapping_completeness(n):
             f"PyPSA-EUR countries without mapping to REMIND-EU regions::\n {tmp_set}"
         )
 
-
-# %%
 
 capacity_factors = []
 generation_shares = []
@@ -206,14 +204,6 @@ for fp in input_networks:
     preinstalled_capacity = preinstalled_capacity.query("RCL == True")
     preinstalled_capacities.append(preinstalled_capacity)
 
-    # Calculate the market values (round-about way as the intended method of the statistics module is not yet available)
-    market_value = network.statistics.market_value(
-        comps=["Generator"], groupby=["region", "general_carrier"]
-    )
-    market_value = market_value.to_frame("value").reset_index()
-    market_value["year"] = year
-    market_values.append(market_value)
-
     # Calculate load-weighted electricity prices based on bus marginal prices
     electricity_price = network.statistics.revenue(
         comps=["Load"], groupby=["region", "general_carrier"]
@@ -242,7 +232,46 @@ for fp in input_networks:
     optimal_capacity["year"] = year
     optimal_capacities.append(optimal_capacity)
 
-# %%
+    # Enable cutoff of scarcity prices for market values by setting the weighting
+    # of snapshots with above cutoff prices to 0
+    cutoff_market_values = snakemake.config["remind_coupling"][
+        "extract_coupling_parameters"
+    ]["cutoff_market_values"]
+    if cutoff_market_values:
+        relevant_buses = network.buses.query("carrier == 'AC'").index
+        cutoff_value = (
+            network.buses_t["marginal_price"][relevant_buses]
+            .quantile(cutoff_market_values)
+            .mean()
+        )
+
+        # By setting snapshot_weightings to 0, the market value will not be calculated for these snapshots above the cutoff value
+        network.snapshot_weightings = network.snapshot_weightings.where(
+            (network.buses_t["marginal_price"][relevant_buses] < cutoff_value).all(
+                axis="columns"
+            ),
+            0,
+        )
+
+        logger.info(
+            "Cutoff for electricity prices in market value calculation enabled. "
+            "Excluding {n} snapshots from calculations with electricity prices above {p} USD/MWh.".format(
+                n=int(
+                    network.snapshot_weightings["generators"].shape[0]
+                    - network.snapshot_weightings["generators"].sum()
+                ),
+                p=cutoff_value,
+            )
+        )
+
+    # Calculate the market values (round-about way as the intended method of the statistics module is not yet available)
+    market_value = network.statistics.market_value(
+        comps=["Generator"],
+        groupby=["region", "general_carrier"],
+    )
+    market_value = market_value.to_frame("value").reset_index()
+    market_value["year"] = year
+    market_values.append(market_value)
 
 
 ## Combine DataFrames to same format
