@@ -327,7 +327,7 @@ def add_RCL_constraints(n, config):
     #         lhs_pairs.sel(group=indexes_pairs) >= p_nom_limits.loc[indexes_pairs],
     #         name="RCL-and-counterparts_p_nom_min",
     #     )
-    
+
     # 3. Constraint: p_nom_max of original generator applies to RCL generator as well
     # Assumptions:
     # - each RCL generator has a non-RCL generator counterpart
@@ -336,8 +336,12 @@ def add_RCL_constraints(n, config):
 
     # Get all RCL generators and their non-RCL counterparts; apply the constraint to their combined p_nom_opt
     idx_rcl = n.generators.query("index.str.contains(r' \(RCL\)')").index
-    generators_rcl = n.generators.loc[idx_rcl]
-    generators_nonrcl = n.generators.loc[idx_rcl.str.replace(" \(RCL\)", "")]
+    generators_nonrcl = n.generators.loc[idx_rcl.str.replace(" (RCL)", "")]
+
+    # Remove generators with infinite p_nom_max (non-relevant constraints and bugfix for CPLEX which doesn't like inf constraints)
+    # and select only affected RCL generators
+    generators_nonrcl = generators_nonrcl.loc[~np.isinf(generators_nonrcl["p_nom_max"])]
+    generators_rcl = n.generators.loc[generators_nonrcl.index + " (RCL)"]
 
     # LHS: sum of generator nominal capacity per region / general technology
     p_nom_rcl = n.model["Generator-p_nom"].loc[generators_rcl.index]
@@ -791,6 +795,7 @@ def solve_network(n, config, solving, opts="", **kwargs):
         raise RuntimeError("Solving status 'infeasible'")
 
     return n
+
 
 # %%
 if __name__ == "__main__":
