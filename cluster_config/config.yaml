@@ -45,7 +45,7 @@ default-resources:
   - qos=priority
   - nodes=1
   - mem_mb=500
-  - walltime="00:10:00"
+  - walltime="00:60:00"
 
 # Allow canceling of snakemake-submitted slurm jobs using Ctrl+c in combination with sbatch --parsable
 cluster-cancel: scancel
