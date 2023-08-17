@@ -28,6 +28,9 @@ set-resources:
   retrieve_ship_raster:
     partition: "io"
     qos: "io"
+  retrieve_monthly_fuel_prices:
+    partition: "io"
+    qos: "io"
   build_powerplants:
     partition: "io"
     qos: "io"
