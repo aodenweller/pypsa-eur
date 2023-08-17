@@ -7,7 +7,7 @@ cluster:
     --time={resources.walltime}
     --cpus-per-task={threads}
     --job-name=PyPSAEUR-{rule}-{wildcards}
-    --output=logs/snakemake/{rule}/{rule}-{wildcards}-%j.out
+    --output=logs/slurm/{rule}/{rule}-{wildcards}-%j.out
     --parsable
 set-resources:
   retrieve_databundle:
