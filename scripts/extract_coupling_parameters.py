@@ -15,6 +15,67 @@ from _helpers import (
 from gams import transfer as gt
 
 logger = logging.getLogger(__name__)
+
+
+# Non-standard function, following standard implementation from PyPSA.statistics
+def calculate_availability_factor(
+    n,
+    comps=None,
+    aggregate_time="mean",
+    aggregate_groups="sum",
+    groupby=None,
+):
+    """
+    Calculate the availability factor of components in the network.
+
+    For information on the list of arguments, see the docs in
+    `Network.statistics` or `pypsa.statistics.StatisticsAccessor`.
+
+    Parameters
+    ----------
+    aggregate_time : str, bool, optional
+        Type of aggregation when aggregating time series.
+        Note that for {'mean', 'sum'} the time series are aggregated to
+        using snapshot weightings. With False the time series is given. Defaults to 'mean'.
+    """
+
+    def get_availability(n, c):
+        """
+        Get the availability time series of a component.
+
+        For generators with p_max_pu time-series (usually renewable
+        generators) this is p_max_pu * p_nom_opt, for conventional
+        generators it is just the dispatch p time-series like for
+        the capacity factor.
+        """
+        if c in n.branch_components:
+            return n.pnl(c).p0
+        elif c == "Store":
+            return n.pnl(c).e
+        else:
+            p = n.pnl(c).p.copy(deep=True)
+            p_max_pu = n.pnl(c).p_max_pu * n.generators.p_nom_opt
+            p.update(p_max_pu)
+            return p
+
+    def func(n, c):
+        p = get_availability(n, c).abs()
+        weights = pypsa.statistics.get_weightings(n, c)
+        return pypsa.statistics.aggregate_timeseries(p, weights, agg=aggregate_time)
+
+    df = pypsa.statistics.aggregate_components(
+        n, func, comps=comps, agg=aggregate_groups, groupby=groupby
+    )
+
+    capacity = n.statistics.optimal_capacity(
+        comps=comps, aggregate_groups=aggregate_groups, groupby=groupby
+    )
+    df = df.div(capacity, axis=0)
+    df.attrs["name"] = "Availability Factor"
+    df.attrs["unit"] = "p.u."
+    return df
+
+
 if not "snakemake" in globals():
     from _helpers import mock_snakemake
 
@@ -107,6 +168,7 @@ def check_for_mapping_completeness(n):
 
 
 capacity_factors = []
+availability_factors = []
 generation_shares = []
 generations = []
 preinstalled_capacities = []
@@ -170,6 +232,13 @@ for fp in input_networks:
     capacity_factor = capacity_factor.to_frame("value").reset_index()
     capacity_factor["year"] = year
     capacity_factors.append(capacity_factor)
+
+    availability_factor = calculate_availability_factor(
+        network, comps=["Generator"], groupby=["region", "general_carrier"]
+    )
+    availability_factor = availability_factor.to_frame("value").reset_index()
+    availability_factor["year"] = year
+    availability_factors.append(availability_factor)
 
     generation = network.statistics.supply(
         comps=["Generator"], groupby=["region", "general_carrier"]
@@ -398,6 +467,7 @@ def weigh_by_REMIND_capacity(df):
 # %%
 # Real combining happens here
 capacity_factors = postprocess_dataframe(capacity_factors)
+availability_factors = postprocess_dataframe(availability_factors)
 generation_shares = postprocess_dataframe(generation_shares)
 market_values = postprocess_dataframe(market_values)
 electricity_prices = postprocess_dataframe(electricity_prices)
@@ -434,6 +504,7 @@ if any(generation_shares.groupby(["year", "region"])["value"].sum() != 1.0):
 # Export as csv values (informative purposes only, coupling parameters below via GDX)
 for fn, df in {
     "capacity_factors": capacity_factors,
+    "availability_factors": availability_factors,
     "generation_shares": generation_shares,
     "preinstalled_capacities": preinstalled_capacities,
     "market_values": market_values,
@@ -477,6 +548,14 @@ c = gt.Parameter(
     domain=[s_year, s_region, s_carrier],
     records=capacity_factors,
     description="Cacacity factors of technology per year and region in p.u.",
+)
+
+a = gt.Parameter(
+    gdx,
+    name="availability_factor",
+    domain=[s_year, s_region, s_carrier],
+    records=availability_factors,
+    description="Availability factors of technology per year and region in p.u.",
 )
 
 g = gt.Parameter(
