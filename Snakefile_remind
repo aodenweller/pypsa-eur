@@ -230,9 +230,11 @@ rule extract_coupling_parameters:
     output:
         capacity_factors=RESULTS + "{scenario}/i{iteration}/validation/capacity_factors.csv",
         availability_factors=RESULTS + "{scenario}/i{iteration}/validation/availability_factors.csv",
+        curtailments=RESULTS + "{scenario}/i{iteration}/validation/curtailments.csv",
         generation_shares=RESULTS + "{scenario}/i{iteration}/validation/generation_shares.csv",
         preinstalled_capacities=RESULTS + "{scenario}/i{iteration}/validation/preinstalled_capacities.csv",
         market_values=RESULTS + "{scenario}/i{iteration}/validation/market_values.csv",
+        hourly_electricity_prices=RESULTS + "{scenario}/i{iteration}/validation/hourly_electricity_prices.csv",
         electricity_prices=RESULTS + "{scenario}/i{iteration}/validation/electricity_prices.csv",
         electricity_loads=RESULTS + "{scenario}/i{iteration}/validation/electricity_loads.csv",
         generations=RESULTS + "{scenario}/i{iteration}/validation/generations.csv",

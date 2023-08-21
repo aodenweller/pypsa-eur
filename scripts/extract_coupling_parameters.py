@@ -82,8 +82,8 @@ if not "snakemake" in globals():
     snakemake = mock_snakemake(
         "extract_coupling_parameters",
         configfiles="config/config.remind.yaml",
-        iteration="1",
-        scenario="PyPSA_base_testOneRegi_2023-08-14_17.17.57",
+        iteration="5",
+        scenario="PyPSA_base_testOneRegi_capfac_v2_2023-08-17_17.49.37",
     )
 
     # mock_snakemake doesn't work with checkpoints
@@ -169,11 +169,13 @@ def check_for_mapping_completeness(n):
 
 capacity_factors = []
 availability_factors = []
+curtailments = []
 generation_shares = []
 generations = []
 preinstalled_capacities = []
 market_values = []
 electricity_prices = []
+hourly_electricity_prices = []
 
 # Values used for reporting but not for coupling
 electricity_loads = []
@@ -252,6 +254,13 @@ for fp in input_networks:
     availability_factor["year"] = year
     availability_factors.append(availability_factor)
 
+    curtailment = network.statistics.curtailment(
+        comps=["Generator"], groupby=["region", "general_carrier"]
+    )
+    curtailment = curtailment.to_frame("value").reset_index()
+    curtailment["year"] = year
+    curtailments.append(curtailment)
+
     generation = network.statistics.supply(
         comps=["Generator"], groupby=["region", "general_carrier"]
     )
@@ -284,6 +293,23 @@ for fp in input_networks:
     preinstalled_capacity["year"] = year
     preinstalled_capacity = preinstalled_capacity.query("RCL == True")
     preinstalled_capacities.append(preinstalled_capacity)
+
+    # Hourly electricity prices per region
+    hourly_electricity_price = network.statistics.revenue(
+        comps=["Load"],
+        groupby=["region", "general_carrier"],
+        aggregate_time=False,
+    ) / (
+        -1
+        * network.statistics.withdrawal(
+            comps=["Load"],
+            groupby=["region", "general_carrier"],
+            aggregate_time=False,
+        )
+    )
+    hourly_electricity_price = hourly_electricity_price.reset_index()
+    hourly_electricity_price["year"] = year
+    hourly_electricity_prices.append(hourly_electricity_price)
 
     # Calculate load-weighted electricity prices based on bus marginal prices
     electricity_price = network.statistics.revenue(
@@ -375,8 +401,10 @@ def postprocess_dataframe(df, map_to_remind=True):
         ["year", "region", "carrier"]
     ).sort_index()  # set and sort by index for more logical sort order
 
-    df = df[["value"]]
-    df = df.reset_index()
+    # df = df[["value"]]
+    df = df.reset_index().drop(
+        columns=["level_0"]
+    )  # Restructure and remove excess column
 
     def map_carriers_for_remind(dg):
         """
@@ -480,8 +508,10 @@ def weigh_by_REMIND_capacity(df):
 # Real combining happens here
 capacity_factors = postprocess_dataframe(capacity_factors)
 availability_factors = postprocess_dataframe(availability_factors)
+curtailments = postprocess_dataframe(curtailments)
 generation_shares = postprocess_dataframe(generation_shares)
 market_values = postprocess_dataframe(market_values)
+hourly_electricity_prices = postprocess_dataframe(hourly_electricity_prices)
 electricity_prices = postprocess_dataframe(electricity_prices)
 electricity_loads = postprocess_dataframe(electricity_loads)
 # Only reporting for plotting, not coupled, therefore other treatment
@@ -517,9 +547,11 @@ if any(generation_shares.groupby(["year", "region"])["value"].sum() != 1.0):
 for fn, df in {
     "capacity_factors": capacity_factors,
     "availability_factors": availability_factors,
+    "curtailments": curtailments,
     "generation_shares": generation_shares,
     "preinstalled_capacities": preinstalled_capacities,
     "market_values": market_values,
+    "hourly_electricity_prices": hourly_electricity_prices,
     "electricity_prices": electricity_prices,
     "electricity_loads": electricity_loads,
     "generations": generations,
