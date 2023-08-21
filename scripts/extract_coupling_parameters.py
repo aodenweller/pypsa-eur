@@ -45,8 +45,8 @@ def calculate_availability_factor(
 
         For generators with p_max_pu time-series (usually renewable
         generators) this is p_max_pu * p_nom_opt, for conventional
-        generators it is just the dispatch p time-series like for
-        the capacity factor.
+        generators it is just the dispatch p time-series like for the
+        capacity factor.
         """
         if c in n.branch_components:
             return n.pnl(c).p0
@@ -218,6 +218,18 @@ for fp in input_networks:
     # For separating generators which are RCL and those which are not (capacities reported separately)
     network.generators["RCL"] = False
     network.generators.loc[network.generators.index.str.contains("RCL"), "RCL"] = True
+
+    # Hack: "hydro" representing hydro dams should be included in capacity and capacity factor calculations
+    # By turning them into fake generators and setting the relevant attributes, they are included in the calculations by .statistics(..)
+    network.generators = pd.concat(
+        [
+            network.generators,
+            network.storage_units.query("index.str.contains('hydro')", engine="python"),
+        ]
+    )
+    network.generators_t["p"] = network.pnl("Generator")["p"].join(
+        network.pnl("StorageUnit")["p"].filter(like="hydro", axis="columns")
+    )
 
     # Now make sure we have all carriers in the mapping
     check_for_mapping_completeness(network)
