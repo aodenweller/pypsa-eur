@@ -238,6 +238,7 @@ rule extract_coupling_parameters:
         electricity_prices=RESULTS + "{scenario}/i{iteration}/validation/electricity_prices.csv",
         electricity_loads=RESULTS + "{scenario}/i{iteration}/validation/electricity_loads.csv",
         generations=RESULTS + "{scenario}/i{iteration}/validation/generations.csv",
+        potentials=RESULTS + "{scenario}/i{iteration}/validation/potentials.csv",
         optimal_capacities=RESULTS + "{scenario}/i{iteration}/validation/optimal_capacities.csv",
         gdx=RESULTS + "{scenario}/i{iteration}/PyPSAEUR2REMIND.gdx",
     log:

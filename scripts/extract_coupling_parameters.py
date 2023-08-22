@@ -173,6 +173,7 @@ curtailments = []
 generation_shares = []
 generations = []
 preinstalled_capacities = []
+potentials = []
 market_values = []
 electricity_prices = []
 hourly_electricity_prices = []
@@ -294,6 +295,21 @@ for fp in input_networks:
     preinstalled_capacity = preinstalled_capacity.query("RCL == True")
     preinstalled_capacities.append(preinstalled_capacity)
 
+    # Maximum potentials per technology
+    # * RCL generators ignored, they are added with infinite capacity (instead limited with constraint)
+    # * regular generators with p_nom_extendable == False by default only have p_nom assigned, which is used as potential
+    df = network.generators.copy(deep=True)
+    df = df.query("not index.str.contains('RCL')", engine="python")
+    df["potential"] = df["p_nom"].where(
+        df["p_nom_extendable"] == False, df["p_nom_max"]
+    )
+    potential = df.groupby(["region", "general_carrier"])["potential"].apply(
+        np.sum
+    )  # np.sum: work-around pandas bug turnin inf to nan
+    potential = potential.to_frame("value").reset_index()
+    potential["year"] = year
+    potentials.append(potential)
+
     # Hourly electricity prices per region
     hourly_electricity_price = network.statistics.revenue(
         comps=["Load"],
@@ -403,7 +419,8 @@ def postprocess_dataframe(df, map_to_remind=True):
 
     # df = df[["value"]]
     df = df.reset_index().drop(
-        columns=["level_0"]
+        columns=["level_0"],
+        errors="ignore",
     )  # Restructure and remove excess column
 
     def map_carriers_for_remind(dg):
@@ -519,6 +536,7 @@ preinstalled_capacities = postprocess_dataframe(
     preinstalled_capacities, map_to_remind=False
 )
 generations = postprocess_dataframe(generations, map_to_remind=False)
+potentials = postprocess_dataframe(potentials, map_to_remind=False)
 
 optimal_capacities = (
     pd.concat(optimal_capacities)
@@ -555,6 +573,7 @@ for fn, df in {
     "electricity_prices": electricity_prices,
     "electricity_loads": electricity_loads,
     "generations": generations,
+    "potentials": potentials,
     "optimal_capacities": optimal_capacities,
 }.items():
     df.to_csv(snakemake.output[fn], index=False)
