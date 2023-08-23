@@ -622,8 +622,8 @@ solving:
     horizon: 365
 
   solver:
-    name: gurobi
-    options: gurobi-default
+    name: cplex
+    options: cplex-default
 
   solver_options:
     highs-default:
