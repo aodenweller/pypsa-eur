@@ -187,7 +187,8 @@ for fp in input_networks:
     m = re.findall(r"y(\d{4})", fp)
     assert len(m) == 1, "Unable to extract year from network path"
     year = int(m[0])
-
+    logger.info(f"Reading network for year: {year}")
+    
     # Load network
     network = pypsa.Network(fp)
 
@@ -619,6 +620,14 @@ a = gt.Parameter(
     domain=[s_year, s_region, s_carrier],
     records=availability_factors,
     description="Availability factors of technology per year and region in p.u.",
+)
+
+cu = gt.Parameter(
+    gdx,
+    name="curtailment",
+    domain=[s_year, s_region, s_carrier],
+    records=curtailments,
+    description="Curtailment of technology per year and region in p.u.",
 )
 
 g = gt.Parameter(
