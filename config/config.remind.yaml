@@ -9,7 +9,7 @@ tutorial: false
 # REMIND coupling specific
 remind_coupling:
   extract_coupling_parameters:
-    cutoff_market_values: 0.98 # false (to deactivate) or value, e.g.: 0.98 indicating quantile of market_prices at which calculation is cutoff
+    cutoff_market_values: 5 # false (to deactivate) or value, e.g.: 5 indicating zscore above which market_prices are excluded from the market_value calculation
 
 logging:
   level: INFO
@@ -622,8 +622,8 @@ solving:
     horizon: 365
 
   solver:
-    name: cplex
-    options: cplex-default
+    name: gurobi
+    options: gurobi-default
 
   solver_options:
     highs-default:

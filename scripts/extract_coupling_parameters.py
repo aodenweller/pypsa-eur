@@ -13,6 +13,7 @@ from _helpers import (
     read_remind_data,
 )
 from gams import transfer as gt
+from scipy.stats import zscore
 
 logger = logging.getLogger(__name__)
 
@@ -363,18 +364,17 @@ for fp in input_networks:
     ]["cutoff_market_values"]
     if cutoff_market_values:
         relevant_buses = network.buses.query("carrier == 'AC'").index
-        cutoff_value = (
+        cutoff_market_values = float(cutoff_market_values)
+        zscores = (
             network.buses_t["marginal_price"][relevant_buses]
-            .quantile(cutoff_market_values)
-            .mean()
+            .apply(zscore)
+            .mean(axis="columns")
         )
+        zscores.index = pd.to_datetime(zscores.index)
 
         # By setting snapshot_weightings to 0, the market value will not be calculated for these snapshots above the cutoff value
         network.snapshot_weightings = network.snapshot_weightings.where(
-            (network.buses_t["marginal_price"][relevant_buses] < cutoff_value).all(
-                axis="columns"
-            ),
-            0,
+            zscores < cutoff_market_values, 0
         )
 
         logger.info(
@@ -384,7 +384,10 @@ for fp in input_networks:
                     network.snapshot_weightings["generators"].shape[0]
                     - network.snapshot_weightings["generators"].sum()
                 ),
-                p=cutoff_value,
+                p=network.buses_t["marginal_price"][relevant_buses]
+                .where(zscores < cutoff_market_values)
+                .mean(axis="columns")
+                .max(),
             )
         )
 
