@@ -61,6 +61,8 @@ rerun-incomplete: True
 # Other rerun-triggers can lead to rules trying to access the internet (for retrieve_*) functions
 # which leads to errors due to lack of internet access from non-"io" partitions
 rerun-trigger:
+  - code
+  - input
   - mtime
   - params
 restart-times: 3
