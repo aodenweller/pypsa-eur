@@ -627,7 +627,7 @@ cu = gt.Parameter(
     name="curtailment",
     domain=[s_year, s_region, s_carrier],
     records=curtailments,
-    description="Curtailment of technology per year and region in p.u.",
+    description="Curtailment of technology per year and region in MWh",
 )
 
 g = gt.Parameter(
