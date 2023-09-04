@@ -109,7 +109,7 @@ electricity:
     Link: [] # H2 pipeline
 
   powerplants_filter: (DateOut >= 2022 or DateOut.isna())
-  custom_powerplants: false
+  custom_powerplants: true
 
   conventional_carriers: []  # REMIND coupling specific
   renewable_carriers: [solar, onwind, offwind-ac, offwind-dc, hydro]

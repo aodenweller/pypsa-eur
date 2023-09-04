@@ -1,1 +1,5 @@
 Name,Fueltype,Technology,Set,Country,Capacity,Efficiency,Duration,Volume_Mm3,DamHeight_m,YearCommissioned,Retrofit,lat,lon,projectID,YearDecommissioning
+"Dummy addition to match German reported statistics (center of BW, 25 percent of 1.864 GW)",Hydro,Run-Of-River,PP,DE,466,0.8,,,,1900,,48.537778,9.041111,,2371
+"Dummy addition to match German reported statistics (center of BY, 57 percent of 1.864 GW)",Hydro,Run-Of-River,PP,DE,1063,0.8,,,,1900,,48.946389,11.404167,,2371
+"Dummy addition to match German reported statistics (center of NRW, 8 percent of 1.864 GW)",Hydro,Run-Of-River,PP,DE,149,0.8,,,,1900,,51.478333,7.555,,2371
+"Dummy addition to match German reported statistics (center of RP, 8 percent of 1.864 GW)",Hydro,Run-Of-River,PP,DE,149,0.8,,,,1900,,49.955139,7.310417,,2371

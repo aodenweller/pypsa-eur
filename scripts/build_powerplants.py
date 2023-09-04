@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 # coding: utf-8
+# %%
 """
 Retrieves conventional powerplant capacities and locations from
 `powerplantmatching <https://github.com/FRESNA/powerplantmatching>`_, assigns
@@ -89,7 +90,7 @@ logger = logging.getLogger(__name__)
 def add_custom_powerplants(ppl, custom_powerplants, custom_ppl_query=False):
     if not custom_ppl_query:
         return ppl
-    add_ppls = pd.read_csv(custom_powerplants, index_col=0, dtype={"bus": "str"})
+    add_ppls = pd.read_csv(custom_powerplants, dtype={"bus": "str"})
     if isinstance(custom_ppl_query, str):
         add_ppls.query(custom_ppl_query, inplace=True)
     return pd.concat(
@@ -109,6 +110,7 @@ def replace_natural_gas_fueltype(df):
     )
 
 
+# %%
 if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
