@@ -97,4 +97,10 @@ if __name__ == "__main__":
             "Scaled load values do not seem to match REMIND-EU demand values"
         )
 
+    # Check if NaN values are present and output affected PyPSA-EUR countries
+    if scaled_load.isna().any().any():
+        logger.warning(
+            f"NaN values in scaled load timeseries. Affected countries: {scaled_load.isna().any()[scaled_load.isna().any()].index.tolist()}"
+        )
+
     scaled_load.to_csv(snakemake.output["load_timeseries"])
