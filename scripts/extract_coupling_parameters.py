@@ -243,9 +243,9 @@ for fp in input_networks:
 
     # Calculate capacity factors; by assigning the general carrier and grouping by here, the capacity factor is automatically
     # calculated across all "carrier" technologies that map to the same "general_carrier"
-    capacity_factor = network.statistics(
+    capacity_factor = network.statistics.capacity_factor(
         comps=["Generator"], groupby=["region", "general_carrier"]
-    )["Capacity Factor"]
+    )
     capacity_factor = capacity_factor.to_frame("value").reset_index()
     capacity_factor["year"] = year
     capacity_factors.append(capacity_factor)
@@ -289,9 +289,9 @@ for fp in input_networks:
     # Calculate technology pre-installed capacities
     # RCL-capacities are <= pre-installed capacities provided from REMIND, choose RCL capacities here
     # as starter; these are first expanded before the same carriers but non-RCL are installed (due to 0 costs)
-    preinstalled_capacity = network.statistics(
+    preinstalled_capacity = network.statistics.optimal_capacity(
         comps=["Generator"], groupby=["RCL", "region", "general_carrier"]
-    )["Optimal Capacity"]
+    )
     preinstalled_capacity = preinstalled_capacity.to_frame("value").reset_index()
     preinstalled_capacity["year"] = year
     preinstalled_capacity = preinstalled_capacity.query("RCL == True")
