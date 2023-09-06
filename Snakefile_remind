@@ -39,7 +39,9 @@ CDIR = RDIR if not config.get("run", {}).get("shared_cutouts") else ""
 
 LOGS = "logs/"
 BENCHMARKS = "benchmarks/"
-RESOURCES = "resources/" + ("" if config.get("run",{}).get("shared_resources", True) else RDIR)
+RESOURCES = "resources/" + (
+    "" if config.get("run", {}).get("shared_resources", True) else RDIR
+)
 RESULTS = "results/"
 
 SCENARIO_RESOURCES = "resources/" + RDIR
@@ -77,6 +79,7 @@ rule dag:
         dot -Tpng -o {output.png} {output.dot}
         """
 
+
 rule sync:
     params:
         cluster=f"{config['remote']['ssh']}:{config['remote']['path']}",
@@ -89,6 +92,7 @@ rule sync:
 
 
 include: "rules/retrieve.smk"
+
 
 # Rule which downloads and prepares all files which will not change
 # during REMIND <-> PyPSA-EUR coupled iterations and repeating runs.
@@ -172,7 +176,8 @@ rule import_REMIND_RCL_p_nom_limits:
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_mapping="config/technology_mapping.csv",
     output:
-        RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
+        RCL_p_nom_limits=SCENARIO_RESOURCES
+        + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
     log:
         LOGS + "{scenario}/i{iteration}/y{year}/import_REMIND_RCL_p_nom_limits.log",
     benchmark:
@@ -208,7 +213,8 @@ checkpoint determine_co2_price_scenarios:
 rule solve_all_scenarios:
     input:
         networks=lambda wildcards: expand(
-            RESULTS + "{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
+            RESULTS
+            + "{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
             zip,
             **pd.read_csv(
                 checkpoints.determine_co2_price_scenarios.get(
@@ -228,18 +234,28 @@ rule extract_coupling_parameters:
         technology_mapping="config/technology_mapping.csv",
         remind_weights=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
-        capacity_factors=RESULTS + "{scenario}/i{iteration}/validation/capacity_factors.csv",
-        availability_factors=RESULTS + "{scenario}/i{iteration}/validation/availability_factors.csv",
+        capacity_factors=RESULTS
+        + "{scenario}/i{iteration}/validation/capacity_factors.csv",
+        availability_factors=RESULTS
+        + "{scenario}/i{iteration}/validation/availability_factors.csv",
         curtailments=RESULTS + "{scenario}/i{iteration}/validation/curtailments.csv",
-        generation_shares=RESULTS + "{scenario}/i{iteration}/validation/generation_shares.csv",
-        preinstalled_capacities=RESULTS + "{scenario}/i{iteration}/validation/preinstalled_capacities.csv",
+        generation_shares=RESULTS
+        + "{scenario}/i{iteration}/validation/generation_shares.csv",
+        preinstalled_capacities=RESULTS
+        + "{scenario}/i{iteration}/validation/preinstalled_capacities.csv",
+        peak_residual_loads=RESULTS
+        + "{scenario}/i{iteration}/validation/peak_residual_loads.csv",
         market_values=RESULTS + "{scenario}/i{iteration}/validation/market_values.csv",
-        hourly_electricity_prices=RESULTS + "{scenario}/i{iteration}/validation/hourly_electricity_prices.csv",
-        electricity_prices=RESULTS + "{scenario}/i{iteration}/validation/electricity_prices.csv",
-        electricity_loads=RESULTS + "{scenario}/i{iteration}/validation/electricity_loads.csv",
+        hourly_electricity_prices=RESULTS
+        + "{scenario}/i{iteration}/validation/hourly_electricity_prices.csv",
+        electricity_prices=RESULTS
+        + "{scenario}/i{iteration}/validation/electricity_prices.csv",
+        electricity_loads=RESULTS
+        + "{scenario}/i{iteration}/validation/electricity_loads.csv",
         generations=RESULTS + "{scenario}/i{iteration}/validation/generations.csv",
         potentials=RESULTS + "{scenario}/i{iteration}/validation/potentials.csv",
-        optimal_capacities=RESULTS + "{scenario}/i{iteration}/validation/optimal_capacities.csv",
+        optimal_capacities=RESULTS
+        + "{scenario}/i{iteration}/validation/optimal_capacities.csv",
         gdx=RESULTS + "{scenario}/i{iteration}/PyPSAEUR2REMIND.gdx",
     log:
         LOGS + "{scenario}/i{iteration}/extract_coupling_parameters.log",
@@ -247,6 +263,6 @@ rule extract_coupling_parameters:
         BENCHMARKS + "{scenario}/i{iteration}/extract_coupling_parameters/"
     resources:
         mem_mb=lambda wildcards, attempt: attempt * 10000,
-        walltime="00:10:00"
+        walltime="00:10:00",
     script:
         "scripts/extract_coupling_parameters.py"

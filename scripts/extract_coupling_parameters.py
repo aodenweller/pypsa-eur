@@ -91,6 +91,7 @@ if not "snakemake" in globals():
     input_networks = [
         f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_1H-RCL-Ep0.0.nc"
         for year in [
+            2025,
             2030,
             2035,
             2040,
@@ -175,6 +176,7 @@ generation_shares = []
 generations = []
 preinstalled_capacities = []
 potentials = []
+peak_residual_loads = []
 market_values = []
 electricity_prices = []
 hourly_electricity_prices = []
@@ -189,7 +191,7 @@ for fp in input_networks:
     assert len(m) == 1, "Unable to extract year from network path"
     year = int(m[0])
     logger.info(f"Reading network for year: {year}")
-    
+
     # Load network
     network = pypsa.Network(fp)
 
@@ -356,6 +358,50 @@ for fp in input_networks:
     optimal_capacity = optimal_capacity.to_frame("value").reset_index()
     optimal_capacity["year"] = year
     optimal_capacities.append(optimal_capacity)
+
+    ## Calculate peak residual load
+    residual_load = network.statistics.dispatch(
+        comps=["Generator", "Store", "StorageUnit", "Load"],
+        groupby=["region", "general_carrier"],
+        aggregate_time=False,
+    ).reset_index()
+    # Mapping of "general_carrier" into auxiliary categories required for calculation
+    residual_load["category"] = residual_load["general_carrier"].map(
+        {
+            "AC": "AC",
+            "hydro": "storage",
+            "PHS": "storage",
+            "battery": "storage",
+            "H2": "storage",
+            "wind_onshore": "RES",
+            "wind_offshore": "RES",
+            "solar_pv": "RES",
+            "oil": "dispatchable",
+            "nuclear": "dispatchable",
+            "hydro": "RES",
+            "biomass": "RES",
+            "all_coal": "dispatchable",
+            "OCGT": "dispatchable",
+            "CCGT": "dispatchable",
+        }
+    )
+    # Calculate demand / supply per category
+    residual_load = (
+        residual_load.drop(columns=["general_carrier", "level_0"])
+        .groupby(["region", "category"])
+        .sum()
+    )
+    # Calculate peak residual load, defined as load (demand = negative) which is not met from RES or storage (supply = positive)
+    peak_residual_load_abs = ( -1 * residual_load.xs("AC", level=1)
+        - residual_load.xs("RES", level=1)
+        - residual_load.xs("storage", level=1)
+    ).T.max()
+    peak_residual_load_relative = (peak_residual_load_abs / residual_load.xs("AC", level=1).T.mean().abs()).to_frame("relative")
+    peak_residual_load_abs = peak_residual_load_abs.to_frame("absolute").reset_index()
+    peak_residual_load = peak_residual_load_abs.merge(peak_residual_load_relative, on=["region"])
+    peak_residual_load["carrier"] = "AC"
+    peak_residual_load["year"] = year
+    peak_residual_loads.append(peak_residual_load)
 
     # Enable cutoff of scarcity prices for market values by setting the weighting
     # of snapshots with above cutoff prices to 0
@@ -531,6 +577,7 @@ capacity_factors = postprocess_dataframe(capacity_factors)
 availability_factors = postprocess_dataframe(availability_factors)
 curtailments = postprocess_dataframe(curtailments)
 generation_shares = postprocess_dataframe(generation_shares)
+peak_residual_loads = postprocess_dataframe(peak_residual_loads, map_to_remind=False)
 market_values = postprocess_dataframe(market_values)
 hourly_electricity_prices = postprocess_dataframe(hourly_electricity_prices)
 electricity_prices = postprocess_dataframe(electricity_prices)
@@ -555,6 +602,8 @@ electricity_prices = electricity_prices.query("carrier == 'AC'").drop(
     columns=["carrier"]
 )
 electricity_loads = electricity_loads.query("carrier == 'AC'").drop(columns=["carrier"])
+peak_residual_loads = peak_residual_loads.query("carrier == 'AC'").drop(columns=["carrier"])
+
 # %%
 # Special treatment: Weigh values of df based on installed capacities in REMIND
 generation_shares = weigh_by_REMIND_capacity(generation_shares)
@@ -571,6 +620,7 @@ for fn, df in {
     "availability_factors": availability_factors,
     "curtailments": curtailments,
     "generation_shares": generation_shares,
+    "peak_residual_loads": peak_residual_loads,
     "preinstalled_capacities": preinstalled_capacities,
     "market_values": market_values,
     "hourly_electricity_prices": hourly_electricity_prices,
@@ -639,6 +689,22 @@ g = gt.Parameter(
     domain=[s_year, s_region, s_carrier],
     records=generation_shares,
     description="Share of generation of technology per year and region in p.u.",
+)
+
+prla = gt.Parameter(
+    gdx,
+    name="peak_residual_load_absolute",
+    domain=[s_year, s_region],
+    records=peak_residual_loads[["year", "region", "absolute"]],
+    description="Peak residual load per year and region as absolute value in MWh",
+)
+
+prlr = gt.Parameter(
+    gdx,
+    name="peak_residual_load_relative",
+    domain=[s_year, s_region],
+    records=peak_residual_loads[["year", "region", "relative"]],
+    description="Peak residual load per year and region relative to mean load in p.u.",
 )
 
 m = gt.Parameter(
