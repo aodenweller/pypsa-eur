@@ -8,6 +8,7 @@ bioigcc,biomass,biomass
 bioigccc,biomass,biomass
 igcc,all_coal,coal
 igccc,all_coal,lignite
+pc,all_coal,lignite
 coalchp,all_coal,lignite
 fnrs,nuclear,nuclear
 tnrs,nuclear,nuclear
