@@ -29,7 +29,7 @@ if __name__ == "__main__":
     logger.info("Loading REMIND data ...")
     min_capacities = read_remind_data(
         snakemake.input["remind_data"],
-        "p32_preInvCap",
+        "p32_preInvCapAvg",
         rename_columns={
             "ttot": "year",
             "all_regi": "region_REMIND",
