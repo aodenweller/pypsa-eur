@@ -16,7 +16,7 @@ if "snakemake" not in globals():
     # mock_snakemake doesn't work with checkpoints
     snakemake = SimpleNamespace()
     snakemake.wildcards = {
-        "scenario": "no_scenario",
+        "scenario": "PyPSA_c50_preFacManual_AvgBothWays_2023-09-25_17.48.05",
         "iteration": "1",
     }
 
@@ -33,11 +33,11 @@ if "snakemake" not in globals():
 
     snakemake.input = {
         "region_mapping": "../config/regionmapping_21_EU11.csv",
-        "remind_data": "../resources/no_scenario/i2/REMIND2PyPSAEUR.gdx",
+        "remind_data": f"../resources/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/REMIND2PyPSAEUR.gdx",
     }
 
     snakemake.output = {
-        "co2_price_scenarios": "../resources/no_scenario/i1/co2_price_scenarios.csv",
+        "co2_price_scenarios": f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/co2_price_scenarios.csv",
     }
 else:
     configure_logging(snakemake)
@@ -54,12 +54,15 @@ region_mapping = region_mapping.loc[
 # %%
 df = read_remind_data(
     file_path=snakemake.input["remind_data"],
-    variable_name="p_PriceCO2",
+    variable_name="p_priceCO2",
     rename_columns={
         "tall": "year",
         "all_regi": "region",
     },
 )
+
+# unit conversion from USD/tC to USD/tCO2
+df["value"] *= 12 / (12 + 2 * 16)
 
 # %%
 # Calculate mean co2 price across all regions overlapping between REMIND and PyPSA-EUR countries for each year
@@ -70,8 +73,17 @@ df = (
 )
 
 # add all years from variable as additional indices to df
+df.index = df.index.astype(
+    int
+)  # ensure same dtypes for index are int, else df.reindex will produce wrong results
 df = (
-    df.reindex(snakemake.config["scenario"]["year"], fill_value=0)
+    df.reindex(
+        list(
+            # ensure reindex gets int values passed to avoid wrong results
+            map(int, snakemake.config["scenario"]["year"])
+        ),
+        fill_value=0,
+    )
     .to_frame("co2_price")
     .reset_index()
 )
