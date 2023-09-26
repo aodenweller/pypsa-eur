@@ -232,7 +232,7 @@ if __name__ == "__main__":
     logger.info("... extracting fuel costs")
     fuel_costs = read_remind_data(
         file_path=snakemake.input["remind_data"],
-        variable_name="pm_PEPrice",
+        variable_name="p32_PEPriceAvg",
         rename_columns={
             "ttot": "year",
             "all_regi": "region",
