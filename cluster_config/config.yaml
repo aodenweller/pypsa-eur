@@ -65,6 +65,14 @@ groups:
   - build_powerplants=download_data
   - retrieve_cutout=download_cutouts
 
+# Due to limits for qos=partition="priority" to 5 concurrent cluster jobs per user,
+# performance is limited and jobs have to wait for their turn.
+# This statement causes rules which are connected via the group "iy" to be submitted in parallel
+# with 3 independent groups of rules submitted as one job.
+# 3 because of limit on cluster resources (CPUs) in qos/partition
+group-components:
+  - iy=3
+
 # Allow canceling of snakemake-submitted slurm jobs using Ctrl+c in combination with sbatch --parsable
 cluster-cancel: scancel
 jobs: 500
