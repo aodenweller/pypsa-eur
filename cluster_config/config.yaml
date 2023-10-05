@@ -10,6 +10,9 @@ cluster:
     --output=logs/slurm/{rule}/{rule}-{wildcards}-%j.out
     --parsable
 set-resources:
+  download_and_prepare:
+    partition: "io"
+    qos: "io"
   retrieve_databundle:
     partition: "io"
     qos: "io"
@@ -51,8 +54,8 @@ default-resources:
 # permitting only 2 jobs submitted at a time per user; by grouping all
 # rules requiring to run on "io" partiaion/qos, we achieve only 2 submitted jobs
 groups:
-  - download_and_retrieve=download_data
-  - retreieve_databundle=download_data
+  - download_and_prepare=download_data
+  - retrieve_databundle=download_data
   - retrieve_cost_data=download_data
   - retrieve_natura_raster=download_data
   - retrieve_electricity_demand=download_data
