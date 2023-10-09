@@ -228,7 +228,8 @@ def mock_snakemake(rulename, configfiles=[], **wildcards):
             f" {root_dir} or scripts directory {script_dir}"
         )
     try:
-        for p in sm.SNAKEFILE_CHOICES:
+        #for p in sm.SNAKEFILE_CHOICES:
+        for p in ["Snakefile_remind"]:
             if os.path.exists(p):
                 snakefile = p
                 break
@@ -437,7 +438,7 @@ def get_region_mapping(
         .apply("unique")
         .apply(list)
     )
-
+    
     if flatten:
         if (region_mapping.apply(lambda x: len(x)) != 1).any():
             logger.error(f"Cannot flatten mapping. Non-unique map contained:\n {df}")
@@ -464,7 +465,7 @@ def read_remind_data(file_path, variable_name, rename_columns={}):
 
     data = remind_data[variable_name]
     df = data.records
-
+    
     if df is not None and not df.empty:
         # Hack to make weird column naming with GAMS API <= 42 comptaible with >= 43
         # where columns where always numbered with "_<index>" even if no duplicate columns were present
@@ -476,15 +477,15 @@ def read_remind_data(file_path, variable_name, rename_columns={}):
             )  # Preserve all remaining column names, espc. "value" or "level" column name for parameters or variables
     else:
         # Handle empty records by creating an empty DataFrame to return
-
+        
         # assign last_column name based on the datatype of data
         if isinstance(data, gt.Parameter):
             last_column_name = "value"
         elif isinstance(data, gt.Variable):
             last_column_name = "level"
-
+        
         df = pd.DataFrame(columns=data.domain + [last_column_name])
-
+        
     df = df.rename(columns=rename_columns, errors="raise")
 
     return df
