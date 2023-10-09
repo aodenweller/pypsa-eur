@@ -97,12 +97,11 @@ if __name__ == "__main__":
     logger.info("... extracting investment costs")
     costs = read_remind_data(
         file_path=snakemake.input["remind_data"],
-        variable_name="vm_costTeCapital",
+        variable_name="p32_capCostwAdjCost",
         rename_columns={
             "ttot": "year",
             "all_regi": "region",
             "all_te": "technology",
-            "level": "value",
         },
     )
     costs = costs.loc[costs["year"] == snakemake.wildcards["year"]]
@@ -473,10 +472,8 @@ if __name__ == "__main__":
 
     # No values should be negative
     if df_base["value"].lt(0).any():
-        logger.error(
-            "Negative values detected for:\n{}".format(
-                df_base.loc[df_base["value"].lt(0)]
-            )
+        raise ValueError(
+            f"Negative values detected for:\n" f"{df_base.loc[df_base['value'].lt(0)]}"
         )
 
     # Write results to file
