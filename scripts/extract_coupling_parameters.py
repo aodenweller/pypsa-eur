@@ -83,30 +83,51 @@ if not "snakemake" in globals():
     snakemake = mock_snakemake(
         "extract_coupling_parameters",
         configfiles="config/config.remind.yaml",
-        iteration="5",
-        scenario="PyPSA_base_testOneRegi_capfac_v2_2023-08-17_17.49.37",
+        iteration="6",
+        scenario="PyPSA_NPi_preFacAuto_Avg_preFacFadeOut_adjCost_2023-10-08_10.52.45",
     )
 
     # mock_snakemake doesn't work with checkpoints
     input_networks = [
-        f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_1H-RCL-Ep0.0.nc"
-        for year in [
-            2025,
-            2030,
-            2035,
-            2040,
-            2045,
-            2050,
-            2055,
-            2060,
-            2070,
-            2080,
-            2090,
-            2100,
-            2110,
-            2130,
-            2150,
-        ]
+        f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_1H-RCL-Ep{ep:.1f}.nc"
+        for (year, ep) in zip(
+            # pairs of years and ...
+            [
+                2025,
+                2030,
+                2035,
+                2040,
+                2045,
+                2050,
+                2055,
+                2060,
+                2070,
+                2080,
+                2090,
+                2100,
+                2110,
+                2130,
+                2150,
+            ],
+            # ... emission prices (ep)
+            [
+                25.2,
+                25.6,
+                26.4,
+                27.4,
+                28.8,
+                30.4,
+                32.4,
+                34.6,
+                40.0,
+                45.0,
+                50.0,
+                55.0,
+                60.0,
+                70.0,
+                80.0,
+            ],
+        )
     ]
 else:
     input_networks = snakemake.input["networks"]
@@ -194,6 +215,12 @@ for fp in input_networks:
 
     # Load network
     network = pypsa.Network(fp)
+
+    # Check if network has objective attribute, if not: Optimisation most probably failed or something else went wrong. Raise an exception to notify loudly and stop the workflow
+    if not hasattr(network, "objective"):
+        raise ValueError(
+            f"Network {fp} missing objective attribute, something probably went wrong in solving process during network optimisation."
+        )
 
     # First map the PyPSA-EUR countries to REMIND-EU regions;
     # .statistics(..) can then automatically take care of the aggregation
@@ -392,13 +419,18 @@ for fp in input_networks:
         .sum()
     )
     # Calculate peak residual load, defined as load (demand = negative) which is not met from RES or storage (supply = positive)
-    peak_residual_load_abs = ( -1 * residual_load.xs("AC", level=1)
+    peak_residual_load_abs = (
+        -1 * residual_load.xs("AC", level=1)
         - residual_load.xs("RES", level=1)
         - residual_load.xs("storage", level=1)
     ).T.max()
-    peak_residual_load_relative = (peak_residual_load_abs / residual_load.xs("AC", level=1).T.mean().abs()).to_frame("relative")
+    peak_residual_load_relative = (
+        peak_residual_load_abs / residual_load.xs("AC", level=1).T.mean().abs()
+    ).to_frame("relative")
     peak_residual_load_abs = peak_residual_load_abs.to_frame("absolute").reset_index()
-    peak_residual_load = peak_residual_load_abs.merge(peak_residual_load_relative, on=["region"])
+    peak_residual_load = peak_residual_load_abs.merge(
+        peak_residual_load_relative, on=["region"]
+    )
     peak_residual_load["carrier"] = "AC"
     peak_residual_load["year"] = year
     peak_residual_loads.append(peak_residual_load)
@@ -602,7 +634,9 @@ electricity_prices = electricity_prices.query("carrier == 'AC'").drop(
     columns=["carrier"]
 )
 electricity_loads = electricity_loads.query("carrier == 'AC'").drop(columns=["carrier"])
-peak_residual_loads = peak_residual_loads.query("carrier == 'AC'").drop(columns=["carrier"])
+peak_residual_loads = peak_residual_loads.query("carrier == 'AC'").drop(
+    columns=["carrier"]
+)
 
 # %%
 # Special treatment: Weigh values of df based on installed capacities in REMIND
