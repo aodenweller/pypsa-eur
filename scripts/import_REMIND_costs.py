@@ -21,9 +21,9 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_costs",
-            year="2080",
-            iteration="2",
-            scenario="PyPSA_base_testOneRegi_2023-08-09_22.38.49",
+            year="2055",
+            iteration="1",
+            scenario="PyPSA_NPi_preFacAuto_Avg_preFacFadeOut_adjCost_2023-10-09_19.43.41",
         )
 
     configure_logging(snakemake)
@@ -470,8 +470,8 @@ if __name__ == "__main__":
     if not df_base.query("parameter == 'lifetime'")["value"].between(10, 100).all():
         logger.warning("Lifetime values below 10 or above 100 years detected.")
 
-    # No values should be negative
-    if df_base["value"].lt(0).any():
+    # No values should be negative (except for CO2 intensity which can be negative)
+    if df_base.query("parameter != 'CO2 intensity'")["value"].lt(0).any():
         raise ValueError(
             f"Negative values detected for:\n" f"{df_base.loc[df_base['value'].lt(0)]}"
         )
