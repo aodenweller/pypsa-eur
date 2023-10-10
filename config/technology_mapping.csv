@@ -18,5 +18,7 @@ windoff,wind_offshore,offwind-dc
 windoff,wind_offshore,offwind-ac
 windoff,wind_offshore,offwind
 spv,solar_pv,solar
+spv,solar_pv,solar-utility
+spv,solar_pv,solar-rooftop
 hydro,hydro,hydro
 hydro,hydro,ror

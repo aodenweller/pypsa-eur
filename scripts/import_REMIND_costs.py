@@ -57,8 +57,6 @@ if __name__ == "__main__":
     # original PyPSA-EUR cost data and apply that ratio to the new costs)
 
     scale_technologies_relative_to = {
-        "solar-rooftop": "solar",
-        "solar-utility": "solar",
         "PHS": "hydro",
         "ror": "hydro",
         "lignite": "coal",
