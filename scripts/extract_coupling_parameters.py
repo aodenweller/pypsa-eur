@@ -77,7 +77,7 @@ def calculate_availability_factor(
     return df
 
 
-if not "snakemake" in globals():
+if "snakemake" not in globals():
     from _helpers import mock_snakemake
 
     snakemake = mock_snakemake(
@@ -163,28 +163,26 @@ region_mapping = region_mapping.set_index("PyPSA-EUR")
 
 
 def check_for_mapping_completeness(n):
-    tmp_set = (
-        set(n.generators["carrier"]) - map_pypsaeur_to_general.keys() - set(["load"])
-    )
-    if tmp_set:
+    if (
+        tmp_set := set(n.generators["carrier"])
+        - map_pypsaeur_to_general.keys()
+        - {"load"}
+    ):
         logger.info(
             f"Technologies (carriers) missing from mapping PyPSA-EUR -> general technologies:\n {tmp_set}"
         )
 
-    tmp_set = map_pypsaeur_to_general.values() - map_general_to_remind.keys()
-    if tmp_set:
+    if tmp_set := map_pypsaeur_to_general.values() - map_general_to_remind.keys():
         logger.info(
             f"Technologies (carriers) missing from mapping General -> REMIND-EU:\n {tmp_set}"
         )
 
-    tmp_set = set(n.loads["general_carrier"]) - map_pypsaeur_to_remind_loads.keys()
-    if tmp_set:
+    if tmp_set := set(n.loads["general_carrier"]) - map_pypsaeur_to_remind_loads.keys():
         logger.info(
             f"Technologies (carriers) missing from mapping PyPSA-EUR -> REMIND-EU (loads):\n {tmp_set}"
         )
 
-    tmp_set = set(n.buses["country"]) - set(region_mapping.index)
-    if tmp_set:
+    if tmp_set := set(n.buses["country"]) - set(region_mapping.index):
         logger.info(
             f"PyPSA-EUR countries without mapping to REMIND-EU regions::\n {tmp_set}"
         )
@@ -435,12 +433,9 @@ for fp in input_networks:
     peak_residual_load["year"] = year
     peak_residual_loads.append(peak_residual_load)
 
-    # Enable cutoff of scarcity prices for market values by setting the weighting
-    # of snapshots with above cutoff prices to 0
-    cutoff_market_values = snakemake.config["remind_coupling"][
+    if cutoff_market_values := snakemake.config["remind_coupling"][
         "extract_coupling_parameters"
-    ]["cutoff_market_values"]
-    if cutoff_market_values:
+    ]["cutoff_market_values"]:
         relevant_buses = network.buses.query("carrier == 'AC'").index
         cutoff_market_values = float(cutoff_market_values)
         zscores = (
@@ -670,7 +665,7 @@ for fn, df in {
 # Export to GAMS gdx file for coupling
 gdx = gt.Container()
 
-# Construct sets from exemplary index; luckily all data share most of the indeces
+# Construct sets from exemplary index; luckily all data share most of the indices
 sets = {
     "year": market_values["year"].unique(),
     "region": market_values["region"].unique(),
