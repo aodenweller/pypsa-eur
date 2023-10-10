@@ -441,40 +441,55 @@ if __name__ == "__main__":
 
     df_base = df_base.apply(calculate_scaled_value, axis="columns")
 
+    # Add index for easier processing
+    df_base = df_base.set_index(["technology", "parameter"])
+
     # Check values for plausibility
     # Efficiencies should be between 0 and 1
-    if not efficiency["value"].between(0, 1).all():
-        logger.warning("Efficiency values below 0 or above 1 detected.")
+    if not (
+        bad_values := df_base.query(
+            "parameter == 'efficiency' and (value < 0 or value > 1)"
+        )
+    ).empty:
+        logger.warning(
+            f"Efficiency values below 0 or above 1 detected for {bad_values['value']}"
+        )
 
     # FOM in percent should be between 0 and 100
-    if not df_base.query("parameter == 'FOM'")["value"].between(0, 100).all():
-        logger.warning("Fixed O&M values below 0 or above 100% detected.")
+    if not (
+        bad_values := df_base.query("parameter == 'FOM' and (value < 0 or value > 100)")
+    ).empty:
+        logger.warning(
+            f"Fixed O&M values below 0 or above 100% detected for {bad_values['value']}"
+        )
 
     # discount_rate must always be greater 0
-    if not df_base.query("parameter == 'discount_rate'")["value"].gt(0).all():
-        logger.warning("discount rate values <= 0 detected.")
-
-    # discount rate, VOM, investment, CO2 intensity and fuel cost should always be positive
-    if (
-        df_base.query(
-            "parameter in ['discount_rate', 'VOM', 'investment', 'CO2 intensity', 'fuel']"
-        )["value"]
-        .lt(0)
-        .any()
-    ):
-        logger.warning(
-            "Negative values detected for discount rate, VOM, investment, CO2 intensity or fuel."
+    if not (
+        bad_values := df_base.query("parameter == 'discount_rate' and value <= 0")
+    ).empty:
+        raise ValueError(
+            f"discount rate values <= 0 detected for {bad_values['value']}"
         )
 
     # Lifetime should be between 10 and 100 years (guess)
-    if not df_base.query("parameter == 'lifetime'")["value"].between(10, 100).all():
-        logger.warning("Lifetime values below 10 or above 100 years detected.")
-
-    # No values should be negative (except for CO2 intensity which can be negative)
-    if df_base.query("parameter != 'CO2 intensity'")["value"].lt(0).any():
-        raise ValueError(
-            f"Negative values detected for:\n" f"{df_base.loc[df_base['value'].lt(0)]}"
+    if not (
+        bad_values := df_base.query(
+            "parameter == 'lifetime' and (value < 10 or value > 100)"
+        )
+    ).empty:
+        logger.warning(
+            f"Lifetime values below 10 or above 100 years detected for {bad_values['value']}"
         )
 
+    # No values should be negative; known exceptions of (technology, parameter) are explicitly excluded through multiindex tuples
+    if not (
+        bad_values := df_base.loc[
+            df_base.index.difference(
+                pd.MultiIndex.from_tuples([("biomass", "CO2 intensity")])
+            )
+        ].query("value < 0")
+    ).empty:
+        raise ValueError(f"Negative values detected for:\n {bad_values}")
+
     # Write results to file
-    df_base.to_csv(snakemake.output["costs"], index=False)
+    df_base.to_csv(snakemake.output["costs"])
