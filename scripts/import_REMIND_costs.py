@@ -22,8 +22,8 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "import_REMIND_costs",
             year="2055",
-            iteration="1",
-            scenario="PyPSA_NPi_preFacAuto_Avg_preFacFadeOut_adjCost_2023-10-09_19.43.41",
+            iteration="6",
+            scenario="PyPSA_NPi_preFacAuto_Avg_preFacFadeOut_adjCost_2023-10-08_10.52.45",
         )
 
     configure_logging(snakemake)
@@ -489,5 +489,8 @@ if __name__ == "__main__":
     ).empty:
         raise ValueError(f"Negative values detected for:\n {bad_values}")
 
+    df_base.loc[df_base.query("technology.str.contains('offwind-')", engine="python").index, "value"] = 0.
+    df_base.loc[df_base.query("technology.str.contains('offwind-')", engine="python").index, "source"] = "4 oclock coffee i.e. quick and dirty"
+    
     # Write results to file
     df_base.to_csv(snakemake.output["costs"])
