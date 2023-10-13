@@ -809,11 +809,12 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
-        snakemake = mock_snakemake("add_electricity",
-                                   scenario="PyPSA_base_testOneRegi_Markup_2023-08-14_17.21.21",
-                                   iteration="3",
-                                   year="2030",
-                                   )
+        snakemake = mock_snakemake(
+            "add_electricity",
+            scenario="PyPSA_NPi_preFacAuto_Avg_preFacFadeOut_adjCost_2023-10-08_10.52.45",
+            iteration="6",
+            year="2055",
+        )
     configure_logging(snakemake)
 
     params = snakemake.params
@@ -827,6 +828,9 @@ if __name__ == "__main__":
         params.electricity["max_hours"],
         Nyears,
     )
+    costs.reset_index().melt(
+        id_vars="technology", var_name="parameter", value_name="value"
+    ).to_csv(snakemake.output["costs_validation"])
     ppl = load_powerplants(snakemake.input.powerplants)
 
     attach_load(
