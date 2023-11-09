@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
 # %%
-import logging
-from types import SimpleNamespace
+# There are three steps for importing REMIND-EU costs followed in this script:
+# 1. Technologies which get their values from REMIND-EU, weighted by the electricity generation of the related REMIND-EU technology
+# 2. Technologies where values are scaled based on a proxy technology
+# 3. Technologies where values are set in the technology mapping config file
 
-import country_converter as coco
-import numpy as np
+import logging
+
 import pandas as pd
-from _helpers import (
-    configure_logging,
-    get_region_mapping,
-    get_technology_mapping,
-    read_remind_data,
-)
+import yaml
+from _helpers import configure_logging, get_region_mapping, read_remind_data
 
 logger = logging.getLogger(__name__)
 
@@ -23,681 +21,423 @@ if __name__ == "__main__":
             "import_REMIND_costs",
             year="2055",
             iteration="6",
-            scenario="PyPSA_NPi_preFacAuto_Avg_preFacFadeOut_adjCost_2023-10-08_10.52.45",
+            scenario="PyPSA_NPi_preFacAuto_Avg_preFacFadeOut_adjCost_2023-10-08_10.52.45-2",
         )
 
     configure_logging(snakemake)
 
-    # Only Generation technologies (PyPSA "generator" "carriers")
-    # Use a two step mapping approach between PyPSA-EUR and REMIND:
-    # First mapping is aggregating PyPSA-EUR technologies to general technologies
-    # Second mapping is disaggregating general technologies to REMIND technologies
-    map_pypsaeur_to_general = get_technology_mapping(
-        snakemake.input["technology_mapping"],
-        source="PyPSA-EUR",
-        target="General",
-        flatten=True,
-    )
+# Read new technology mapping
+logger.info("Loading technology mapping ... ")
+technology_mapping = pd.read_csv(
+    snakemake.input["technology_cost_mapping"],
+)
 
-    # Remove elements with keys:
-    # offwind-ac, offwind-dc: Technologies already mapped through "offwind"
-    # lignite, ror: Technologies not directly mapped, but indirectly through scale_technologies_relative_to
-    map_pypsaeur_to_general = {
-        k: v
-        for k, v in map_pypsaeur_to_general.items()
-        if k not in ["offwind-ac", "offwind-dc", "ror", "lignite"]
-    }
+# Convert list-like entries to real lists and explode for 1:1 mapping per row entry between PyPSA-EUR and REMIND-EU technologies
+technology_mapping["reference"] = (
+    technology_mapping["reference"].apply(yaml.safe_load).to_list()
+)
+technology_mapping = technology_mapping.explode("reference")
 
-    map_general_to_remind = get_technology_mapping(
-        snakemake.input["technology_mapping"], source="General", target="REMIND-EU"
-    )
+# +++ 1. Technologies which get their values from REMIND-EU, weighted by the electricity generation of the related REMIND-EU technology +++
+mapped_technologies = technology_mapping.query(
+    "`couple to` == 'mapping generation weighted to reference REMIND-EU technology'"
+).drop(columns=["unit"])
 
-    # Technologies not present in REMIND, scale these technologies based on development
-    # of their reference technologies (preserve the ratio the technologies see in the
-    # original PyPSA-EUR cost data and apply that ratio to the new costs)
+## Load REMIND data into long format
+# investment costs
+logger.info("... extracting investment costs")
+costs = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="p32_capCostwAdjCost",
+    rename_columns={
+        "ttot": "year",
+        "all_regi": "region",
+        "all_te": "technology",
+    },
+).query("year == '{}'".format(snakemake.wildcards["year"]))
+costs["value"] *= 1e6  # Unit conversion from TUSD/TW to USD/MW
+costs["parameter"] = "investment"
+costs["unit"] = "USD/MW"
 
-    scale_technologies_relative_to = {
-        "PHS": "hydro",
-        "ror": "hydro",
-        "lignite": "coal",
-        "offwind-ac-connection-submarine": "offwind",
-        "offwind-ac-connection-underground": "offwind",
-        "offwind-ac-station": "offwind",
-        "offwind-dc-connection-submarine": "offwind",
-        "offwind-dc-connection-underground": "offwind",
-        "offwind-dc-station": "offwind",
-    }
+# discount rate
+logger.info("... extracting discount rate")
+discount_rate = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="p_r",
+    rename_columns={
+        "ttot": "year",
+        "all_regi": "region",
+    },
+).query("year == '{}'".format(snakemake.wildcards["year"]))
+# discount rates are not technology specified; instead of treating as special case, continue by
+# adding a fake technology-dependency with all-technology identical values
+discount_rate = discount_rate.merge(
+    pd.Series(mapped_technologies["reference"].unique(), name="technology"), how="cross"
+)
+discount_rate["parameter"] = "discount rate"
+discount_rate["unit"] = "p.u."
 
-    # Inverted maps required here
-    map_remind_to_general = {
-        lv: k for k, v in map_general_to_remind.items() for lv in v
-    }
-    map_general_to_pypsaeur = pd.DataFrame(
-        {
-            "PyPSA-EUR": map_pypsaeur_to_general.keys(),
-            "general": map_pypsaeur_to_general.values(),
-        }
-    )
+# lifetime
+logger.info("... extracting lifetime")
+lifetime = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="pm_data",
+    rename_columns={
+        "all_regi": "region",
+        "all_te": "technology",
+    },
+).query("char == 'lifetime'")
+lifetime["parameter"] = "lifetime"
+lifetime["unit"] = "years"
 
-    # Load region mapping
-    region_mapping = pd.DataFrame(
-        get_region_mapping(
-            snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
-        )
-    ).T.reset_index()
-    region_mapping.columns = ["PyPSA-EUR", "REMIND-EU"]
-    # Limit mapping to countries modelled with PyPSA-EUR
-    region_mapping = region_mapping.loc[
-        region_mapping["PyPSA-EUR"].isin(snakemake.config["countries"])
-    ]
+# fixed O&M
+logger.info("... extracting FOM")
+fom = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="pm_data",
+    rename_columns={
+        "all_regi": "region",
+        "all_te": "technology",
+    },
+).query("char == 'omf'")
+fom["value"] *= 100  # Unit conversion from p.u. to %
+fom["parameter"] = "FOM"
+fom["unit"] = "%/year"
 
-    # Read investment costs
-    logger.info("... extracting investment costs")
-    costs = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="p32_capCostwAdjCost",
-        rename_columns={
-            "ttot": "year",
-            "all_regi": "region",
-            "all_te": "technology",
-        },
-    )
-    costs = costs.loc[costs["year"] == snakemake.wildcards["year"]]
-    costs["value"] *= 1e6  # Unit conversion from TUSD/TW to USD/MW
-    costs["parameter"] = "investment"
-    costs["unit"] = "USD/MW"
-    costs = costs[["region", "technology", "parameter", "value", "unit"]]
+# variable O&M
+logger.info("... extracting VOM")
+vom = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="pm_data",
+    rename_columns={
+        "all_regi": "region",
+        "all_te": "technology",
+    },
+).query("char == 'omv'")
+vom["value"] *= 1e6 / 8760  # Unit conversion from TUSD/TWa to USD/MWh
+vom["parameter"] = "VOM"
+vom[
+    "unit"
+] = "USD/MWh"  # TODO check whether per unit input or unit output ( should be per unit MWh_e output)
 
-    # Add discount rate
-    logger.info("... extracting discount rate")
-    discount_rate = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="p_r",
-        rename_columns={
-            "ttot": "year",
-            "all_regi": "region",
-        },
-    )
-    discount_rate = discount_rate.loc[
-        discount_rate["year"] == snakemake.wildcards["year"]
-    ]
-    discount_rate["parameter"] = "discount rate"
-    discount_rate["unit"] = "p.u."
-    discount_rate = discount_rate[["region", "parameter", "value", "unit"]]
+# CO2 intensities
+logger.info("... extracting CO2 intensities")
+co2_intensity = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="fm_dataemiglob",
+    rename_columns={
+        "all_te_2": "technology",
+        "all_enty_0": "from_carrier",
+        "all_enty_1": "to_carrier",
+        "all_enty_3": "emission_type",
+    },
+).query("to_carrier == 'seel' & emission_type == 'co2'")
 
-    # Add lifetime
-    logger.info("... extracting lifetime")
-    lifetime = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="pm_data",
-        rename_columns={
-            "all_regi": "region",
-            "all_te": "technology",
-        },
-    ).query("char == 'lifetime'")
-    lifetime["parameter"] = "lifetime"
-    lifetime["unit"] = "years"
-    lifetime = lifetime[["region", "technology", "parameter", "value", "unit"]]
+# CO2 intensities are not region specified; instead of treating as special case, continue by
+# adding a fake region-dependency with all-region identical values
+co2_intensity = co2_intensity.merge(
+    pd.Series(costs["region"].unique(), name="region"), how="cross"
+)
+# Unit conversion from Gt_C/TWa to t_CO2/MWh
+co2_intensity["value"] *= 1e9 * ((2 * 16 + 12) / 12) / 8760 / 1e6
+co2_intensity["parameter"] = "CO2 intensity"
+co2_intensity["unit"] = "t_CO2/MWh_th"  # TODO check correct unit
 
-    # Add fixed and variable O&M
-    logger.info("... extracting FOM")
-    fom = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="pm_data",
-        rename_columns={
-            "all_regi": "region",
-            "all_te": "technology",
-        },
-    ).query("char == 'omf'")
-    fom["value"] *= 100  # Unit conversion from p.u. to %
-    fom["parameter"] = "FOM"
-    fom["unit"] = "%/year"
-    fom = fom[["region", "technology", "parameter", "value", "unit"]]
-
-    # Add variable O&M
-    logger.info("... extracting VOM")
-    vom = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="pm_data",
-        rename_columns={
-            "all_regi": "region",
-            "all_te": "technology",
-        },
-    ).query("char == 'omv'")
-    vom["value"] *= 1e6 / 8760  # Unit conversion from TUSD/TWa to USD/MWh
-    vom["parameter"] = "VOM"
-    vom[
-        "unit"
-    ] = "USD/MWh"  # TODO check whether per unit input or unit output ( should be per unit MWh_e output)
-    vom = vom[["region", "technology", "parameter", "value", "unit"]]
-
-    # Add CO2 intensities
-    logger.info("... extracting CO2 intensities")
-    co2_intensity = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="fm_dataemiglob",
-        rename_columns={
-            "all_te_2": "technology",
-            "all_enty_0": "from_carrier",
-            "all_enty_1": "to_carrier",
-            "all_enty_3": "emission_type",
-        },
-    )
-
-    co2_intensity = co2_intensity.loc[
-        (co2_intensity["to_carrier"] == "seel")
-        & (co2_intensity["emission_type"] == "co2")
-    ]
-    # Unit conversion from Gt_C/TWa to t_CO2/MWh
-    co2_intensity["value"] *= 1e9 * ((2 * 16 + 12) / 12) / 8760 / 1e6
-    co2_intensity["parameter"] = "CO2 intensity"
-    co2_intensity["unit"] = "t_CO2/MWh_th"  # TODO check correct unit
-    co2_intensity = co2_intensity.merge(
-        pd.Series(costs["region"].unique(), name="region"), how="cross"
-    )  # Add region to match columns with remaining data
-    co2_intensity = co2_intensity[
-        ["region", "technology", "parameter", "value", "unit"]
-    ]
-
-    # Efficiencies; separated into two different variables in REMIND (constant & year-dependent)
-    logger.info("... extracting efficiencies")
-    pm_eta_conv = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="pm_eta_conv",
-        rename_columns={
-            "tall": "year",
-            "all_regi": "region",
-            "all_te": "technology",
-        },
-    )
-    pm_dataeta = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="pm_dataeta",
-        rename_columns={
-            "tall": "year",
-            "all_regi": "region",
-            "all_te": "technology",
-        },
-    )
-    efficiency = pd.concat([pm_eta_conv, pm_dataeta])
-    efficiency = efficiency.loc[efficiency["year"] == snakemake.wildcards["year"]]
-    efficiency["parameter"] = "efficiency"
-    efficiency["unit"] = "p.u."  # TODO check correct unit
-    efficiency = efficiency[["region", "technology", "parameter", "value", "unit"]]
-
-    # Fuel costs
-    logger.info("... extracting fuel costs")
-    fuel_costs = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="p32_PEPriceAvg",
-        rename_columns={
-            "ttot": "year",
-            "all_regi": "region",
-            "all_enty": "carrier",
-        },
-    )
-    fuel_costs = fuel_costs.loc[fuel_costs["year"] == snakemake.wildcards["year"]]
-    # Unit conversion from TUSD/TWa to USD/MWh
-    fuel_costs["value"] *= 1e6 / 8760
-
-    # Mapping for primary energy carriers to technologies for electricity generation
-    map_carrier_technology = (
+# Efficiencies
+# Values are split across two different variables in REMIND (constant & year-dependent)
+logger.info("... extracting efficiencies")
+efficiency = pd.concat(
+    [
         read_remind_data(
             file_path=snakemake.input["remind_data"],
-            variable_name="pe2se",
+            variable_name="pm_eta_conv",
             rename_columns={
-                "all_enty_0": "carrier",
-                "all_te_2": "technology",
+                "tall": "year",
+                "all_regi": "region",
+                "all_te": "technology",
             },
-        )
-        .query("all_enty_1 == 'seel'")
-        .set_index("carrier")["technology"]
-    )
-
-    fuel_costs = fuel_costs.merge(map_carrier_technology, on="carrier")
-    fuel_costs["parameter"] = "fuel"
-    fuel_costs[
-        "unit"
-    ] = "USD/MWh_th"  # TODO check correct unit (should be per MWh_th input)
-    fuel_costs = fuel_costs[["region", "technology", "parameter", "value", "unit"]]
-
-    # Special treatment for nuclear:
-    # * Fuel costs are given in TUSD/Mt, which is converted to USD/MWh_el using the efficiency
-    # * Efficiencies are given in TWa/Mt uranium, which we already apply to the fuel costs, thus set efficiency to 1
-    fuel_costs = fuel_costs.set_index(["technology", "region"])
-    efficiency = efficiency.set_index(["technology", "region"])
-    fuel_costs.loc[["fnrs", "tnrs"], "value"] /= efficiency.loc[["fnrs", "tnrs"]][
-        "value"
+        ),
+        read_remind_data(
+            file_path=snakemake.input["remind_data"],
+            variable_name="pm_dataeta",
+            rename_columns={
+                "tall": "year",
+                "all_regi": "region",
+                "all_te": "technology",
+            },
+        ),
     ]
-    fuel_costs.loc[["fnrs", "tnrs"], "unit"] = "USD/MWh_el"
-    efficiency.loc[["fnrs", "tnrs"], "value"] = 1
-    fuel_costs = fuel_costs.reset_index()
-    efficiency = efficiency.reset_index()
+).query("year == '{}'".format(snakemake.wildcards["year"]))
+efficiency["parameter"] = "efficiency"
+efficiency["unit"] = "p.u."  # TODO check correct unit
+# Special treatment for nuclear: Efficiencies are in TWa/Mt=8760 TWh/Tg_U -> convert to MWh/g_U to match with fuel costs in USD/g_U
+efficiency.loc[efficiency["technology"].isin(["fnrs", "tnrs"]), "value"] *= 8760 / 1e6
+efficiency.loc[efficiency["technology"].isin(["fnrs", "tnrs"]), "unit"] = "MWh/g_U"
 
-    logger.info("Calculating weighted technology costs...")
-    weights = read_remind_data(
-        file_path=snakemake.input["remind_data"],
-        variable_name="v32_usableSeTeDisp",
-        rename_columns={
-            "ttot": "year",
-            "all_regi": "region",
-            "all_enty": "carrier",
-            "all_te": "technology",
-            "level": "value",
-        },
-    ).query(
-        "carrier == 'seel' and region.isin(@region_mapping['REMIND-EU'])",
-        engine="python",
-    )[
-        ["year", "region", "technology", "value"]
+
+# Fuel costs
+logger.info("... extracting fuel costs")
+fuel_costs = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="p32_PEPriceAvg",
+    rename_columns={
+        "ttot": "year",
+        "all_regi": "region",
+        "all_enty": "technology",
+    },
+).query("year == '{}'".format(snakemake.wildcards["year"]))
+fuel_costs["parameter"] = "fuel"
+# Unit conversion from TUSD/TWa to USD/MWh
+# Special treatment for nuclear fuel uranium (peur): Fuel costs are originally in TUSD/Mt = USD/g_U (TUSD/Tg) -> adjust unit
+fuel_costs.loc[~(fuel_costs["technology"] == "peur"), "value"] *= 1e6 / 8760
+fuel_costs[
+    "unit"
+] = "USD/MWh_th"  # TODO check correct unit (should be per MWh_th input)
+fuel_costs.loc[fuel_costs["technology"] == "peur", "unit"] = "USD/g_U"
+
+# Combine all technology data for further processing
+df = pd.concat(
+    [costs, discount_rate, lifetime, fom, vom, co2_intensity, efficiency, fuel_costs]
+)[["region", "technology", "parameter", "value", "unit"]].rename(
+    columns={"technology": "reference"}
+)
+
+# Load region mapping
+region_mapping = (
+    pd.DataFrame.from_dict(
+        get_region_mapping(
+            snakemake.input["region_mapping"],
+            source="PyPSA-EUR",
+            target="REMIND-EU",
+        )
+    )
+    .T.reset_index()
+    .rename(columns={"index": "PyPSA-EUR", 0: "REMIND-EU"})
+)
+
+# Limit to regions & countries PyPSA-EUR is configured for
+region_mapping = region_mapping.query(
+    "`PyPSA-EUR`.isin({})".format(snakemake.config["countries"])
+)
+df = df.query("region.isin(@region_mapping['REMIND-EU'])", engine="python")
+
+# To calculate weighted values for technologies / other cost related parameters,
+# first load the weights calculated in REMIND-EU
+weights = pd.concat(
+    [
+        read_remind_data(
+            file_path=snakemake.input["remind_data"],
+            variable_name="p32_weightGen",
+            rename_columns={
+                "ttot": "year",
+                "all_regi": "region",
+                "all_te": "technology",
+                "value": "weight",
+            },
+        ),
+        read_remind_data(
+            file_path=snakemake.input["remind_data"],
+            variable_name="p32_weightPEprice",
+            rename_columns={
+                "ttot": "year",
+                "all_regi": "region",
+                "all_enty": "technology",
+                "value": "weight",
+            },
+        ),
+        read_remind_data(
+            file_path=snakemake.input["remind_data"],
+            variable_name="p32_weightStor",
+            rename_columns={
+                "ttot": "year",
+                "all_regi": "region",
+                "all_te": "technology",
+                "value": "weight",
+            },
+        ),
     ]
-    weights["general_technology"] = weights["technology"].map(map_remind_to_general)
+).query(
+    "`region`.isin(@region_mapping['REMIND-EU']) and year == '{}'".format(
+        snakemake.wildcards["year"]
+    ),
+    engine="python",
+)[
+    ["region", "technology", "weight"]
+]
 
-    # Calculate weight per technology and region based on aggregated general technology
-    weights = weights.merge(
-        weights.groupby(["year", "region", "general_technology"])["value"]
-        .sum()
-        .rename("general_technology_sum"),
-        on=["year", "region", "general_technology"],
-    )
-    # set very small values to nan (prevent weird weights based on very small total capacities)
-    weights["general_technology_sum"] = weights["general_technology_sum"].where(
-        lambda x: x > 1e-4
-    )
-    weights["weight"] = weights["value"] / weights["general_technology_sum"]
+# Merge weights to REMIND-EU technology data
+df = df.merge(
+    weights,
+    left_on=["region", "reference"],
+    right_on=["region", "technology"],
+    how="left",
+)[["region", "reference", "parameter", "value", "unit", "weight"]]
 
-    # If non of the technologies of a general_technology are built, the weight becomes NaN which
-    # we want to avoid, else costs could be NaN or 0.
-    # Instead forward and backward fill the values with the weight of the previous / next time step year
-    weights["weight"] = weights.groupby(["year", "region", "technology"])[
-        "weight"
-    ].ffill()
-    weights["weight"] = weights.groupby(["year", "region", "technology"])[
-        "weight"
-    ].bfill()
 
-    if weights["weight"].isna().any():
-        # In rare cases, where none of the technologies of a general_technology is built in *any* previous year,
-        # a backup weight is calculated as 1 / number of technologies in the general_technology
-        # and then assigned to fill the NaN values
-        backup_weights = (
-            1
-            / weights.groupby(["general_technology", "year", "region"])["value"].count()
-        ).to_frame("backup_weight")
-        weights = weights.set_index(["year", "region", "general_technology"]).join(
-            backup_weights
+# Create new technology data for all technologies which are mapped and generation weighted
+mapped_technologies = mapped_technologies.merge(
+    df, on=["reference", "parameter"], how="left"
+)
+
+# Some parameters are not reported by REMIND-EU if they are not build, e.g. efficiency.
+# After merge these values will be NaN, fill here with 0
+mapped_technologies["weight"] = mapped_technologies["weight"].fillna(0.0)
+
+# Generation is reported in TWa and reported as 0 for technologies which are not built;
+# by adding a small value, we can avoid NaN values in the weighted aggregation
+# Value added is 1 MWh = 1e-6/8760 TWa
+mapped_technologies["weight"] += 1e-6 / 8760
+
+
+# Helper function used together with pd.DataFrame.apply:
+# * Calculate weighted value per technology and parameter
+# * Determine unit (which should be identical for all aggregated values)
+def calculate_weighted_value(x):
+    result = {
+        "weighted_value": (x["value"] * x["weight"]).sum(skipna=False)
+        / x["weight"].sum(),
+        "unit": x["unit"].unique()[0],
+    }
+
+    assert (
+        len(x["unit"].unique()) == 1
+    ), f'Multiple units per parameter detected. Check: {x[["PyPSA-EUR technology", "parameter"]]}'
+
+    return pd.Series(result, index=["weighted_value", "unit"])
+
+
+# Calculate electricity-generation weighted technology parameter (weighted across regions and different REMIND-EU technologies per single PyPSA-EUR technology)
+mapped_technologies = mapped_technologies.groupby(
+    ["PyPSA-EUR technology", "parameter"]
+).apply(calculate_weighted_value)
+mapped_technologies = mapped_technologies.reset_index().rename(
+    columns={"weighted_value": "value", "PyPSA-EUR technology": "technology"}
+)
+mapped_technologies["source"] = "REMIND-EU"
+mapped_technologies[
+    "further description"
+] = "Extracted from REMIND-EU model in 'import_REMIND_costs.py' script"
+
+
+# +++ 2. Technologies where values are scaled based on a proxy technology +++
+scaled_technologies = technology_mapping.query(
+    "`couple to` == 'scaling original values based on reference PyPSA-EUR technology'"
+).drop(columns=["unit"])
+
+# Check if technologies can be scaled
+if not (
+    missing_technologies := scaled_technologies.loc[
+        ~scaled_technologies["reference"].isin(
+            mapped_technologies["technology"].unique()
         )
-        weights["weight"] = weights["weight"].fillna(weights["backup_weight"])
-        weights = weights[["technology", "weight"]].reset_index()
-
-        # To future editor: Remove this warning if you disagree
-        logging.warning(
-            "NaN values in weights were filled with backup weights. This is should not happen very often and is probably a mistake."
-        )
-
-    # After filling NaN values, now limit weights to the year of interest
-    weights = weights.loc[(weights["year"] == snakemake.wildcards["year"])]
-
-    # Combine all parameters before weighting, remove irrelevant values from outside REMIND regions
-    df = pd.concat([costs, lifetime, fom, vom, co2_intensity, efficiency, fuel_costs])
-
-    # For each region and technology pair, add the region-specific discount_rate as an additional row
-    df = pd.concat(
-        [
-            df,
-            df[["region", "technology"]]
-            .merge(discount_rate, on="region")
-            .drop_duplicates(),
-        ]
-    )
-
-    df["general_technology"] = df["technology"].map(map_remind_to_general)
-    # Limit to region of interest and only consider technologies with weights
-    df = df.query(
-        "region.isin(@weights.region.unique()) and general_technology.notnull()"
-    )
-
-    # %%
-    # Adds weights to df for weighted aggregation with weights per region and general technology
-    df = df.merge(
-        weights[["region", "technology", "weight"]], on=["region", "technology"]
-    )
-    df["weighted_value"] = df["value"] * df["weight"]
-    df = (
-        df.groupby(["general_technology", "parameter"])
-        .agg(
-            {
-                "parameter": "first",
-                "weighted_value": np.sum,
-                "unit": pd.unique,  # Keep all unique units
-            }
-        )
-        .rename(columns={"weighted_value": "value"})
-    )
-
-    # check if there are multiple units per parameter
-    if len(df) != len(df.explode("unit")):
-        problematic_technologies = (
-            df["unit"].apply(len).where(lambda x: x != 1).dropna().index
-        )
-        logger.warning(
-            f"Multiple units per parameter detected. Please check: {problematic_technologies}"
-        )
-    # Turn unit column entries from lists caused by pd.unique to strings
-    df = df.explode("unit")
-
-    # Map general technologies to PyPSA-EUR technologies
-    df = df.merge(
-        map_general_to_pypsaeur, left_on="general_technology", right_on="general"
-    )
-    df = df.rename(columns={"PyPSA-EUR": "technology"})[
-        ["technology", "parameter", "value", "unit"]
     ]
-    df["source"] = "REMIND-EU"
-    df[
-        "further description"
-    ] = "Extracted from REMIND-EU model in 'import_REMIND_costs.py' script"
-
-    # Overwrite original cost data with REMIND extracted cost data
-    # Keep original values for data which is not available in REMIND
-    # and add new values from REMIND which have previously not existed (e.g. discount rate)
-    df_base = pd.read_csv(snakemake.input["original_costs"]).set_index(
-        ["technology", "parameter"]
-    )
-    df_base["original_value"] = df_base[
-        "value"
-    ]  # use this later to scale some technologies
-    df_base = (
-        df.set_index(["technology", "parameter"]).combine_first(df_base).reset_index()
+).empty:
+    raise AssertionError(
+        f"Scaling only works if the technogloy used as reference is mapped from a REMIND-EU technology."
+        f"The following technologies do not use reference technology which was previously mapped to REMIND-EU technologies."
+        f"Check: {missing_technologies}"
     )
 
-    logger.info("Scaling costs for technologies not extracted from REMIND-EU...")
+# Load original costs used by standard PyPSA-EUR model used as calculation basis
+original_cost = pd.read_csv(snakemake.input["original_costs"])
 
-    # Scale costs for technologies which are not extracted from REMIND based on reference technologies
-    # and their ratio to those technologies (basically allow for indirect learning for derived/related technologies)
-    def calculate_scaled_value(row):
-        if row["technology"] in scale_technologies_relative_to:
-            reference_row = df_base.loc[
-                (
-                    df_base["technology"]
-                    == scale_technologies_relative_to[row["technology"]]
-                )
-                & (df_base["parameter"] == row["parameter"])
-            ].squeeze()
+# Get information on the reference technology (original cost in standard PyPSA-EUR) as well as the technologies REMIND-EU value
+df = scaled_technologies.merge(
+    mapped_technologies,
+    left_on=["reference", "parameter"],
+    right_on=["technology", "parameter"],
+    how="left",
+    validate="many_to_one",
+).rename(columns={"value": "reference_value_new", "unit": "reference_unit_new"})
 
-            if not reference_row.empty:
-                row["value"] = (
-                    reference_row["value"]
-                    * row["original_value"]
-                    / reference_row["original_value"]
-                )
-                row["unit"] = reference_row["unit"]
-                row["source"] = "REMIND-EU"
-                row["further description"] = "Scaled value from REMIND-EU model"
+# Add original PyPSA-EUR technology assumptions which will then be scaled
+df = df.merge(
+    original_cost,
+    left_on=["technology", "parameter"],
+    right_on=["technology", "parameter"],
+    how="left",
+    validate="many_to_one",
+).rename(
+    columns={"value": "reference_value_original", "unit": "reference_unit_original"}
+)
+# Calculate the scaling factor
+df["scale_by"] = df["reference_value_new"] / df["reference_value_original"]
+# Technologies reported in PyPSA-EUR with kW or kWh have a scale_factor off by 1000 which needs correction
+df.loc[df["reference_unit_original"].str.contains("kW"), "scale_by"] /= 1000
 
-        return row
+# Get the original value from standard PyPSA-EUR for the technology to scale
+df = df.merge(
+    original_cost,
+    left_on=["PyPSA-EUR technology", "parameter"],
+    right_on=["technology", "parameter"],
+    how="left",
+    validate="one_to_one",
+)
 
-    df_base = df_base.apply(calculate_scaled_value, axis="columns")
+# Scale original value
+df["new_value"] = df["value"] * df["scale_by"]
 
-    # Add index for easier processing
-    df_base = df_base.set_index(["technology", "parameter"])
+df.loc[df["unit"].str.contains("kW"), "new_value"] /= 1000
+# Adjust unit: Unit has to be adjusted, because REMIND-EU uses MW and MWh, PyPSA-EUR sometimes kW and kWh as basis for scaling
+df["new_unit"] = df["unit"].str.replace("kW", "MW").str.replace("EUR", "USD")
 
-    # Check values for plausibility
-    # Efficiencies should be between 0 and 1
-    if not (
-        bad_values := df_base.query(
-            "parameter == 'efficiency' and (value < 0 or value > 1)"
-        )
-    ).empty:
-        logger.warning(
-            f"Efficiency values below 0 or above 1 detected for {bad_values['value']}"
-        )
+df["further description"] = (
+    "Original value from PyPSA-EUR scaled by cost development experienced in REMIND-EU experienced by the reference technology: "
+    + df["reference"]
+    + "\n"
+    "Original source: "
+    + df["source_x"]
+    + " with description: "
+    + df["further description_x"]
+)
+df["source"] = "REMIND-EU and PyPSA-EUR"
 
-    # FOM in percent should be between 0 and 100
-    if not (
-        bad_values := df_base.query("parameter == 'FOM' and (value < 0 or value > 100)")
-    ).empty:
-        logger.warning(
-            f"Fixed O&M values below 0 or above 100% detected for {bad_values['value']}"
-        )
-
-    # discount_rate must always be greater 0
-    if not (
-        bad_values := df_base.query("parameter == 'discount_rate' and value <= 0")
-    ).empty:
-        raise ValueError(
-            f"discount rate values <= 0 detected for {bad_values['value']}"
-        )
-
-    # Lifetime should be between 10 and 100 years (guess)
-    if not (
-        bad_values := df_base.query(
-            "parameter == 'lifetime' and (value < 10 or value > 100)"
-        )
-    ).empty:
-        logger.warning(
-            f"Lifetime values below 10 or above 100 years detected for {bad_values['value']}"
-        )
-
-    # No values should be negative; known exceptions of (technology, parameter) are explicitly excluded through multiindex tuples
-    if not (
-        bad_values := df_base.loc[
-            df_base.index.difference(
-                pd.MultiIndex.from_tuples([("biomass", "CO2 intensity")])
-            )
-        ].query("value < 0")
-    ).empty:
-        raise ValueError(f"Negative values detected for:\n {bad_values}")
-
-    df_base.loc[df_base.query("technology.str.contains('offwind-')", engine="python").index, "value"] = 0.
-    df_base.loc[df_base.query("technology.str.contains('offwind-')", engine="python").index, "source"] = "4 oclock coffee i.e. quick and dirty"
-    
-
-    # %%
-    keep_entries = [
-    ('CCGT', 'CO2 intensity'),
-    ('CCGT', 'FOM'),
-    ('CCGT', 'VOM'),
-    # ('CCGT', 'c_b'),
-    # ('CCGT', 'c_v'),
-    ('CCGT', 'discount rate'),
-    ('CCGT', 'efficiency'),
-    ('CCGT', 'fuel'),
-    ('CCGT', 'investment'),
-    ('CCGT', 'lifetime'),
-    ('HVAC overhead', 'FOM'),
-    ('HVAC overhead', 'investment'),
-    ('HVAC overhead', 'lifetime'),
-    ('HVDC inverter pair', 'FOM'),
-    ('HVDC inverter pair', 'investment'),
-    ('HVDC inverter pair', 'lifetime'),
-    ('HVDC overhead', 'FOM'),
-    ('HVDC overhead', 'investment'),
-    ('HVDC overhead', 'lifetime'),
-    ('HVDC submarine', 'FOM'),
-    ('HVDC submarine', 'investment'),
-    ('HVDC submarine', 'lifetime'),
-    ('OCGT', 'CO2 intensity'),
-    ('OCGT', 'FOM'),
-    ('OCGT', 'VOM'),
-    ('OCGT', 'discount rate'),
-    ('OCGT', 'efficiency'),
-    ('OCGT', 'fuel'),
-    ('OCGT', 'investment'),
-    ('OCGT', 'lifetime'),
-    ('PHS', 'FOM'),
-    ('PHS', 'efficiency'),
-    ('PHS', 'investment'),
-    ('PHS', 'lifetime'),
-    ('battery inverter', 'FOM'),
-    ('battery inverter', 'efficiency'),
-    ('battery inverter', 'investment'),
-    ('battery inverter', 'lifetime'),
-    ('battery storage', 'investment'),
-    ('battery storage', 'lifetime'),
-    ('biomass', 'CO2 intensity'),
-    ('biomass', 'FOM'),
-    ('biomass', 'VOM'),
-    ('biomass', 'discount rate'),
-    ('biomass', 'efficiency'),
-    ('biomass', 'fuel'),
-    ('biomass', 'investment'),
-    ('biomass', 'lifetime'),
-    ('coal', 'CO2 intensity'),
-    ('coal', 'FOM'),
-    ('coal', 'VOM'),
-    ('coal', 'discount rate'),
-    ('coal', 'efficiency'),
-    ('coal', 'fuel'),
-    ('coal', 'investment'),
-    ('coal', 'lifetime'),
-    ('electrolysis', 'FOM'),
-    # ('electrolysis', 'efficiency'),
-    # ('electrolysis', 'efficiency-heat'),
-    ('electrolysis', 'investment'),
-    ('electrolysis', 'lifetime'),
-    ('fuel cell', 'FOM'),
-    # ('fuel cell', 'c_b'),
-    # ('fuel cell', 'efficiency'),
-    ('fuel cell', 'investment'),
-    ('fuel cell', 'lifetime'),
-    ('gas', 'CO2 intensity'),
-    ('gas', 'fuel'),
-    # ('geothermal', 'CO2 intensity'),
-    # ('geothermal', 'FOM'),
-    # ('geothermal', 'efficiency'),
-    # ('geothermal', 'investment'),
-    # ('geothermal', 'lifetime'),
-    ('hydro', 'FOM'),
-    ('hydro', 'discount rate'),
-    ('hydro', 'efficiency'),
-    ('hydro', 'fuel'),
-    ('hydro', 'investment'),
-    ('hydro', 'lifetime'),
-    ('hydrogen storage underground', 'FOM'),
-    ('hydrogen storage underground', 'VOM'),
-    ('hydrogen storage underground', 'investment'),
-    ('hydrogen storage underground', 'lifetime'),
-    ('lignite', 'CO2 intensity'),
-    ('lignite', 'FOM'),
-    ('lignite', 'VOM'),
-    ('lignite', 'efficiency'),
-    ('lignite', 'fuel'),
-    ('lignite', 'investment'),
-    ('lignite', 'lifetime'),
-    ('nuclear', 'FOM'),
-    ('nuclear', 'VOM'),
-    ('nuclear', 'discount rate'),
-    ('nuclear', 'efficiency'),
-    ('nuclear', 'fuel'),
-    ('nuclear', 'investment'),
-    ('nuclear', 'lifetime'),
-    ('offwind', 'FOM'),
-    # ('offwind', 'VOM'),
-    ('offwind', 'discount rate'),
-    ('offwind', 'efficiency'),
-    ('offwind', 'fuel'),
-    ('offwind', 'investment'),
-    ('offwind', 'lifetime'),
-    ('offwind-ac-connection-submarine', 'investment'),
-    ('offwind-ac-connection-underground', 'investment'),
-    ('offwind-ac-station', 'investment'),
-    ('offwind-dc-connection-submarine', 'investment'),
-    ('offwind-dc-connection-underground', 'investment'),
-    ('offwind-dc-station', 'investment'),
-    ('oil', 'CO2 intensity'),
-    ('oil', 'FOM'),
-    ('oil', 'VOM'),
-    ('oil', 'discount rate'),
-    ('oil', 'efficiency'),
-    ('oil', 'fuel'),
-    ('oil', 'investment'),
-    ('oil', 'lifetime'),
-    ('onwind', 'FOM'),
-    # ('onwind', 'VOM'),
-    ('onwind', 'discount rate'),
-    ('onwind', 'efficiency'),
-    ('onwind', 'fuel'),
-    ('onwind', 'investment'),
-    ('onwind', 'lifetime'),
-    ('ror', 'FOM'),
-    ('ror', 'efficiency'),
-    ('ror', 'investment'),
-    ('ror', 'lifetime'),
-    ('solar', 'FOM'),
-    # ('solar', 'VOM'),
-    ('solar', 'discount rate'),
-    ('solar', 'efficiency'),
-    ('solar', 'fuel'),
-    ('solar', 'investment'),
-    ('solar', 'lifetime'),
-    ('solar-rooftop', 'FOM'),
-    ('solar-rooftop', 'discount rate'),
-    ('solar-rooftop', 'efficiency'),
-    ('solar-rooftop', 'fuel'),
-    ('solar-rooftop', 'investment'),
-    ('solar-rooftop', 'lifetime'),
-    ('solar-utility', 'FOM'),
-    ('solar-utility', 'discount rate'),
-    ('solar-utility', 'efficiency'),
-    ('solar-utility', 'fuel'),
-    ('solar-utility', 'investment'),
-    ('solar-utility', 'lifetime')
+scaled_technologies = df[
+    [
+        "PyPSA-EUR technology",
+        "parameter",
+        "new_value",
+        "new_unit",
+        "source",
+        "further description",
     ]
-
-    df_base = df_base.loc[df_base.index.isin(keep_entries)]
-
-
-    # TODO read default value for "discount rate" for technologies not contained in REMIND somehow
-    # %%
-    # create a pd.DataFrame with a multiindex from the values below and two columns "value" and "unit"
-    additional_values = pd.DataFrame(
-        [
-            ("HVAC overhead", "discount rate", 0.05, "p.u."),
-            ("HVDC inverter pair", "discount rate", 0.05, "p.u."),
-            ("HVDC overhead", "discount rate", 0.05, "p.u."),
-            ("HVDC submarine", "discount rate", 0.05, "p.u."),
-            ("PHS", "discount rate", 0.05, "p.u."),
-            ("battery storage", "discount rate", 0.05, "p.u."),
-            ("battery inverter", "discount rate", 0.05, "p.u."),
-            ("electrolysis", "discount rate", 0.05, "p.u."),
-            ("fuel cell", "discount rate", 0.05, "p.u."),
-            ("gas", "discount rate", 0.05, "p.u."),
-            ("hydrogen storage underground", "discount rate", 0.05, "p.u."),
-            ("lignite", "discount rate", 0.05, "p.u."),
-            ("offwind-ac-connection-submarine", "discount rate", 0.05, "p.u."),
-            ("offwind-ac-connection-underground", "discount rate", 0.05, "p.u."),
-            ("offwind-ac-station", "discount rate", 0.05, "p.u."),
-            ("offwind-dc-connection-submarine", "discount rate", 0.05, "p.u."),
-            ("offwind-dc-connection-underground", "discount rate", 0.05, "p.u."),
-            ("offwind-dc-station", "discount rate", 0.05, "p.u."),
-            ("ror", "discount rate", 0.05, "p.u."),
-        ],
-        columns=["technology", "parameter", "value", "unit"],
-    ).set_index(["technology", "parameter"])
-
-    df_base = pd.concat([df_base, additional_values])
-
-    # Also lifetimes:
-    #('offwind-ac-connection-submarine', 'lifetime'),
-    #('offwind-ac-connection-underground', 'lifetime'),
-    #('offwind-ac-station', 'lifetime'),
-    #('offwind-dc-connection-submarine', 'lifetime'),
-    #('offwind-dc-connection-underground', 'lifetime'),
-    #('offwind-dc-station', 'lifetime'),
+].rename(
+    columns={
+        "PyPSA-EUR technology": "technology",
+        "new_value": "value",
+        "new_unit": "unit",
+    }
+)
 
 
-    # TODO
-    # gas costs for CCGT and OCGT: overwrite "gas" in csv which is then used by pyPSA-EUR
-    # instead of the fuel cost values by CCGT/OCGT
+# +++ 3. Technologies where values are set in the technology mapping config file +++
+set_technologies = technology_mapping.query(
+    "`couple to` == 'setting to reference value'"
+).rename(
+    columns={
+        "PyPSA-EUR technology": "technology",
+        "reference": "value",
+        "comment": "further description",
+    }
+)[
+    ["technology", "parameter", "value", "unit", "further description"]
+]
+set_technologies[
+    "source"
+] = f"Set via configuration file: {snakemake.input['technology_cost_mapping']}"
+set_technologies["further description"] = set_technologies[
+    "further description"
+].fillna("")
 
-    # TODO
-    # Warn when fill values become relevant
-    # Here's the code used in add_electricity.py
-    # fill_values = config["fill_values"]
-    # costs = costs.value.unstack().fillna(fill_values)
+# Combine all technologies
+costs = pd.concat([mapped_technologies, scaled_technologies, set_technologies])
 
-    # %%
-    # Write results to file
-    df_base.to_csv(snakemake.output["costs"])
+# Output to file
+costs.to_csv(snakemake.output["costs"], index=False)
+
+# %%
+# list all rows in r with nan values inside
+costs[costs.isna().any(axis=1)]
+
+# -> this is bad, can we have at least investment and VOM values for all technologies? from REMIND?
 # %%
