@@ -136,7 +136,7 @@ rule import_REMIND_costs:
         # no TD data for < 2020 and > 2050
         original_costs=lambda w: f"data/costs_{np.clip(int(w['year']), a_min=2020, a_max=2050)}.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
-        technology_mapping="config/technology_mapping.csv",
+        technology_cost_mapping="config/technology_cost_mapping.csv",
         remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
         costs=RESOURCES + "{scenario}/i{iteration}/y{year}/costs.csv",
