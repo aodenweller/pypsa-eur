@@ -9,6 +9,7 @@ import os
 import urllib
 from pathlib import Path
 
+import functools
 import pandas as pd
 import pytz
 import yaml
@@ -461,9 +462,11 @@ def read_remind_data(file_path, variable_name, rename_columns={}):
 
     from gams import transfer as gt
 
-    remind_data = gt.Container(file_path)
+    @functools.lru_cache
+    def _read_and_cache_remind_file(fp):
+        return gt.Container(fp)
 
-    data = remind_data[variable_name]
+    data = _read_and_cache_remind_file(file_path)[variable_name]
     df = data.records
     
     if df is not None and not df.empty:
