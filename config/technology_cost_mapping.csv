@@ -1,151 +1,263 @@
 PyPSA-EUR technology,parameter,couple to,reference,unit,comment
-ror,investment,scaling original values based on reference PyPSA-EUR technology,hydro,,
-ror,FOM,scaling original values based on reference PyPSA-EUR technology,hydro,,
-ror,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
-ror,discount rate,mapping generation weighted to reference REMIND-EU technology,hydro,,
-ror,lifetime,scaling original values based on reference PyPSA-EUR technology,hydro,,
-PHS,investment,scaling original values based on reference PyPSA-EUR technology,hydro,,
-PHS,FOM,scaling original values based on reference PyPSA-EUR technology,hydro,,
-PHS,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
-PHS,discount rate,mapping generation weighted to reference REMIND-EU technology,hydro,,
-PHS,lifetime,scaling original values based on reference PyPSA-EUR technology,hydro,,
-hydro,investment,mapping generation weighted to reference REMIND-EU technology,hydro,,
-hydro,FOM,mapping generation weighted to reference REMIND-EU technology,hydro,,
-hydro,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
-hydro,discount rate,mapping generation weighted to reference REMIND-EU technology,hydro,,
-hydro,lifetime,mapping generation weighted to reference REMIND-EU technology,hydro,,
-solar,investment,mapping generation weighted to reference REMIND-EU technology,spv,,
-solar,FOM,mapping generation weighted to reference REMIND-EU technology,spv,,
-solar,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
-solar,discount rate,mapping generation weighted to reference REMIND-EU technology,spv,,
-solar,lifetime,mapping generation weighted to reference REMIND-EU technology,spv,,
-solar-utility,investment,mapping generation weighted to reference REMIND-EU technology,spv,,
-solar-utility,FOM,mapping generation weighted to reference REMIND-EU technology,spv,,
-solar-utility,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
-solar-utility,discount rate,mapping generation weighted to reference REMIND-EU technology,spv,,
-solar-utility,lifetime,mapping generation weighted to reference REMIND-EU technology,spv,,
-solar-rooftop,investment,mapping generation weighted to reference REMIND-EU technology,spv,,
-solar-rooftop,FOM,mapping generation weighted to reference REMIND-EU technology,spv,,
-solar-rooftop,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
-solar-rooftop,discount rate,mapping generation weighted to reference REMIND-EU technology,spv,,
-solar-rooftop,lifetime,mapping generation weighted to reference REMIND-EU technology,spv,,
-onwind,investment,mapping generation weighted to reference REMIND-EU technology,wind,,
-onwind,FOM,mapping generation weighted to reference REMIND-EU technology,wind,,
-onwind,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
-onwind,discount rate,mapping generation weighted to reference REMIND-EU technology,wind,,
-onwind,lifetime,mapping generation weighted to reference REMIND-EU technology,wind,,
-offwind-ac,investment,mapping generation weighted to reference REMIND-EU technology,windoff,,
-offwind-ac,FOM,mapping generation weighted to reference REMIND-EU technology,windoff,,
-offwind-ac,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
-offwind-ac,discount rate,mapping generation weighted to reference REMIND-EU technology,windoff,,
-offwind-ac,lifetime,mapping generation weighted to reference REMIND-EU technology,windoff,,
-offwind-dc,investment,mapping generation weighted to reference REMIND-EU technology,windoff,,
-offwind-dc,FOM,mapping generation weighted to reference REMIND-EU technology,windoff,,
-offwind-dc,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
-offwind-dc,discount rate,mapping generation weighted to reference REMIND-EU technology,windoff,,
-offwind-dc,lifetime,mapping generation weighted to reference REMIND-EU technology,windoff,,
-offwind-connection-submarine,investment,setting to reference value,0,USD/MW/km,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-connection-submarine,FOM,setting to reference value,0,%/year,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-connection-submarine,VOM,setting to reference value,0,USD/MWh,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-connection-submarine,discount rate,mapping generation weighted to reference REMIND-EU technology,windoff,,
-offwind-connection-submarine,lifetime,setting to reference value,1,years,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-connection-underground,investment,setting to reference value,0,USD/MW/km,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-connection-underground,FOM,setting to reference value,0,%/year,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-connection-underground,VOM,setting to reference value,0,USD/MWh,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-connection-underground,discount rate,mapping generation weighted to reference REMIND-EU technology,windoff,,
-offwind-connection-underground,lifetime,setting to reference value,1,years,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-station,investment,setting to reference value,0,USD/MW,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-station,FOM,setting to reference value,0,%/year,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-station,VOM,setting to reference value,0,USD/MWh,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-station,discount rate,setting to reference value,0,p.u.,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-offwind-station,lifetime,setting to reference value,1,years,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
-OCGT,investment,mapping generation weighted to reference REMIND-EU technology,ngt,,
-OCGT,FOM,mapping generation weighted to reference REMIND-EU technology,ngt,,
-OCGT,VOM,mapping generation weighted to reference REMIND-EU technology,ngt,,
-OCGT,discount rate,mapping generation weighted to reference REMIND-EU technology,ngt,,
-OCGT,lifetime,mapping generation weighted to reference REMIND-EU technology,ngt,,
-nuclear,investment,mapping generation weighted to reference REMIND-EU technology,"[fnrs, tnrs]",,
-nuclear,FOM,mapping generation weighted to reference REMIND-EU technology,"[fnrs, tnrs]",,
-nuclear,VOM,mapping generation weighted to reference REMIND-EU technology,"[fnrs, tnrs]",,
-nuclear,discount rate,mapping generation weighted to reference REMIND-EU technology,"[fnrs, tnrs]",,
-nuclear,lifetime,mapping generation weighted to reference REMIND-EU technology,"[fnrs, tnrs]",,
-oil,investment,mapping generation weighted to reference REMIND-EU technology,dot,,
-oil,FOM,mapping generation weighted to reference REMIND-EU technology,dot,,
-oil,VOM,mapping generation weighted to reference REMIND-EU technology,dot,,
-oil,discount rate,mapping generation weighted to reference REMIND-EU technology,dot,,
-oil,lifetime,mapping generation weighted to reference REMIND-EU technology,dot,,
-CCGT,investment,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
-CCGT,FOM,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
-CCGT,VOM,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
-CCGT,discount rate,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
-CCGT,lifetime,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
-coal,investment,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
-coal,FOM,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
-coal,VOM,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
-coal,discount rate,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
-coal,lifetime,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
-lignite,investment,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
-lignite,FOM,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
-lignite,VOM,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
-lignite,discount rate,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
-lignite,lifetime,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
-geothermal,investment,setting to reference value,-1,USD/MW,"Currently not in REMIND-EU output, else could be mapped to technology “geohdr”"
-geothermal,FOM,mapping generation weighted to reference REMIND-EU technology,geohdr,,
-geothermal,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “geohdr”"
-geothermal,discount rate,setting to reference value,-1,p.u.,"Currently not in REMIND-EU output, else could be mapped to technology “geohdr”"
-geothermal,lifetime,mapping generation weighted to reference REMIND-EU technology,geohdr,,
-biomass,investment,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,
-biomass,FOM,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,
-biomass,VOM,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,
-biomass,discount rate,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,
-biomass,lifetime,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,
-csp,investment,setting to reference value,-1,USD/MW,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
-csp,FOM,mapping generation weighted to reference REMIND-EU technology,csp,,
-csp,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
-csp,discount rate,mapping generation weighted to reference REMIND-EU technology,csp,,
-csp,lifetime,mapping generation weighted to reference REMIND-EU technology,csp,,
-hydrogen storage underground,investment,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
-hydrogen storage underground,FOM,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
-hydrogen storage underground,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
-hydrogen storage underground,discount rate,mapping generation weighted to reference REMIND-EU technology,elh2,,"No value originally in PyPSA-EUR databse, using “elh2” as proxy"
-hydrogen storage underground,lifetime,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
-fuel cell,investment,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
-fuel cell,FOM,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
-fuel cell,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
-fuel cell,discount rate,mapping generation weighted to reference REMIND-EU technology,elh2,,"No value originally in PyPSA-EUR databse, using “elh2” as proxy"
-fuel cell,lifetime,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
-electrolysis,investment,mapping generation weighted to reference REMIND-EU technology,elh2,,
-electrolysis,FOM,mapping generation weighted to reference REMIND-EU technology,elh2,,
-electrolysis,VOM,mapping generation weighted to reference REMIND-EU technology,elh2,,
-electrolysis,discount rate,mapping generation weighted to reference REMIND-EU technology,elh2,,
-electrolysis,lifetime,mapping generation weighted to reference REMIND-EU technology,elh2,,
-battery storage,investment,scaling original values based on reference PyPSA-EUR technology,solar,,
-battery storage,FOM,setting to reference value,0,%/year,"No value originally in PyPSA-EUR databse, using default fill value"
-battery storage,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
-battery storage,discount rate,mapping generation weighted to reference REMIND-EU technology,spv,,"No value originally in PyPSA-EUR databse, using “spv” as proxy"
-battery storage,lifetime,scaling original values based on reference PyPSA-EUR technology,solar,,
-battery inverter,investment,scaling original values based on reference PyPSA-EUR technology,solar,,
-battery inverter,FOM,scaling original values based on reference PyPSA-EUR technology,solar,,
-battery inverter,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
 battery inverter,discount rate,mapping generation weighted to reference REMIND-EU technology,spv,,"No value originally in PyPSA-EUR databse, using “spv” as proxy"
+battery inverter,FOM,scaling original values based on reference PyPSA-EUR technology,solar,,
+battery inverter,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+battery inverter,investment,scaling original values based on reference PyPSA-EUR technology,solar,,
 battery inverter,lifetime,scaling original values based on reference PyPSA-EUR technology,solar,,
-HVAC overhead,investment,scaling original values based on reference PyPSA-EUR technology,onwind,,
-HVAC overhead,FOM,scaling original values based on reference PyPSA-EUR technology,onwind,,
-HVAC overhead,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+battery inverter,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+battery inverter,efficiency,setting to reference value,0.96,p.u.,PyPSA-EUR assumption for lack of value from REMIND
+battery inverter,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
+battery storage,discount rate,mapping generation weighted to reference REMIND-EU technology,spv,,"No value originally in PyPSA-EUR databse, using “spv” as proxy"
+battery storage,FOM,setting to reference value,0,%/year,"No value originally in PyPSA-EUR databse, using default fill value"
+battery storage,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+battery storage,investment,scaling original values based on reference PyPSA-EUR technology,solar,,
+battery storage,lifetime,scaling original values based on reference PyPSA-EUR technology,solar,,
+battery storage,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+battery storage,efficiency,setting to reference value,1,p.u.,Storage without losses
+battery storage,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
+biomass,discount rate,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,
+biomass,FOM,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,
+biomass,fuel,mapping generation weighted to reference REMIND-EU technology,pebiolc,,
+biomass,investment,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,
+biomass,lifetime,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,
+biomass,VOM,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,
+biomass,efficiency,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,
+biomass,CO2 intensity,setting to reference value,0,tCO2/MWh_th,"TODO coupling with REMIND-EU difficult, as biomass has not CO2 intensity there, assuming carbon-neutral for now as well"
+CCGT,discount rate,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
+CCGT,FOM,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
+CCGT,investment,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
+CCGT,lifetime,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
+CCGT,VOM,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
+CCGT,efficiency,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
+CCGT,CO2 intensity,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,
+coal,discount rate,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+coal,FOM,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+coal,fuel,mapping generation weighted to reference REMIND-EU technology,pecoal,,
+coal,investment,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+coal,lifetime,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+coal,VOM,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+coal,efficiency,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+coal,CO2 intensity,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+csp,discount rate,mapping generation weighted to reference REMIND-EU technology,csp,,
+csp,FOM,mapping generation weighted to reference REMIND-EU technology,csp,,
+csp,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+csp,investment,setting to reference value,-1,USD/MW,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
+csp,lifetime,mapping generation weighted to reference REMIND-EU technology,csp,,
+csp,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
+csp,efficiency,mapping generation weighted to reference REMIND-EU technology,csp,,
+csp,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+electrolysis,discount rate,mapping generation weighted to reference REMIND-EU technology,elh2,,
+electrolysis,FOM,mapping generation weighted to reference REMIND-EU technology,elh2,,
+electrolysis,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+electrolysis,investment,mapping generation weighted to reference REMIND-EU technology,elh2,,
+electrolysis,lifetime,mapping generation weighted to reference REMIND-EU technology,elh2,,
+electrolysis,VOM,mapping generation weighted to reference REMIND-EU technology,elh2,,
+electrolysis,efficiency,mapping generation weighted to reference REMIND-EU technology,elh2,,
+electrolysis,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+fuel cell,discount rate,mapping generation weighted to reference REMIND-EU technology,elh2,,"No value originally in PyPSA-EUR databse, using “elh2” as proxy"
+fuel cell,FOM,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
+fuel cell,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+fuel cell,investment,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
+fuel cell,lifetime,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
+fuel cell,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+fuel cell,efficiency,mapping generation weighted to reference REMIND-EU technology,elh2,,"No value originally in PyPSA-EUR databse, using “elh2” as proxy; which should be ok, since electrolysis and fuel cell are just reverse technologies ;-)"
+fuel cell,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+gas,discount rate,setting to reference value,0,p.u.,Dummy technology; else PyPSA-Eur throws an error; value not used
+gas,FOM,setting to reference value,0,%/year,Dummy technology; else PyPSA-Eur throws an error; value not used
+gas,fuel,mapping generation weighted to reference REMIND-EU technology,pegas,,
+gas,investment,setting to reference value,0,USD/MW,Dummy technology; else PyPSA-Eur throws an error; value not used
+gas,lifetime,setting to reference value,1,years,Dummy technology; else PyPSA-Eur throws an error; value not used
+gas,VOM,setting to reference value,0,USD/MWh,Dummy technology; else PyPSA-Eur throws an error; value not used
+gas,efficiency,setting to reference value,1,p.u.,Dummy technology; else PyPSA-Eur throws an error; value not used
+gas,CO2 intensity,mapping generation weighted to reference REMIND-EU technology,"[ngcc, ngccc, gaschp]",,"TODO this is partially wrong, not correct emission factor from REMIND, but PyPSA-Eur uses same emission factor for OCGT and CCGT"
+geothermal,discount rate,setting to reference value,-1,p.u.,"Currently not in REMIND-EU output, else could be mapped to technology “geohdr”"
+geothermal,FOM,mapping generation weighted to reference REMIND-EU technology,geohdr,,
+geothermal,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+geothermal,investment,setting to reference value,-1,USD/MW,"Currently not in REMIND-EU output, else could be mapped to technology “geohdr”"
+geothermal,lifetime,mapping generation weighted to reference REMIND-EU technology,geohdr,,
+geothermal,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “geohdr”"
+geothermal,efficiency,setting to reference value,-1,p.u.,"Currently not in REMIND-EU output, else could be mapped to technology “geohdr”"
+geothermal,CO2 intensity,setting to reference value,-1,tCO2/MWh_th,"Currently not in REMIND-EU output, else could be mapped to technology “"
 HVAC overhead,discount rate,mapping generation weighted to reference REMIND-EU technology,wind,,"No value originally in PyPSA-EUR databse, using “wind” as proxy"
+HVAC overhead,FOM,scaling original values based on reference PyPSA-EUR technology,onwind,,
+HVAC overhead,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+HVAC overhead,investment,scaling original values based on reference PyPSA-EUR technology,onwind,,
 HVAC overhead,lifetime,scaling original values based on reference PyPSA-EUR technology,onwind,,
-HVDC submarine,investment,scaling original values based on reference PyPSA-EUR technology,onwind,,
-HVDC submarine,FOM,scaling original values based on reference PyPSA-EUR technology,onwind,,
-HVDC submarine,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
-HVDC submarine,discount rate,mapping generation weighted to reference REMIND-EU technology,wind,,"No value originally in PyPSA-EUR databse, using “wind” as proxy"
-HVDC submarine,lifetime,scaling original values based on reference PyPSA-EUR technology,onwind,,
-HVDC overhead,investment,scaling original values based on reference PyPSA-EUR technology,onwind,,
-HVDC overhead,FOM,scaling original values based on reference PyPSA-EUR technology,onwind,,
-HVDC overhead,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
-HVDC overhead,discount rate,mapping generation weighted to reference REMIND-EU technology,wind,,"No value originally in PyPSA-EUR databse, using “wind” as proxy"
-HVDC overhead,lifetime,scaling original values based on reference PyPSA-EUR technology,onwind,,
-HVDC inverter pair,investment,scaling original values based on reference PyPSA-EUR technology,onwind,,
-HVDC inverter pair,FOM,scaling original values based on reference PyPSA-EUR technology,onwind,,
-HVDC inverter pair,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+HVAC overhead,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+HVAC overhead,efficiency,setting to reference value,1,p.u.,Process without direct losses
+HVAC overhead,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
 HVDC inverter pair,discount rate,mapping generation weighted to reference REMIND-EU technology,wind,,"No value originally in PyPSA-EUR databse, using “wind” as proxy"
+HVDC inverter pair,FOM,scaling original values based on reference PyPSA-EUR technology,onwind,,
+HVDC inverter pair,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+HVDC inverter pair,investment,scaling original values based on reference PyPSA-EUR technology,onwind,,
 HVDC inverter pair,lifetime,scaling original values based on reference PyPSA-EUR technology,onwind,,
+HVDC inverter pair,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+HVDC inverter pair,efficiency,setting to reference value,1,p.u.,Process without direct losses
+HVDC inverter pair,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
+HVDC overhead,discount rate,mapping generation weighted to reference REMIND-EU technology,wind,,"No value originally in PyPSA-EUR databse, using “wind” as proxy"
+HVDC overhead,FOM,scaling original values based on reference PyPSA-EUR technology,onwind,,
+HVDC overhead,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+HVDC overhead,investment,scaling original values based on reference PyPSA-EUR technology,onwind,,
+HVDC overhead,lifetime,scaling original values based on reference PyPSA-EUR technology,onwind,,
+HVDC overhead,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+HVDC overhead,efficiency,setting to reference value,1,p.u.,Process without direct losses
+HVDC overhead,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
+HVDC submarine,discount rate,mapping generation weighted to reference REMIND-EU technology,wind,,"No value originally in PyPSA-EUR databse, using “wind” as proxy"
+HVDC submarine,FOM,scaling original values based on reference PyPSA-EUR technology,onwind,,
+HVDC submarine,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+HVDC submarine,investment,scaling original values based on reference PyPSA-EUR technology,onwind,,
+HVDC submarine,lifetime,scaling original values based on reference PyPSA-EUR technology,onwind,,
+HVDC submarine,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+HVDC submarine,efficiency,setting to reference value,1,p.u.,Process without direct losses
+HVDC submarine,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
+hydro,discount rate,mapping generation weighted to reference REMIND-EU technology,hydro,,
+hydro,FOM,mapping generation weighted to reference REMIND-EU technology,hydro,,
+hydro,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+hydro,investment,mapping generation weighted to reference REMIND-EU technology,hydro,,
+hydro,lifetime,mapping generation weighted to reference REMIND-EU technology,hydro,,
+hydro,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+hydro,efficiency,mapping generation weighted to reference REMIND-EU technology,hydro,,
+hydro,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+hydrogen storage underground,discount rate,mapping generation weighted to reference REMIND-EU technology,elh2,,"No value originally in PyPSA-EUR databse, using “elh2” as proxy"
+hydrogen storage underground,FOM,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
+hydrogen storage underground,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+hydrogen storage underground,investment,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
+hydrogen storage underground,lifetime,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
+hydrogen storage underground,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
+hydrogen storage underground,efficiency,setting to reference value,1,p.u.,Storage without losses
+hydrogen storage underground,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
+lignite,discount rate,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+lignite,FOM,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+lignite,fuel,mapping generation weighted to reference REMIND-EU technology,pecoal,,
+lignite,investment,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+lignite,lifetime,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+lignite,VOM,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+lignite,efficiency,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+lignite,CO2 intensity,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
+nuclear,discount rate,mapping generation weighted to reference REMIND-EU technology,"[fnrs, tnrs]",,
+nuclear,FOM,mapping generation weighted to reference REMIND-EU technology,"[fnrs, tnrs]",,
+nuclear,fuel,mapping generation weighted to reference REMIND-EU technology,peur,,
+nuclear,investment,mapping generation weighted to reference REMIND-EU technology,"[fnrs, tnrs]",,
+nuclear,lifetime,mapping generation weighted to reference REMIND-EU technology,"[fnrs, tnrs]",,
+nuclear,VOM,mapping generation weighted to reference REMIND-EU technology,"[fnrs, tnrs]",,
+nuclear,efficiency,mapping generation weighted to reference REMIND-EU technology,"[fnrs, tnrs]",,
+nuclear,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+OCGT,discount rate,mapping generation weighted to reference REMIND-EU technology,ngt,,
+OCGT,FOM,mapping generation weighted to reference REMIND-EU technology,ngt,,
+OCGT,investment,mapping generation weighted to reference REMIND-EU technology,ngt,,
+OCGT,lifetime,mapping generation weighted to reference REMIND-EU technology,ngt,,
+OCGT,VOM,mapping generation weighted to reference REMIND-EU technology,ngt,,
+OCGT,efficiency,mapping generation weighted to reference REMIND-EU technology,ngt,,
+OCGT,CO2 intensity,mapping generation weighted to reference REMIND-EU technology,ngt,,
+offwind,discount rate,mapping generation weighted to reference REMIND-EU technology,windoff,,
+offwind,FOM,mapping generation weighted to reference REMIND-EU technology,windoff,,
+offwind,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+offwind,investment,mapping generation weighted to reference REMIND-EU technology,windoff,,
+offwind,lifetime,mapping generation weighted to reference REMIND-EU technology,windoff,,
+offwind,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
+offwind,efficiency,mapping generation weighted to reference REMIND-EU technology,windoff,,
+offwind,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+offwind-ac-connection-submarine,discount rate,mapping generation weighted to reference REMIND-EU technology,windoff,,
+offwind-ac-connection-submarine,FOM,setting to reference value,0,%/year,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-connection-submarine,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+offwind-ac-connection-submarine,investment,setting to reference value,0,USD/MW/km,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-connection-submarine,lifetime,setting to reference value,1,years,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-connection-submarine,VOM,setting to reference value,0,USD/MWh,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-connection-submarine,efficiency,setting to reference value,1,p.u.,Process without direct losses
+offwind-ac-connection-submarine,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+offwind-ac-connection-underground,discount rate,mapping generation weighted to reference REMIND-EU technology,windoff,,
+offwind-ac-connection-underground,FOM,setting to reference value,0,%/year,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-connection-underground,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+offwind-ac-connection-underground,investment,setting to reference value,0,USD/MW/km,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-connection-underground,lifetime,setting to reference value,1,years,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-connection-underground,VOM,setting to reference value,0,USD/MWh,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-connection-underground,efficiency,setting to reference value,1,p.u.,Process without direct losses
+offwind-ac-connection-underground,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+offwind-ac-station,discount rate,setting to reference value,0,p.u.,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-station,FOM,setting to reference value,0,%/year,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-station,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+offwind-ac-station,investment,setting to reference value,0,USD/MW,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-station,lifetime,setting to reference value,1,years,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-station,VOM,setting to reference value,0,USD/MWh,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-ac-station,efficiency,setting to reference value,1,p.u.,Process without direct losses
+offwind-ac-station,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+offwind-dc-connection-submarine,discount rate,mapping generation weighted to reference REMIND-EU technology,windoff,,
+offwind-dc-connection-submarine,FOM,setting to reference value,0,%/year,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-connection-submarine,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+offwind-dc-connection-submarine,investment,setting to reference value,0,USD/MW/km,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-connection-submarine,lifetime,setting to reference value,1,years,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-connection-submarine,VOM,setting to reference value,0,USD/MWh,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-connection-submarine,efficiency,setting to reference value,1,p.u.,Process without direct losses
+offwind-dc-connection-submarine,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+offwind-dc-connection-underground,discount rate,mapping generation weighted to reference REMIND-EU technology,windoff,,
+offwind-dc-connection-underground,FOM,setting to reference value,0,%/year,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-connection-underground,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+offwind-dc-connection-underground,investment,setting to reference value,0,USD/MW/km,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-connection-underground,lifetime,setting to reference value,1,years,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-connection-underground,VOM,setting to reference value,0,USD/MWh,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-connection-underground,efficiency,setting to reference value,1,p.u.,Process without direct losses
+offwind-dc-connection-underground,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+offwind-dc-station,discount rate,setting to reference value,0,p.u.,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-station,FOM,setting to reference value,0,%/year,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-station,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+offwind-dc-station,investment,setting to reference value,0,USD/MW,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-station,lifetime,setting to reference value,1,years,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-station,VOM,setting to reference value,0,USD/MWh,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
+offwind-dc-station,efficiency,setting to reference value,1,p.u.,Process without direct losses
+offwind-dc-station,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+oil,discount rate,mapping generation weighted to reference REMIND-EU technology,dot,,
+oil,FOM,mapping generation weighted to reference REMIND-EU technology,dot,,
+oil,fuel,mapping generation weighted to reference REMIND-EU technology,peoil,,
+oil,investment,mapping generation weighted to reference REMIND-EU technology,dot,,
+oil,lifetime,mapping generation weighted to reference REMIND-EU technology,dot,,
+oil,VOM,mapping generation weighted to reference REMIND-EU technology,dot,,
+oil,efficiency,mapping generation weighted to reference REMIND-EU technology,dot,,
+oil,CO2 intensity,mapping generation weighted to reference REMIND-EU technology,dot,,
+onwind,discount rate,mapping generation weighted to reference REMIND-EU technology,wind,,
+onwind,FOM,mapping generation weighted to reference REMIND-EU technology,wind,,
+onwind,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+onwind,investment,mapping generation weighted to reference REMIND-EU technology,wind,,
+onwind,lifetime,mapping generation weighted to reference REMIND-EU technology,wind,,
+onwind,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
+onwind,efficiency,mapping generation weighted to reference REMIND-EU technology,wind,,
+onwind,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+PHS,discount rate,mapping generation weighted to reference REMIND-EU technology,hydro,,
+PHS,FOM,scaling original values based on reference PyPSA-EUR technology,hydro,,
+PHS,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+PHS,investment,scaling original values based on reference PyPSA-EUR technology,hydro,,
+PHS,lifetime,scaling original values based on reference PyPSA-EUR technology,hydro,,
+PHS,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+PHS,efficiency,mapping generation weighted to reference REMIND-EU technology,hydro,,
+PHS,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+ror,discount rate,mapping generation weighted to reference REMIND-EU technology,hydro,,
+ror,FOM,scaling original values based on reference PyPSA-EUR technology,hydro,,
+ror,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+ror,investment,scaling original values based on reference PyPSA-EUR technology,hydro,,
+ror,lifetime,scaling original values based on reference PyPSA-EUR technology,hydro,,
+ror,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+ror,efficiency,mapping generation weighted to reference REMIND-EU technology,hydro,,
+ror,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+solar,discount rate,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar,FOM,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+solar,investment,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar,lifetime,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+solar,efficiency,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+solar-rooftop,discount rate,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar-rooftop,FOM,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar-rooftop,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+solar-rooftop,investment,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar-rooftop,lifetime,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar-rooftop,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+solar-rooftop,efficiency,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar-rooftop,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
+solar-utility,discount rate,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar-utility,FOM,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar-utility,fuel,setting to reference value,0,USD/MWh,Dummy value; else PyPSA-EUR throws an error
+solar-utility,investment,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar-utility,lifetime,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar-utility,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+solar-utility,efficiency,mapping generation weighted to reference REMIND-EU technology,spv,,
+solar-utility,CO2 intensity,setting to reference value,0,tCO2/MWh_th,Process without direct emissions
