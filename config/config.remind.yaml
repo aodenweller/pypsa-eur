@@ -103,7 +103,7 @@ electricity:
     H2: 168
 
   extendable_carriers:
-    Generator: [solar, onwind, offwind-ac, offwind-dc, OCGT, nuclear, oil, CCGT, coal, lignite, geothermal, biomass]  # REMIND coupling specific
+    Generator: [solar, onwind, offwind-ac, offwind-dc, OCGT, nuclear, oil, CCGT, coal, lignite, biomass]  # REMIND coupling specific
     StorageUnit: [] # battery, H2
     Store: [battery, H2]
     Link: [] # H2 pipeline
