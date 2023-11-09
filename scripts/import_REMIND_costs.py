@@ -121,7 +121,7 @@ if __name__ == "__main__":
     discount_rate = discount_rate.loc[
         discount_rate["year"] == snakemake.wildcards["year"]
     ]
-    discount_rate["parameter"] = "discount_rate"
+    discount_rate["parameter"] = "discount rate"
     discount_rate["unit"] = "p.u."
     discount_rate = discount_rate[["region", "parameter", "value", "unit"]]
 
@@ -492,5 +492,212 @@ if __name__ == "__main__":
     df_base.loc[df_base.query("technology.str.contains('offwind-')", engine="python").index, "value"] = 0.
     df_base.loc[df_base.query("technology.str.contains('offwind-')", engine="python").index, "source"] = "4 oclock coffee i.e. quick and dirty"
     
+
+    # %%
+    keep_entries = [
+    ('CCGT', 'CO2 intensity'),
+    ('CCGT', 'FOM'),
+    ('CCGT', 'VOM'),
+    # ('CCGT', 'c_b'),
+    # ('CCGT', 'c_v'),
+    ('CCGT', 'discount rate'),
+    ('CCGT', 'efficiency'),
+    ('CCGT', 'fuel'),
+    ('CCGT', 'investment'),
+    ('CCGT', 'lifetime'),
+    ('HVAC overhead', 'FOM'),
+    ('HVAC overhead', 'investment'),
+    ('HVAC overhead', 'lifetime'),
+    ('HVDC inverter pair', 'FOM'),
+    ('HVDC inverter pair', 'investment'),
+    ('HVDC inverter pair', 'lifetime'),
+    ('HVDC overhead', 'FOM'),
+    ('HVDC overhead', 'investment'),
+    ('HVDC overhead', 'lifetime'),
+    ('HVDC submarine', 'FOM'),
+    ('HVDC submarine', 'investment'),
+    ('HVDC submarine', 'lifetime'),
+    ('OCGT', 'CO2 intensity'),
+    ('OCGT', 'FOM'),
+    ('OCGT', 'VOM'),
+    ('OCGT', 'discount rate'),
+    ('OCGT', 'efficiency'),
+    ('OCGT', 'fuel'),
+    ('OCGT', 'investment'),
+    ('OCGT', 'lifetime'),
+    ('PHS', 'FOM'),
+    ('PHS', 'efficiency'),
+    ('PHS', 'investment'),
+    ('PHS', 'lifetime'),
+    ('battery inverter', 'FOM'),
+    ('battery inverter', 'efficiency'),
+    ('battery inverter', 'investment'),
+    ('battery inverter', 'lifetime'),
+    ('battery storage', 'investment'),
+    ('battery storage', 'lifetime'),
+    ('biomass', 'CO2 intensity'),
+    ('biomass', 'FOM'),
+    ('biomass', 'VOM'),
+    ('biomass', 'discount rate'),
+    ('biomass', 'efficiency'),
+    ('biomass', 'fuel'),
+    ('biomass', 'investment'),
+    ('biomass', 'lifetime'),
+    ('coal', 'CO2 intensity'),
+    ('coal', 'FOM'),
+    ('coal', 'VOM'),
+    ('coal', 'discount rate'),
+    ('coal', 'efficiency'),
+    ('coal', 'fuel'),
+    ('coal', 'investment'),
+    ('coal', 'lifetime'),
+    ('electrolysis', 'FOM'),
+    # ('electrolysis', 'efficiency'),
+    # ('electrolysis', 'efficiency-heat'),
+    ('electrolysis', 'investment'),
+    ('electrolysis', 'lifetime'),
+    ('fuel cell', 'FOM'),
+    # ('fuel cell', 'c_b'),
+    # ('fuel cell', 'efficiency'),
+    ('fuel cell', 'investment'),
+    ('fuel cell', 'lifetime'),
+    ('gas', 'CO2 intensity'),
+    ('gas', 'fuel'),
+    # ('geothermal', 'CO2 intensity'),
+    # ('geothermal', 'FOM'),
+    # ('geothermal', 'efficiency'),
+    # ('geothermal', 'investment'),
+    # ('geothermal', 'lifetime'),
+    ('hydro', 'FOM'),
+    ('hydro', 'discount rate'),
+    ('hydro', 'efficiency'),
+    ('hydro', 'fuel'),
+    ('hydro', 'investment'),
+    ('hydro', 'lifetime'),
+    ('hydrogen storage underground', 'FOM'),
+    ('hydrogen storage underground', 'VOM'),
+    ('hydrogen storage underground', 'investment'),
+    ('hydrogen storage underground', 'lifetime'),
+    ('lignite', 'CO2 intensity'),
+    ('lignite', 'FOM'),
+    ('lignite', 'VOM'),
+    ('lignite', 'efficiency'),
+    ('lignite', 'fuel'),
+    ('lignite', 'investment'),
+    ('lignite', 'lifetime'),
+    ('nuclear', 'FOM'),
+    ('nuclear', 'VOM'),
+    ('nuclear', 'discount rate'),
+    ('nuclear', 'efficiency'),
+    ('nuclear', 'fuel'),
+    ('nuclear', 'investment'),
+    ('nuclear', 'lifetime'),
+    ('offwind', 'FOM'),
+    # ('offwind', 'VOM'),
+    ('offwind', 'discount rate'),
+    ('offwind', 'efficiency'),
+    ('offwind', 'fuel'),
+    ('offwind', 'investment'),
+    ('offwind', 'lifetime'),
+    ('offwind-ac-connection-submarine', 'investment'),
+    ('offwind-ac-connection-underground', 'investment'),
+    ('offwind-ac-station', 'investment'),
+    ('offwind-dc-connection-submarine', 'investment'),
+    ('offwind-dc-connection-underground', 'investment'),
+    ('offwind-dc-station', 'investment'),
+    ('oil', 'CO2 intensity'),
+    ('oil', 'FOM'),
+    ('oil', 'VOM'),
+    ('oil', 'discount rate'),
+    ('oil', 'efficiency'),
+    ('oil', 'fuel'),
+    ('oil', 'investment'),
+    ('oil', 'lifetime'),
+    ('onwind', 'FOM'),
+    # ('onwind', 'VOM'),
+    ('onwind', 'discount rate'),
+    ('onwind', 'efficiency'),
+    ('onwind', 'fuel'),
+    ('onwind', 'investment'),
+    ('onwind', 'lifetime'),
+    ('ror', 'FOM'),
+    ('ror', 'efficiency'),
+    ('ror', 'investment'),
+    ('ror', 'lifetime'),
+    ('solar', 'FOM'),
+    # ('solar', 'VOM'),
+    ('solar', 'discount rate'),
+    ('solar', 'efficiency'),
+    ('solar', 'fuel'),
+    ('solar', 'investment'),
+    ('solar', 'lifetime'),
+    ('solar-rooftop', 'FOM'),
+    ('solar-rooftop', 'discount rate'),
+    ('solar-rooftop', 'efficiency'),
+    ('solar-rooftop', 'fuel'),
+    ('solar-rooftop', 'investment'),
+    ('solar-rooftop', 'lifetime'),
+    ('solar-utility', 'FOM'),
+    ('solar-utility', 'discount rate'),
+    ('solar-utility', 'efficiency'),
+    ('solar-utility', 'fuel'),
+    ('solar-utility', 'investment'),
+    ('solar-utility', 'lifetime')
+    ]
+
+    df_base = df_base.loc[df_base.index.isin(keep_entries)]
+
+
+    # TODO read default value for "discount rate" for technologies not contained in REMIND somehow
+    # %%
+    # create a pd.DataFrame with a multiindex from the values below and two columns "value" and "unit"
+    additional_values = pd.DataFrame(
+        [
+            ("HVAC overhead", "discount rate", 0.05, "p.u."),
+            ("HVDC inverter pair", "discount rate", 0.05, "p.u."),
+            ("HVDC overhead", "discount rate", 0.05, "p.u."),
+            ("HVDC submarine", "discount rate", 0.05, "p.u."),
+            ("PHS", "discount rate", 0.05, "p.u."),
+            ("battery storage", "discount rate", 0.05, "p.u."),
+            ("battery inverter", "discount rate", 0.05, "p.u."),
+            ("electrolysis", "discount rate", 0.05, "p.u."),
+            ("fuel cell", "discount rate", 0.05, "p.u."),
+            ("gas", "discount rate", 0.05, "p.u."),
+            ("hydrogen storage underground", "discount rate", 0.05, "p.u."),
+            ("lignite", "discount rate", 0.05, "p.u."),
+            ("offwind-ac-connection-submarine", "discount rate", 0.05, "p.u."),
+            ("offwind-ac-connection-underground", "discount rate", 0.05, "p.u."),
+            ("offwind-ac-station", "discount rate", 0.05, "p.u."),
+            ("offwind-dc-connection-submarine", "discount rate", 0.05, "p.u."),
+            ("offwind-dc-connection-underground", "discount rate", 0.05, "p.u."),
+            ("offwind-dc-station", "discount rate", 0.05, "p.u."),
+            ("ror", "discount rate", 0.05, "p.u."),
+        ],
+        columns=["technology", "parameter", "value", "unit"],
+    ).set_index(["technology", "parameter"])
+
+    df_base = pd.concat([df_base, additional_values])
+
+    # Also lifetimes:
+    #('offwind-ac-connection-submarine', 'lifetime'),
+    #('offwind-ac-connection-underground', 'lifetime'),
+    #('offwind-ac-station', 'lifetime'),
+    #('offwind-dc-connection-submarine', 'lifetime'),
+    #('offwind-dc-connection-underground', 'lifetime'),
+    #('offwind-dc-station', 'lifetime'),
+
+
+    # TODO
+    # gas costs for CCGT and OCGT: overwrite "gas" in csv which is then used by pyPSA-EUR
+    # instead of the fuel cost values by CCGT/OCGT
+
+    # TODO
+    # Warn when fill values become relevant
+    # Here's the code used in add_electricity.py
+    # fill_values = config["fill_values"]
+    # costs = costs.value.unstack().fillna(fill_values)
+
+    # %%
     # Write results to file
     df_base.to_csv(snakemake.output["costs"])
+# %%
