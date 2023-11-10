@@ -449,7 +449,7 @@ def get_region_mapping(
     return region_mapping.to_dict()
 
 
-def read_remind_data(file_path, variable_name, rename_columns={}):
+def read_remind_data(file_path, variable_name, rename_columns={}, error_on_empty=True):
     """
     Auxiliary function for standardised reading of REMIND-EU data files to
     pandas.DataFrame.
@@ -468,6 +468,9 @@ def read_remind_data(file_path, variable_name, rename_columns={}):
 
     data = _read_and_cache_remind_file(file_path)[variable_name]
     df = data.records
+
+    if error_on_empty and (df is None or df.empty):
+        raise ValueError(f"{variable_name} is empty. In: {file_path}")
     
     if df is not None and not df.empty:
         # Hack to make weird column naming with GAMS API <= 42 comptaible with >= 43
