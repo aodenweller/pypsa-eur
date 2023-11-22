@@ -462,6 +462,14 @@ discount_rate = discount_rate.merge(
 # Add discount rate to costs
 costs = pd.concat([costs, discount_rate])
 
+# Special case: electrolysis investment costs in PyPSA-Eur are in kW (input), instead of MW (output) in REMIND-EU
+tech = "electrolysis"
+costs.loc[
+    (costs["technology"] == tech)
+    & (costs["parameter"] == "investment"), "value"
+    ] *= costs.loc[(costs["technology"] == tech) & (costs["parameter"] == "efficiency"), "value"].values
+logger.info(f"Corrected investment costs for {tech} from MW_H2 output to MW_e input.")
+
 # Output to file
 costs.to_csv(snakemake.output["costs"], index=False)
 
@@ -471,4 +479,3 @@ assert costs[
     costs.isna().any(axis=1)
 ].empty, f"NaN values in costs detected: {costs[costs.isna().any(axis=1)]}"
 
-# -> this is bad, can we have at least investment and VOM values for all technologies? from REMIND?
