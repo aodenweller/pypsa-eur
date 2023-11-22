@@ -361,7 +361,7 @@ df = df.merge(
 # Scale original value
 df["new_value"] = df["value"] * df["scale_by"]
 
-df.loc[df["unit"].str.contains("kW"), "new_value"] /= 1000
+df.loc[df["unit"].str.contains("kW"), "new_value"] *= 1000
 # Adjust unit: Unit has to be adjusted, because REMIND-EU uses MW and MWh, PyPSA-EUR sometimes kW and kWh as basis for scaling
 df["new_unit"] = df["unit"].str.replace("kW", "MW").str.replace("EUR", "USD")
 
