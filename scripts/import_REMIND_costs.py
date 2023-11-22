@@ -4,6 +4,7 @@
 # 1. Technologies which get their values from REMIND-EU, weighted by the electricity generation of the related REMIND-EU technology
 # 2. Technologies where values are scaled based on a proxy technology
 # 3. Technologies where values are set in the technology mapping config file
+# 4. Add discount rate for all technologies where not discount rate is set in the technology mapping config file
 
 import logging
 
@@ -19,12 +20,31 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_costs",
-            year="2055",
-            iteration="6",
-            scenario="PyPSA_NPi_preFacAuto_Avg_preFacFadeOut_adjCost_2023-10-08_10.52.45-2",
+            scenario="PyPSA_NPi_preFacAuto_Avg_2023-11-10_09.42.27",
+            iteration="1",
+            year="2025",
         )
 
     configure_logging(snakemake)
+
+# Load region mapping
+logger.info("Loading region mapping ... ")
+region_mapping = (
+    pd.DataFrame.from_dict(
+        get_region_mapping(
+            snakemake.input["region_mapping"],
+            source="PyPSA-EUR",
+            target="REMIND-EU",
+        )
+    )
+    .T.reset_index()
+    .rename(columns={"index": "PyPSA-EUR", 0: "REMIND-EU"})
+)
+
+# Limit to regions & countries PyPSA-EUR is configured for
+region_mapping = region_mapping.query(
+    f"`PyPSA-EUR`.isin({snakemake.config['countries']})"
+)
 
 # Read new technology mapping
 logger.info("Loading technology mapping ... ")
@@ -58,24 +78,6 @@ costs = read_remind_data(
 costs["value"] *= 1e6  # Unit conversion from TUSD/TW to USD/MW
 costs["parameter"] = "investment"
 costs["unit"] = "USD/MW"
-
-# discount rate
-logger.info("... extracting discount rate")
-discount_rate = read_remind_data(
-    file_path=snakemake.input["remind_data"],
-    variable_name="p_r",
-    rename_columns={
-        "ttot": "year",
-        "all_regi": "region",
-    },
-).query("year == '{}'".format(snakemake.wildcards["year"]))
-# discount rates are not technology specified; instead of treating as special case, continue by
-# adding a fake technology-dependency with all-technology identical values
-discount_rate = discount_rate.merge(
-    pd.Series(mapped_technologies["reference"].unique(), name="technology"), how="cross"
-)
-discount_rate["parameter"] = "discount rate"
-discount_rate["unit"] = "p.u."
 
 # lifetime
 logger.info("... extracting lifetime")
@@ -196,29 +198,11 @@ fuel_costs[
 fuel_costs.loc[fuel_costs["technology"] == "peur", "unit"] = "USD/g_U"
 
 # Combine all technology data for further processing
-df = pd.concat(
-    [costs, discount_rate, lifetime, fom, vom, co2_intensity, efficiency, fuel_costs]
-)[["region", "technology", "parameter", "value", "unit"]].rename(
-    columns={"technology": "reference"}
-)
+df = pd.concat([costs, lifetime, fom, vom, co2_intensity, efficiency, fuel_costs])[
+    ["region", "technology", "parameter", "value", "unit"]
+].rename(columns={"technology": "reference"})
 
-# Load region mapping
-region_mapping = (
-    pd.DataFrame.from_dict(
-        get_region_mapping(
-            snakemake.input["region_mapping"],
-            source="PyPSA-EUR",
-            target="REMIND-EU",
-        )
-    )
-    .T.reset_index()
-    .rename(columns={"index": "PyPSA-EUR", 0: "REMIND-EU"})
-)
-
-# Limit to regions & countries PyPSA-EUR is configured for
-region_mapping = region_mapping.query(
-    "`PyPSA-EUR`.isin({})".format(snakemake.config["countries"])
-)
+# Limit to regions & countries REMIND-EU is configured for
 df = df.query("region.isin(@region_mapping['REMIND-EU'])", engine="python")
 
 # To calculate weighted values for technologies / other cost related parameters,
@@ -432,12 +416,59 @@ set_technologies["further description"] = set_technologies[
 # Combine all technologies
 costs = pd.concat([mapped_technologies, scaled_technologies, set_technologies])
 
+# +++ 4. Add discount rate +++
+# Discount rate is calculated on REMIND-EU side and just needs to be added for all technologies
+# By adding the discount rate after the 3. step, we allow the discount rate to be overwritten in the technology mapping config file
+
+# Get technologies with and without "discount rate"
+discount_rate_technologies = costs.loc[
+    costs["parameter"] == "discount rate", "technology"
+]
+technologies_without_discount_rate = costs.loc[
+    ~costs["technology"].isin(discount_rate_technologies)
+]
+
+logger.info("... extracting discount rate")
+discount_rate = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="p32_discountRate",
+    rename_columns={
+        "ttot": "year",
+    },
+).query("year == '{}'".format(snakemake.wildcards["year"]))
+
+assert (
+    discount_rate.shape[0] == 1
+), "Multiple discount rates instead of a single value found"
+
+# Construct dataframe with discount rate for all technologies by cartesian product
+discount_rate = (
+    pd.Series(
+        {
+            "parameter": "discount rate",
+            "value": discount_rate["value"].item(),
+            "unit": "p.u.",
+            "source": "REMIND-EU",
+            "further description": "p32_discountRate",
+        }
+    )
+    .to_frame()
+    .T
+)
+discount_rate = discount_rate.merge(
+    technologies_without_discount_rate[["technology"]], how="cross"
+)
+
+# Add discount rate to costs
+costs = pd.concat([costs, discount_rate])
+
 # Output to file
 costs.to_csv(snakemake.output["costs"], index=False)
 
 # %%
 # list all rows in r with nan values inside
-costs[costs.isna().any(axis=1)]
+assert costs[
+    costs.isna().any(axis=1)
+].empty, f"NaN values in costs detected: {costs[costs.isna().any(axis=1)]}"
 
 # -> this is bad, can we have at least investment and VOM values for all technologies? from REMIND?
-# %%
