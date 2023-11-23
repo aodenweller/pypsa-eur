@@ -455,8 +455,10 @@ discount_rate = (
     .to_frame()
     .T
 )
+
+# %%
 discount_rate = discount_rate.merge(
-    technologies_without_discount_rate[["technology"]], how="cross"
+    technologies_without_discount_rate[["technology"]].drop_duplicates(), how="cross"
 )
 
 # Add discount rate to costs
@@ -465,9 +467,10 @@ costs = pd.concat([costs, discount_rate])
 # Special case: electrolysis investment costs in PyPSA-Eur are in kW (input), instead of MW (output) in REMIND-EU
 tech = "electrolysis"
 costs.loc[
-    (costs["technology"] == tech)
-    & (costs["parameter"] == "investment"), "value"
-    ] *= costs.loc[(costs["technology"] == tech) & (costs["parameter"] == "efficiency"), "value"].values
+    (costs["technology"] == tech) & (costs["parameter"] == "investment"), "value"
+] *= costs.loc[
+    (costs["technology"] == tech) & (costs["parameter"] == "efficiency"), "value"
+].values
 logger.info(f"Corrected investment costs for {tech} from MW_H2 output to MW_e input.")
 
 # Output to file
@@ -479,3 +482,13 @@ assert costs[
     costs.isna().any(axis=1)
 ].empty, f"NaN values in costs detected: {costs[costs.isna().any(axis=1)]}"
 
+# %%
+# Make sure no duplicates for (technology, parameter) exist
+if not (
+    duplicates := costs.where(
+        costs.duplicated(subset=["technology", "parameter"], keep=False)
+    ).dropna()
+).empty:
+    raise ValueError(
+        f"Duplicate values for (technology, parameter) detected: {duplicates}"
+    )
