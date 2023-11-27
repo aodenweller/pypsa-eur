@@ -12,7 +12,7 @@ from _helpers import (
     get_technology_mapping,
     read_remind_data,
 )
-from gams import transfer as gt
+import gamspy as gt
 from scipy.stats import zscore
 
 logger = logging.getLogger(__name__)

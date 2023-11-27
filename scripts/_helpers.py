@@ -451,20 +451,18 @@ def get_region_mapping(
 
 def read_remind_data(file_path, variable_name, rename_columns={}, error_on_empty=True):
     """
-    Auxiliary function for standardised reading of REMIND-EU data files to
+    Auxiliary function for standardised and cached reading of REMIND-EU data files to
     pandas.DataFrame.
 
     Here all values read are considered variable, i.e. use
     "variable_name" also for what is considered a "parameter" in the GDX
     file.
     """
-    import re
-
-    from gams import transfer as gt
+    from gamspy import Container
 
     @functools.lru_cache
     def _read_and_cache_remind_file(fp):
-        return gt.Container(fp)
+        return Container(load_from=fp)
 
     data = _read_and_cache_remind_file(file_path)[variable_name]
     df = data.records
@@ -472,26 +470,6 @@ def read_remind_data(file_path, variable_name, rename_columns={}, error_on_empty
     if error_on_empty and (df is None or df.empty):
         raise ValueError(f"{variable_name} is empty. In: {file_path}")
     
-    if df is not None and not df.empty:
-        # Hack to make weird column naming with GAMS API <= 42 comptaible with >= 43
-        # where columns where always numbered with "_<index>" even if no duplicate columns were present
-        # but we want to keep duplicate columns differentiation with "_1" and "_2" if columns with same names are present,
-        # e.g. for "pe2se" with two columns named "all_enty"
-        if max({i: data.domain.count(i) for i in data.domain}.values()) == 1:
-            df.columns = data.domain + list(
-                df.columns[len(data.domain) :]
-            )  # Preserve all remaining column names, espc. "value" or "level" column name for parameters or variables
-    else:
-        # Handle empty records by creating an empty DataFrame to return
-        
-        # assign last_column name based on the datatype of data
-        if isinstance(data, gt.Parameter):
-            last_column_name = "value"
-        elif isinstance(data, gt.Variable):
-            last_column_name = "level"
-        
-        df = pd.DataFrame(columns=data.domain + [last_column_name])
-        
     df = df.rename(columns=rename_columns, errors="raise")
 
     return df

@@ -6,34 +6,7 @@
 source /home/jhampp/software/micromamba_1.4.2/etc/profile.d/micromamba.sh
 micromamba create --file envs/environment.yaml
 ```
-* GAMS PYthon API
-
-Inside the existing PyPSA-EUR conda env, install the GAMS Python API.
-You need the path for the current gams installation.
-Given the changes in the GAMS API over the recent versions, it is recommend you use GAMS >= 42.X API for Python.
-
-Check available gams versions
-```
-module avail gams
-```
-Load highest version, e.g. `gams/43.4.1`
-```
-module load gams/43.4.1
-```
-Find path to GAMS directory:
-```
-dirname $(which gams)
-```
-Yielding something like `/p/system/packages/gams/43.4.1`.
-Activate PyPSA-EUR environment to install GAMS API in there:
-```
-micromamba activate pypsa-eur
-```
-Install API, substitute the GAMS path according to point to the same base directory where `dirname $(which gams)` points to:
-```
-pip install gams --find-links /p/system/packages/gams/43.4.1/api/python/bdist
-```
-Details see here: https://www.gams.com/latest/docs/API_PY_GETTING_STARTED.html
+* GAMS PYthon API: In a previous version it was necessary to install the Python GAMS API manually. In this version `gamspy` is automatically installed and used, making this ancient step finally unnecessary.
 
 * Setup CPLEX
 For now, add CPLEX bin directory to path, in `~/.bashrc` add the following line:
