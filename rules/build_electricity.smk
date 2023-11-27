@@ -467,7 +467,7 @@ rule add_extra_components:
         extendable_carriers=config["electricity"]["extendable_carriers"],
         max_hours=config["electricity"]["max_hours"],
         costs=config["costs"],
-        preinvestment_capacities=config["remind_coupling"]["preinvestment_capacities],
+        preinvestment_capacities=config["remind_coupling"]["preinvestment_capacities"],
     input:
         network=rules.cluster_network.output["network"],
         tech_costs=rules.add_electricity.input["tech_costs"],
