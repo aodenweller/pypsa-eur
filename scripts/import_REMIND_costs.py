@@ -478,11 +478,9 @@ costs.to_csv(snakemake.output["costs"], index=False)
 
 # %%
 # list all rows in r with nan values inside
-assert costs[
-    costs.isna().any(axis=1)
-].empty, f"NaN values in costs detected: {costs[costs.isna().any(axis=1)]}"
+if (nan_rows := costs[costs.isna().any(axis=1)]).empty:
+    raise ValueError(f"NaN values in costs detected: {nan_rows}")
 
-# %%
 # Make sure no duplicates for (technology, parameter) exist
 if not (
     duplicates := costs.where(
