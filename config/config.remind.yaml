@@ -8,6 +8,10 @@ tutorial: false
 
 # REMIND coupling specific
 remind_coupling:
+  preinvestment_capacities:
+    # Cost at which preinvestment capacities are built (via RCL constraint)
+    # a small positive cost could be helpful, but content-wise zero costs should be correct for the coupling
+    capital_cost: 0.0
   extract_coupling_parameters:
     cutoff_market_values: 5 # false (to deactivate) or value, e.g.: 5 indicating zscore above which market_prices are excluded from the market_value calculation
 

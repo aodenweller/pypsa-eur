@@ -54,6 +54,61 @@ python /home/adrianod/software/cplex/python/setup.py install
 * regional mapping: currently stored in `config/regionmapping_21_EU11.csv` is mapping for REMIND-EU, used to map between PyPSA-EUR countries and REMIND-EU regions. Location configured via Snakefile.
 * technology mapping stored in `config/technology_mapping.csv` used by multiple rules
 
+* Setup Gurobi
+    * Installation steps / setup
+        * Adding the following line to current shell (should be in .bashrc or in file calling PyPSA-EUR)
+        ```
+            export SSL_CERT_FILE=/p/projects/rd3mod/ssl/ca-bundle.pem_2022-02-08
+            export GRB_CAFILE=/p/projects/rd3mod/ssl/ca-bundle.pem_2022-02-08
+
+            # start gurobi script as before
+            export GUROBI_HOME="/home/adrianod/software/gurobi/gurobi1003/linux64"
+            export PATH="${PATH}:${GUROBI_HOME}/bin"
+            export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
+            export GRB_LICENSE_FILE=/p/projects/rd3mod/gurobi.lic
+            export GRB_CURLVERBOSE=1
+        ```
+        * added `<PyPSA-EUR>/cluster_config/slurm-jobscript.py` which contains the job to run on the compute node created by snakemake.
+            There a random port number is created and a ssh tunnel setup to the login node. This jobscript is also added to the `<PyPSA-EUR>/cluster_config/config.yaml`:
+        ```
+            #!/bin/bash
+            # Generate random port number between 42000 and 42424 for jobs
+            # to avoid collissions between jobs and reusing same port number for all jobs
+            # (causing address already in use errors)
+            PORT=$((RANDOM%424 + 42000))
+            echo "SSH forwarding for Gurobi WLS access on port: $PORT"
+
+            # set up and use ssh proxy on compute node to get access
+            (ssh -N -D $PORT $USER@login01 &); 
+            export https_proxy=socks5://127.0.0.1:$PORT
+
+            # Standard snakemake job execution
+            {exec_job}
+        ```
+        * An ssh key-pair for connecting from compute nodes to login node needs to be accessible for the user (without password) or a key-pair available in the key chain to access without password
+        * Gurobi is installed on cluster and within the python environment using
+        ```
+            micromamba activate pypsa-eur-gurobi
+            micromamba install -c gurobi gurobi
+        ```
+    * License setup:
+        * Requires tunneling to reach Gurobi WLS
+        * Script adaptations to tunnel to login node from compute nodes (hard-coded `ssh` tunnel) by Falk
+        * Script adaptation requires public-private key pair to be accessible from compute nodes (private key) and login node (corresponding public key), e.g. on login node with your user create a new key-pair using:
+        ```
+            ssh-keygen -t ed25519 -f ~/.ssh/id_rsa.cluster_internal_exchange -C "$USER@cluster_internal_exchange"
+        ```
+        and add the contents of `~/.ssh/id_rsa_cluster_internal_exchange.pub` to your `~/.ssh/authorized_keys` file in a new line
+        with the appropriate entry in `~/.ssh/config`, e.g.
+        ```
+        Host login01
+            Hostname login01
+            User <your username>
+            PubKeyAuthentication yes
+            IdentitiesOnly yes
+            IdentityFile ~/.ssh/id_rsa.cluster_internal_exchange
+        ```
+
 # Updating to newest PyPSA-EUR version
 
 (Suggested method for large number of changes; often `git` should automatically be able to merge the two code basis by pulling from `upstream/master`,
@@ -92,10 +147,14 @@ from REMINd -> PyPSA-EUR
 * Output form is imitating original PyPSA-EUR files input format, trying to thereby create drop-in replacements for the original files
 * New files are then used in the PyPSA-EUR rules, by modifying the specified input files (but not the model scripts) in the Snakefile / <rules>.smk filesa
 * CO2 price via wildcard, placeholder in config.remind.yaml ; extract prices from REMIND and then create dataframe / file `resources/<scenario>/i<iteration>/co2_price_scnearios.csv` with all combinations of scenarios to be run in PyPSA-EUR
-* minimum capacities for generators are determined from REMIND per, in `import_REMIND_RCL_p_nom_limits.py`
-    * remind region
-    * aggregate of technologies "general_technology"
-    * the minimum capacities are then enforced with a >= constrained in `solve_network.py` and the new options for `{opts} = RCL`
+
+* preinvestment capacities (for generators) from REMIND are implemented via a constraint ("RCL constraint" = Regional Carrier Limit):
+    * preinvestment capacities are determined from REMIND in `import_REMIND_RCL_p_nom_limits.py` (per remind region and technology <-> mapped between REMIND and PyPSA-Eur)
+    * In the locations of existing conventional powerplants in PyPSA-Eur, additional generators (clones) are created onto which the `RCL` constraints apply (in `add_extra_components.py`)
+    * the minimum capacities are then enforced with a constraint: `RCL capacities (PyPSA-Eur) <= preinvestment capcaities (REMIND)` in `solve_network.py`
+    * The functionality is enabled with the new wildcard option `{opts} = RCL`
+    * The functionality can be configred via the config.yaml file: config["remind_coupling"]["preinvestment_capacities"]
+
 
 ## Changes to config.yaml (incomplete; TODO: update!)
 

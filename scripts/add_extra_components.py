@@ -225,7 +225,7 @@ def attach_hydrogen_pipelines(n, costs, extendable_carriers):
     )
 
 
-def attach_RCL_generators(n, fp_p_nom_limits, fp_region_mapping, fp_technology_mapping):
+def attach_RCL_generators(n, config, fp_p_nom_limits, fp_region_mapping, fp_technology_mapping):
     """
     Add additional generators to network for the RCL constraint used in the
     REMIND-EU <-> PyPSA-EUR coupling.
@@ -264,8 +264,7 @@ def attach_RCL_generators(n, fp_p_nom_limits, fp_region_mapping, fp_technology_m
     rcl_generators.index = old_generators + " (RCL)"
     rcl_generators[
         "capital_cost"
-    ] = 100  # small positive cost: should not be deployed for free for only few hours, but should definetly be deployed before regular capacities are built
-    # rcl_generators["p_nom_extendable"] = True
+    ] = config["capital_cost"]
     rcl_generators["p_nom_min"] = 0.0
     rcl_generators["p_nom"] = 0.0
     rcl_generators["p_nom_max"] = np.inf
@@ -320,6 +319,7 @@ if __name__ == "__main__":
     attach_hydrogen_pipelines(n, costs, extendable_carriers)
     attach_RCL_generators(
         n,
+        snakemake.params["preinvestment_capacities"],
         snakemake.input["RCL_p_nom_limits"],
         snakemake.input["region_mapping"],
         snakemake.input["technology_mapping"],
