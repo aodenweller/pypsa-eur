@@ -131,9 +131,12 @@ from REMINd -> PyPSA-EUR
 
 ## Changes to config.yaml (incomplete; TODO: update!)
 
-* Increas solar potential
+* Increase solar potential
     ```
     config["renewable"]["solar"]["capacity_per_sqkm"] = 1.7 (old) -> 5.1 (new)
     ```
     Reason: Limits to maximum potential were making model in some situations where REMIND-EU wanted to have a higher than permissible build-out of PV in the model.
     The original value of 1.7 was with 1% land availability, the new value represents 3% land availability, following the estimate logic also used in the ENSPRESSO dataset by JRC.
+* Capacities of existing powerplants are ignored, i.e. no free existing capacities are built by the model. The key is to set:
+    * For conventional powerplants (fossil, nuclear, hydro/ror/PHS): `electricity['conventional_carrier'] = []` but to keep the conventional carriers listed in `electricity['extendable_carrier']['Generator']`
+    * For RES: `electricity['renewable_carirer']` list the RES carriers, list them as `electricity['extendable_carriers']['Generator']` as well and set `electricity['estimate_renewable_capacities']['enable']=false`
