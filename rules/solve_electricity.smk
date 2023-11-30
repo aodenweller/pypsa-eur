@@ -16,16 +16,16 @@ rule solve_network:
         RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_mapping="config/technology_mapping.csv",
-        config=RESULTS + "{scenario}/i{iteration}/config.yaml",
+        config=RESULTS + "config.yaml",
     output:
-        network=RESULTS + "{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
+        network=ITERATION_RESULTS + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
     log:
         solver=normpath(
-            LOGS + "{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_solver.log"
+            ITERATION_LOGS + "y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_solver.log"
         ),
-        python=LOGS + "{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_python.log",
+        python=ITERATION_LOGS + "y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_python.log",
     benchmark:
-        BENCHMARKS + "{scenario}/i{iteration}/y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
+        ITERATION_BENCHMARKS + "y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
     threads: 4
     group:
         "iy"

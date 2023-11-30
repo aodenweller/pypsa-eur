@@ -39,12 +39,12 @@ rule copy_config:
     params:
         RDIR=RDIR,
     output:
-        RESULTS + "{scenario}/i{iteration}/config.yaml",
+        ITERATION_RESULTS + "config.yaml",
     threads: 1
     resources:
         mem_mb=1000,
     benchmark:
-        BENCHMARKS + "{scenario}/i{iteration}/copy_config"
+        ITERATION_BENCHMARKS + "copy_config"
     conda:
         "../envs/environment.yaml"
     script:

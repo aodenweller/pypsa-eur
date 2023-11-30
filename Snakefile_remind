@@ -35,20 +35,30 @@ configfile: "config/config.remind.yaml"
 ATLITE_NPROCESSES = config["atlite"].get("nprocesses", 4)
 
 RDIR = "{scenario}/"
+IDIR = "i{iteration}/"
 CDIR = RDIR if not config.get("run", {}).get("shared_cutouts") else ""
 
 LOGS = "logs/"
+SCENARIO_LOGS = LOGS + RDIR
+ITERATION_LOGS = SCENARIO_LOGS + IDIR
+
 BENCHMARKS = "benchmarks/"
+SCENARIO_BENCHMARKS = BENCHMARKS + RDIR
+ITERATION_BENCHMARKS = SCENARIO_BENCHMARKS + IDIR
+
 RESOURCES = "resources/" + (
     "" if config.get("run", {}).get("shared_resources", True) else RDIR
 )
-RESULTS = "results/"
-
 SCENARIO_RESOURCES = "resources/" + RDIR
+
+RESULTS = "results/"
+SCENARIO_RESULTS = RESULTS + RDIR
+ITERATION_RESULTS = SCENARIO_RESULTS + IDIR
+
 
 
 include: "rules/common.smk"
-include: "rules/collect.smk"
+# include: "rules/collect.smk"
 include: "rules/build_electricity.smk"
 include: "rules/solve_electricity.smk"
 include: "rules/postprocess.smk"
