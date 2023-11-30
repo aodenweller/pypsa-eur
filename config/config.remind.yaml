@@ -113,13 +113,13 @@ electricity:
     Link: [] # H2 pipeline
 
   powerplants_filter: (DateOut >= 2022 or DateOut.isna())
-  custom_powerplants: true
+  custom_powerplants: false
 
-  conventional_carriers: []  # REMIND coupling specific
+  conventional_carriers: []  # REMIND coupling specific: Set starting capacities of existing conventional powerplants to zero
   renewable_carriers: [solar, onwind, offwind-ac, offwind-dc, hydro]
 
   estimate_renewable_capacities:
-    enable: false # REMIND coupling specific
+    enable: false # REMIND coupling specific: Do not include starting capacities for renewables powerplants
     from_opsd: true
     year: 2020
     expansion_limit: false
