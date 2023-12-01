@@ -50,6 +50,7 @@ RESOURCES = "resources/" + (
     "" if config.get("run", {}).get("shared_resources", True) else RDIR
 )
 SCENARIO_RESOURCES = "resources/" + RDIR
+ITERATION_RESOURCES = SCENARIO_RESOURCES + IDIR
 
 RESULTS = "results/"
 SCENARIO_RESULTS = RESULTS + RDIR
