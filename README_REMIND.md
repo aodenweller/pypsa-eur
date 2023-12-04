@@ -1,28 +1,42 @@
 # Installation 
 
-* Install micromamba, see [documentation for details](https://mamba.readthedocs.io/en/latest/installation.html#micromamba) including adding micromamba to your `.bashrc`
-* Create micromamba env for PyPSA-EUR (`environment.yaml` file comes from PyPSA-EUR repository, located in `pypsa-eur/envs/`):
-```
-source /home/jhampp/software/micromamba_1.4.2/etc/profile.d/micromamba.sh
-micromamba create --file envs/environment.yaml
-```
-* GAMS PYthon API: In a previous version it was necessary to install the Python GAMS API manually. In this version `gamspy` is automatically installed and used, making this ancient step finally unnecessary.
+* Install micromamba, see [documentation for details](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html). In the desired folder, call:
+    ```
+    "${SHELL}" <(curl -L https://micro.mamba.pm/install.sh)
+    ```
+    * If SSL certificates are outdated, ignoring SSL checks might be necessary. Add the `-k` flag to `curl` in this case.
+    * Specify the installation location, must not be in a home directory but a path which is guaranteed to be accessible from compute nodes, e.g. `/p/tmp/jhampp/micromamba`
+    * Init your shell
+    * Configure `conda-forge`
+    * Specify a prefix location (the location where environments will be created and stored by default), suggested to use the same folder as for installation location, e.g. `/p/tmp/jhampp/micromamba`
 
-* Setup CPLEX
-For now, add CPLEX bin directory to path, in `~/.bashrc` add the following line:
-```
-export PATH=/home/adrianod/software/cplex/cplex/bin/x86-64_linux:$PATH
-```
-and install the Python package into the `pypsa-eur` environment:
-```
-micromamba activate pypsa-eur
-python /home/adrianod/software/cplex/python/setup.py install
-```
+* If you are not installing `micromamba` but only want to use it with environments from someone else: Add micromamba to your `.bashrc` including adding micromamba to your `.bashrc` or alternatively call `micromamba init` from the folder where `micromamba` was installed into
+* Create micromamba environment for PyPSA-EUR (`environment.yaml` file comes from PyPSA-EUR repository, located in `pypsa-eur/envs/`). If you want to use CPLEX, check which Python versions are supported. As of writing, only Python<=3.10 is supported, so in the `environment.yaml` file the Python version needs to be restricted before installing the environment by chaning the line
+    ```
+        - python>=3.8
+    ```
+    to 
+    ```
+        - python>=3.8,<=3.10
+    ```
+        and then call mircomamba to create the environment
+    ```
+        micromamba create -f environment.yaml
+    ```
+* (Obsolete) GAMS PYthon API: In a previous version it was necessary to install the Python GAMS API manually. In this version `gamspy` is automatically installed and used, making this ancient step finally unnecessary.
 
-(maybe alternatively `pip instal cplex` also works instead installing from local `setup.py`? Not tested yet though.)
-
-* Install micromamba and set environment directory accordingly (see instructions by @euronion elsewhere)
-* The cplex Python API must be installed in the conda environment and possible to import, e.g. `python -m 'import cplex'` must be possible in the conda environment
+* Setup CPLEX: For now, add CPLEX bin directory to path, in `~/.bashrc` add the following line:
+    ```
+        export PATH=/p/tmp/jhampp/cplex/cplex/bin/x86-64_linux:$PATH
+    ```
+    and install the Python package into the `pypsa-eur` environment:
+    ```
+        module purge # avoid conflicting Python versions between micromamba environment and loaded modules
+        micromamba activate pypsa-eur
+        python /p/tmp/jhampp/cplex/python/setup.py install
+    ```
+    (maybe alternatively `pip instal cplex` also works instead installing from local `setup.py`? Not tested yet though.)
+    The cplex Python API must be installed in the conda environment and possible to import, e.g. in `python -c 'import cplex'` must run without any error shown from within the `pypsa-eur` environment
 
 * regional mapping: currently stored in `config/regionmapping_21_EU11.csv` is mapping for REMIND-EU, used to map between PyPSA-EUR countries and REMIND-EU regions. Location configured via Snakefile.
 * technology mapping stored in `config/technology_mapping.csv` used by multiple rules
