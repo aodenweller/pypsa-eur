@@ -14,6 +14,13 @@ remind_coupling:
     capital_cost: 0.0
   extract_coupling_parameters:
     cutoff_market_values: 5 # false (to deactivate) or value, e.g.: 5 indicating zscore above which market_prices are excluded from the market_value calculation
+  # Automatically adjust time resolution if the time resolution wildcard is set to "0H",
+  # first value (key) indicates the range of iterations as tuple (inclusive start, exclusive end),
+  # the second string (value) represents the time resolution to use for these iterations as string "[0-9]+H"
+  automatic_time_resolution:
+    (0,5): "6H"     # Initial iterations fast
+    (5,10): "3H"    # Increase resolution
+    (10,9999): "1H" # All other, later iterations, highest resolution, assume close to convergence
 
 logging:
   level: INFO
@@ -47,7 +54,7 @@ scenario:
   clusters:
   - 4  # REMIND coupling specific
   opts:  # REMIND coupling specific
-  - '1H-RCL-EpREMIND' #"-EpREMIND" is placeholder for setting the emissions prices through REMIND
+  - '0H-RCL-EpREMIND' #"-EpREMIND" is placeholder for setting the emissions prices through REMIND
   year: [2025, 2030, 2035, 2040, 2045, 2050, 2055, 2060, 2070, 2080, 2090, 2100, 2110, 2130, 2150]
   sector_opts:
   - ''

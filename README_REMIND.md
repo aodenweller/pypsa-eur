@@ -157,3 +157,7 @@ from REMINd -> PyPSA-EUR
     * For conventional powerplants (fossil, nuclear, hydro/ror/PHS): `electricity['conventional_carrier'] = []` but to keep the conventional carriers listed in `electricity['extendable_carrier']['Generator']`
     * For RES: `electricity['renewable_carirer']` list the RES carriers, list them as `electricity['extendable_carriers']['Generator']` as well and set `electricity['estimate_renewable_capacities']['enable']=false`
 * Correcting hydro power capacities / `electricity['custom_powerplants']=false`: Hydro power capacities a inconsistent between PyPSA-Eur (taken from powerplantmatching) and REMIND, there is also an inconsistency on what is considered "hydro power" in both models (dam, ror, PHS in PyPSA-Eur) vs. (dam, ror in REMIND-EU). The capacities can be corrected via `data/custom_powerplants.csv`, a try was made for DEU (see entries in the file), but this feature is currently deactivated.
+* Automatic time resolution:
+    * By setting the time-resolution `opt` wildcard to `0H`, the time resolution is automatically adjusted based on the REMIND iteration PyPSA-Eur is currently in
+    * The behaviour is configured via the config file in `remind_coupling['automatic_time_resolution']` where iteration ranges and their respective time resolutions can be configured
+    * The behaviour is implemented in the checkpoint rule `determine_co2_price_scenarios`

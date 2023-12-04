@@ -26,8 +26,15 @@ if "snakemake" not in globals():
             "simpl": [""],
             "ll": ["copt"],
             "clusters": [4],
-            "opts": ["1H-RCL-EpREMIND"],
+            "opts": ["0H-RCL-EpREMIND"],
             "year": [2020, 2025, 2030, 2035, 2040, 2045, 2050],
+        },
+        "remind_coupling": {
+            "automatic_time_resolution": {
+                (1, 5): "6H",
+                (5, 10): "3H",
+                (10, 9999): "1H",
+            }
         },
     }
 
@@ -108,6 +115,23 @@ df["clusters"] = snakemake.config["scenario"]["clusters"][0]
 df["ll"] = snakemake.config["scenario"]["ll"][0]
 df["opts"] = snakemake.config["scenario"]["opts"][0]
 
+# Time resolution magic:
+# If time resolution is set to "0H", change the time resolution based on the
+# current iteration to optimise solving speeds for earlier iterations
+if df["opts"].str.contains("0H").all():
+    # tuples from yaml are read in as strings, using eval convert to tuples
+    time_resolution_dict = {
+        eval(k): v
+        for k, v in snakemake.config["remind_coupling"][
+            "automatic_time_resolution"
+        ].items()
+    }
+
+    for time_range, new_resolution in time_resolution_dict.items():
+        if int(snakemake.wildcards["iteration"]) in range(*time_range):
+            df["opts"] = df["opts"].str.replace("0H", new_resolution)
+            break
+
 # Preserve all opts and substitute the co2 price placeholder ("EpREMIND") with the actual co2 price from REMIND
 if not df["opts"].str.contains("-EpREMIND").all():
     logging.error("Placeholder '-EpREMIND' missing from config['scenario']['opts']")
@@ -118,5 +142,7 @@ df["opts"] = df.apply(
 
 # no longer needed
 df = df.drop(columns=["co2_price"])
-
+# %%
+df
+# %%
 df.to_csv(snakemake.output["co2_price_scenarios"], index=False)
