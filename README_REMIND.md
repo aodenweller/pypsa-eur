@@ -137,8 +137,10 @@ from REMINd -> PyPSA-EUR
 
 * preinvestment capacities (for generators) from REMIND are implemented via a constraint ("RCL constraint" = Regional Carrier Limit):
     * preinvestment capacities are determined from REMIND in `import_REMIND_RCL_p_nom_limits.py` (per remind region and technology <-> mapped between REMIND and PyPSA-Eur)
-    * In the locations of existing conventional powerplants in PyPSA-Eur, additional generators (clones) are created onto which the `RCL` constraints apply (in `add_extra_components.py`)
-    * the minimum capacities are then enforced with a constraint: `RCL capacities (PyPSA-Eur) <= preinvestment capcaities (REMIND)` in `solve_network.py`
+    * In the locations of existing conventional powerplants in PyPSA-Eur, additional generators (clones of original PyPSA-Eur generators) are created (in `add_extra_components.py`) with zero costs (can be build for free); these are required for the constraint to work properly.
+    * In `solve_network.py` the RCL constraint is added
+    * The ensures that per region and mapped technology, the RCL generators can expand up to the preinvestment capacities passed by REMIND. Only after this limit is exhausted, PyPSA-Eur may choose to build additional capacities (at regular costs) of non-RCL generators.
+    * (currently commented out and deactivated in code: the minimum capacities are then enforced with a constraint: `RCL capacities (PyPSA-Eur) <= preinvestment capcaities (REMIND)` in `solve_network.py`)
     * The functionality is enabled with the new wildcard option `{opts} = RCL`
     * The functionality can be configred via the config.yaml file: config["remind_coupling"]["preinvestment_capacities"]
 
