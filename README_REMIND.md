@@ -104,11 +104,12 @@ to silend errors / problems when running the REMIND-coupled PyPSA-EUR version.
 
 * Download REMIND-coupled PyPSA-EUR and original (upstream) version of PyPSA-EUR you want to update to into separate folders
 * Use a programm to compare the two repository folders, e.g. "Meld" or "GitLens" for VSCode and see what changes were made and whether the should be compatible with the code-base changes made for the REMIND-coupling
-* Special attention has to be given to the following files:
+* Special attention has to be given to the following files (open in compare view side-by-side!)
     * `configs/config.default.yaml` -> configuration changes might be relevant to be transfered into `config/config.remind.yaml`
     * `Snakefile`-> changes might be relevant to be transfered into `Snakefile_remind`
-    * Changes to `.smk` files: Paths for `resources` and `results` in most cases need to consider wildcards `{scenario}, {year}, {iteration}`. These need to be added to new files which are specific to these wildcards which are introduced as dependencies into `.smk` files
+    * Changes to `.smk` files (relevant are those that are included in `Snakefile_remind`): Paths for `resources` and `results` in most cases need to consider wildcards `{scenario}, {year}, {iteration}`. These need to be added to new files which are specific to these wildcards which are introduced as dependencies into `.smk` files
     * `solve_network.py`: Whether `RCL` constraint implementation is still compatible with changes made
+* Check release notes
 
 ## Cluster configuration
 

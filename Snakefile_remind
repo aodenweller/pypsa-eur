@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: : 2023 Adrian Odenweller <adrian.odenweller@pik-potsdam.de>, Johannes Hampp <johannes.hampp@pik-potsdam.de>
 #
 # SPDX-License-Identifier: MIT
+
 from os.path import normpath, exists
 from shutil import copyfile, move, rmtree
 import numpy as np
@@ -13,21 +14,6 @@ HTTP = HTTPRemoteProvider()
 from snakemake.utils import min_version
 
 min_version("7.7")
-
-
-localrules:
-    purge,
-    dag,
-
-
-wildcard_constraints:
-    simpl="[a-zA-Z0-9]*",
-    clusters="[0-9]+(m|c)?|all",
-    ll="(v|c)([0-9\.]+|opt)",
-    opts="[-+a-zA-Z0-9\.]*",
-    year="2[01][0-9][05]",
-    iteration="[0-9]+",
-
 
 configfile: "config/config.remind.yaml"
 
@@ -57,21 +43,45 @@ SCENARIO_RESULTS = RESULTS + RDIR
 ITERATION_RESULTS = SCENARIO_RESULTS + IDIR
 
 
+localrules:
+    purge,
+    dag,
+
+
+wildcard_constraints:
+    simpl="[a-zA-Z0-9]*",
+    clusters="[0-9]+(m|c)?|all",
+    ll="(v|c)([0-9\.]+|opt)",
+    opts="[-+a-zA-Z0-9\.]*",
+    year="2[01][0-9][05]",
+    iteration="[0-9]+",
+
+
+
+
+
 
 include: "rules/common.smk"
-# include: "rules/collect.smk"
+include: "rules/retrieve.smk"
 include: "rules/build_electricity.smk"
 include: "rules/solve_electricity.smk"
 include: "rules/postprocess.smk"
 
 
 rule purge:
-    message:
-        "Purging generated resources, results and docs. Downloads are kept."
     run:
-        rmtree("resources/", ignore_errors=True)
-        rmtree(RESULTS + "", ignore_errors=True)
-        rmtree("doc/_build", ignore_errors=True)
+        import builtins
+
+        do_purge = builtins.input(
+            "Do you really want to delete all generated resources, \nresults and docs (downloads are kept)? [y/N] "
+        )
+        if do_purge == "y":
+            rmtree("resources/", ignore_errors=True)
+            rmtree("results/", ignore_errors=True)
+            rmtree("doc/_build", ignore_errors=True)
+            print("Purging generated resources, results and docs. Downloads are kept.")
+        else:
+            raise Exception(f"Input {do_purge}. Aborting purge.")
 
 
 rule dag:
@@ -100,9 +110,6 @@ rule sync:
         rsync -uvarh --no-g {params.cluster}/results . || echo "No results directory, skipping rsync"
         rsync -uvarh --no-g {params.cluster}/logs . || echo "No logs directory, skipping rsync"
         """
-
-
-include: "rules/retrieve.smk"
 
 
 # Rule which downloads and prepares all files which will not change
