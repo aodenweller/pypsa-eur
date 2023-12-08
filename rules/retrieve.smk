@@ -27,7 +27,7 @@ if config["enable"]["retrieve"] and config["enable"].get("retrieve_databundle", 
 
     rule retrieve_databundle:
         output:
-            expand("data/bundle/{file}", file=datafiles),
+            protected(expand("data/bundle/{file}", file=datafiles)),
         log:
             LOGS + "retrieve_databundle.log",
         resources:
@@ -37,6 +37,24 @@ if config["enable"]["retrieve"] and config["enable"].get("retrieve_databundle", 
             "../envs/environment.yaml"
         script:
             "../scripts/retrieve_databundle.py"
+
+
+if config["enable"].get("retrieve_irena"):
+
+    rule retrieve_irena:
+        output:
+            offwind="data/existing_infrastructure/offwind_capacity_IRENA.csv",
+            onwind="data/existing_infrastructure/onwind_capacity_IRENA.csv",
+            solar="data/existing_infrastructure/solar_capacity_IRENA.csv",
+        log:
+            LOGS + "retrieve_irena.log",
+        resources:
+            mem_mb=1000,
+        retries: 2
+        conda:
+            "../envs/environment.yaml"
+        script:
+            "../scripts/retrieve_irena.py"
 
 
 if config["enable"]["retrieve"] and config["enable"].get("retrieve_cutout", True):
@@ -92,7 +110,7 @@ if config["enable"]["retrieve"] and config["enable"].get(
                 static=True,
             ),
         output:
-            RESOURCES + "natura.tiff",
+            protected(RESOURCES + "natura.tiff"),
         log:
             LOGS + "retrieve_natura_raster.log",
         resources:
@@ -106,22 +124,30 @@ if config["enable"]["retrieve"] and config["enable"].get(
     "retrieve_sector_databundle", True
 ):
     datafiles = [
-        "data/eea/UNFCCC_v23.csv",
-        "data/switzerland-sfoe/switzerland-new_format.csv",
-        "data/nuts/NUTS_RG_10M_2013_4326_LEVL_2.geojson",
-        "data/myb1-2017-nitro.xls",
-        "data/Industrial_Database.csv",
-        "data/emobility/KFZ__count",
-        "data/emobility/Pkw__count",
-        "data/h2_salt_caverns_GWh_per_sqkm.geojson",
-        directory("data/eurostat-energy_balances-june_2016_edition"),
-        directory("data/eurostat-energy_balances-may_2018_edition"),
-        directory("data/jrc-idees-2015"),
+        "eea/UNFCCC_v23.csv",
+        "switzerland-sfoe/switzerland-new_format.csv",
+        "nuts/NUTS_RG_10M_2013_4326_LEVL_2.geojson",
+        "myb1-2017-nitro.xls",
+        "Industrial_Database.csv",
+        "emobility/KFZ__count",
+        "emobility/Pkw__count",
+        "h2_salt_caverns_GWh_per_sqkm.geojson",
+    ]
+
+    datafolders = [
+        protected(
+            directory("data/bundle-sector/eurostat-energy_balances-june_2016_edition")
+        ),
+        protected(
+            directory("data/bundle-sector/eurostat-energy_balances-may_2018_edition")
+        ),
+        protected(directory("data/bundle-sector/jrc-idees-2015")),
     ]
 
     rule retrieve_sector_databundle:
         output:
-            *datafiles,
+            protected(expand("data/bundle-sector/{files}", files=datafiles)),
+            *datafolders,
         log:
             LOGS + "retrieve_sector_databundle.log",
         retries: 2
@@ -143,7 +169,9 @@ if config["enable"]["retrieve"] and (
 
     rule retrieve_gas_infrastructure_data:
         output:
-            expand("data/gas_network/scigrid-gas/data/{files}", files=datafiles),
+            protected(
+                expand("data/gas_network/scigrid-gas/data/{files}", files=datafiles)
+            ),
         log:
             LOGS + "retrieve_gas_infrastructure_data.log",
         retries: 2
@@ -167,7 +195,7 @@ if config["enable"]["retrieve"]:
                 static=True,
             ),
         output:
-            "data/load_raw.csv",
+            RESOURCES + "load_raw.csv",
         log:
             LOGS + "retrieve_electricity_demand.log",
         resources:
@@ -187,7 +215,7 @@ if config["enable"]["retrieve"]:
                 static=True,
             ),
         output:
-            "data/shipdensity_global.zip",
+            protected("data/shipdensity_global.zip"),
         log:
             LOGS + "retrieve_ship_raster.log",
         resources:

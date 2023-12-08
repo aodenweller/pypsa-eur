@@ -24,7 +24,7 @@ rule build_electricity_demand:
         countries=config["countries"],
         load=config["load"],
     input:
-        ancient("data/load_raw.csv"),
+        ancient(RESOURCES + "load_raw.csv"),
     output:
         RESOURCES + "load.csv",
     log:
@@ -226,7 +226,7 @@ rule build_renewable_profiles:
         ),
         ship_density=lambda w: (
             RESOURCES + "shipdensity_raster.tif"
-            if "ship_threshold" in config["renewable"][w.technology].keys()
+            if config["renewable"][w.technology].get("ship_threshold", False)
             else []
         ),
         country_shapes=RESOURCES + "country_shapes.geojson",
@@ -350,7 +350,9 @@ rule add_electricity:
         hydro_capacities=ancient("data/bundle/hydro_capacities.csv"),
         geth_hydro_capacities="data/geth2015_hydro_capacities.csv",
         unit_commitment="data/unit_commitment.csv",
-        fuel_price=RESOURCES + "monthly_fuel_price.csv",
+        fuel_price=RESOURCES + "monthly_fuel_price.csv"
+        if config["conventional"]["dynamic_fuel_price"]
+        else [],
         load=SCENARIO_RESOURCES + "i{iteration}/y{year}/load.csv",
         nuts3_shapes=RESOURCES + "nuts3_shapes.geojson",
     output:
@@ -509,7 +511,7 @@ rule prepare_network:
     input:
         rules.add_extra_components.output[0],
         tech_costs=rules.add_electricity.input["tech_costs"],
-        co2_price=RESOURCES + "co2_price.csv",
+        co2_price=lambda w: RESOURCES + "co2_price.csv" if "Ept" in w.opts else [],
     output:
         SCENARIO_RESOURCES
         + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",

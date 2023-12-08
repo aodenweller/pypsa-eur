@@ -11,6 +11,8 @@ dependencies:
 - pip
 
 - atlite>=0.2.9
+- pypsa==0.25.2
+- linopy
 - dask
 
   # Dependencies of the workflow itself
@@ -56,5 +58,5 @@ dependencies:
 
 
 - pip:
-  - tsam>=1.1.0
+  - tsam>=2.3.1
   - gamspy
