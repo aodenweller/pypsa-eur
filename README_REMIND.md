@@ -25,11 +25,8 @@
     ```
 * (Obsolete) GAMS PYthon API: In a previous version it was necessary to install the Python GAMS API manually. In this version `gamspy` is automatically installed and used, making this ancient step finally unnecessary.
 
-* Setup CPLEX: For now, add CPLEX bin directory to path, in `~/.bashrc` add the following line:
-    ```
-        export PATH=/p/tmp/jhampp/cplex/cplex/bin/x86-64_linux:$PATH
-    ```
-    and install the Python package into the `pypsa-eur` environment:
+* Setup CPLEX: For now, CPLEX is installed in `/p/tmp/jhampp/cplex` and the path modification done in `RunPyPSA.sh` from within the REMIND folder.
+    * To install CPLEX (in a new Python environment), e.g. `pypsa-eur`:
     ```
         module purge # avoid conflicting Python versions between micromamba environment and loaded modules
         micromamba activate pypsa-eur
