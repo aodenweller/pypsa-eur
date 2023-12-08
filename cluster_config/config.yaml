@@ -10,36 +10,42 @@ cluster:
     --output=logs/slurm/{rule}/{rule}-{wildcards}-%j.out
     --parsable
 set-resources:
-  download_and_prepare:
-    partition: "io"
-    qos: "io"
   retrieve_databundle:
     partition: "io"
     qos: "io"
+    simultaneous_downloads: 1
   retrieve_cutout:
     partition: "io"
     qos: "io"
+    simultaneous_downloads: 1
   retrieve_cost_data:
     partition: "io"
     qos: "io"
+    simultaneous_downloads: 1
   retrieve_natura_raster:
     partition: "io"
     qos: "io"
+    simultaneous_downloads: 1
   retrieve_electricity_demand:
     partition: "io"
     qos: "io"
+    simultaneous_downloads: 1
   retrieve_ship_raster:
     partition: "io"
     qos: "io"
+    simultaneous_downloads: 1
   retrieve_monthly_fuel_prices:
     partition: "io"
     qos: "io"
+    simultaneous_downloads: 1
   retrieve_monthly_co2_prices:
     partition: "io"
     qos: "io"
+    simultaneous_downloads: 1
   build_powerplants:
     partition: "io"
     qos: "io"
+    simultaneous_downloads: 1
   build_renewable_profiles:
     walltime: "00:60:00"
 
@@ -50,20 +56,13 @@ default-resources:
   - mem_mb=500
   - walltime="00:60:00"
 
-# Additional job grouping using snakemake --group for "io" partition/qos
-# permitting only 2 jobs submitted at a time per user; by grouping all
-# rules requiring to run on "io" partiaion/qos, we achieve only 2 submitted jobs
-groups:
-  - download_and_prepare=download_data
-  - retrieve_databundle=download_data
-  - retrieve_cost_data=download_data
-  - retrieve_natura_raster=download_data
-  - retrieve_electricity_demand=download_data
-  - retrieve_ship_raster=download_data
-  - retrieve_monthly_fuel_prices=download_data
-  - retrieve_monthly_co2_prices=download_data
-  - build_powerplants=download_data
-  - retrieve_cutout=download_cutouts
+# Custom resource constraints applied to all jobs for scheduling through snakemake
+resources:
+  # Custom resource (arbitrary name)
+  # Purpose: Restrict number of rules using the resource `simultaneous_downloads` for downloading files to 2 (submitted! jobs) at a time
+  # Reason: `io` partition/qos only allows 2 jobs per user submitted at a time
+  # Implementation: Rules are assigned the resource above in `set-resources`
+  - simultaneous_downloads=2
 
 # Due to limits for qos=partition="priority" to 5 concurrent cluster jobs per user,
 # performance is limited and jobs have to wait for their turn.
