@@ -20,7 +20,7 @@ def memory(w):
     elif w.clusters == "all":
         return int(factor * (18000 + 180 * 4000))
     else:
-        return int(factor * (10000 + 195 * int(w.clusters)))
+        return int(factor * (5000 + 195 * int(w.clusters)))
 
 
 # Check if the workflow has access to the internet by trying to access the HEAD of specified url
