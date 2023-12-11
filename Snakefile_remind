@@ -15,6 +15,7 @@ from snakemake.utils import min_version
 
 min_version("7.7")
 
+
 configfile: "config/config.remind.yaml"
 
 
@@ -46,6 +47,10 @@ ITERATION_RESULTS = SCENARIO_RESULTS + IDIR
 localrules:
     purge,
     dag,
+    sync,
+    download_and_prepare,
+    extract_coupling_parameters,
+    solve_all_scenarios,
 
 
 wildcard_constraints:
@@ -55,10 +60,6 @@ wildcard_constraints:
     opts="[-+a-zA-Z0-9\.]*",
     year="2[01][0-9][05]",
     iteration="[0-9]+",
-
-
-
-
 
 
 include: "rules/common.smk"
@@ -223,6 +224,7 @@ checkpoint determine_co2_price_scenarios:
         LOGS + "{scenario}/i{iteration}/determine_co2_price_scenarios.log",
     benchmark:
         BENCHMARKS + "{scenario}/i{iteration}/determine_co2_price_scenarios"
+    localrule: True  # Checkpoints cannot be declared "local" with "localrules" statement on top, needs individual declaration as local
     script:
         "scripts/determine_CO2_price_scenarios.py"
 

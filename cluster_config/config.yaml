@@ -1,68 +1,71 @@
-cluster:
-  mkdir -p logs/slurm/{rule} &&
-  sbatch
-    --partition={resources.partition}
-    --qos={resources.qos}
-    --mem={resources.mem_mb}
-    --time={resources.walltime}
-    --cpus-per-task={threads}
-    --job-name=PyPSAEUR-{rule}-{wildcards}
-    --output=logs/slurm/{rule}/{rule}-{wildcards}-%j.out
-    --parsable
+cluster: mkdir -p logs/slurm/{rule} && sbatch --partition={resources.partition} --qos={resources.qos} --mem={resources.mem_mb} --time={resources.walltime} --cpus-per-task={threads} --job-name=PyPSAEur-{rule}-{wildcards} --output=logs/slurm/{rule}/{rule}-{wildcards}-%j.out --parsable
 set-resources:
   retrieve_databundle:
     partition: "io"
     qos: "io"
-    simultaneous_downloads: 1
   retrieve_cutout:
     partition: "io"
     qos: "io"
-    simultaneous_downloads: 1
   retrieve_cost_data:
     partition: "io"
     qos: "io"
-    simultaneous_downloads: 1
   retrieve_natura_raster:
     partition: "io"
     qos: "io"
-    simultaneous_downloads: 1
   retrieve_electricity_demand:
     partition: "io"
     qos: "io"
-    simultaneous_downloads: 1
   retrieve_ship_raster:
     partition: "io"
     qos: "io"
-    simultaneous_downloads: 1
   retrieve_monthly_fuel_prices:
     partition: "io"
     qos: "io"
-    simultaneous_downloads: 1
   retrieve_monthly_co2_prices:
     partition: "io"
     qos: "io"
-    simultaneous_downloads: 1
   build_powerplants:
     partition: "io"
     qos: "io"
-    simultaneous_downloads: 1
   build_renewable_profiles:
     walltime: "00:60:00"
+  # Due to group-components aggregating mem_mb resources,
+  # the high default requests for mem_mb of these will exceed permitted memory requests in queue
+  # but that much memory is currently not needed for small PyPSA-Eur models, so we overwrite the values here
+  add_electricity:
+    mem_mb: 10000
+    threads: 4
+  simplify_network:
+    mem_mb: 10000
+    threads: 4
+  cluster_network:
+    mem_mb: 10000
+    threads: 4
+  prepare_network:
+    mem_mb: 10000
+    threads: 4
 
 default-resources:
-  - partition=priority
-  - qos=priority
-  - nodes=1
-  - mem_mb=500
-  - walltime="00:60:00"
+- partition=priority
+- qos=priority
+- nodes=1
+- mem_mb=500
+- walltime="00:60:00"
 
-# Custom resource constraints applied to all jobs for scheduling through snakemake
-resources:
-  # Custom resource (arbitrary name)
-  # Purpose: Restrict number of rules using the resource `simultaneous_downloads` for downloading files to 2 (submitted! jobs) at a time
-  # Reason: `io` partition/qos only allows 2 jobs per user submitted at a time
-  # Implementation: Rules are assigned the resource above in `set-resources`
-  - simultaneous_downloads=2
+# Additional job grouping using snakemake --group for "io" partition/qos
+# permitting only 2 jobs submitted at a time per user; by grouping all
+# rules requiring to run on "io" partiaion/qos, we achieve only 2 submitted jobs
+groups:
+- download_and_prepare=download_data
+- retrieve_databundle=download_data
+- retrieve_cost_data=download_data
+- retrieve_natura_raster=download_data
+- retrieve_electricity_demand=download_data
+- retrieve_ship_raster=download_data
+- retrieve_monthly_fuel_prices=download_data
+- retrieve_monthly_co2_prices=download_data
+- build_powerplants=download_data
+- retrieve_cutout=download_cutouts
 
 # Due to limits for qos=partition="priority" to 5 concurrent cluster jobs per user,
 # performance is limited and jobs have to wait for their turn.
@@ -70,26 +73,27 @@ resources:
 # with 3 independent groups of rules submitted as one job.
 # 3 because of limit on cluster resources (CPUs) in qos/partition
 group-components:
-  - iy=3
+- iy=3   # 15 independent years / 3 = 5 jobs with 3 years solving per job
+cores: 12 # solve_network in solve_electricity.smk requires 4 cores per rule executions -> 2 simultaneous solves per Job
 
 # Allow canceling of snakemake-submitted slurm jobs using Ctrl+c in combination with sbatch --parsable
 cluster-cancel: scancel
 jobs: 500
-keep-going: True
-latency-wait: 60
+keep-going: true
+latency-wait: 20
 local-cores: 1
 max-jobs-per-second: 10
 max-status-checks-per-second: 1
-printshellcmds: True
-reason: True
-rerun-incomplete: True
+printshellcmds: true
+reason: true
+rerun-incomplete: true
 # Other rerun-triggers can lead to rules trying to access the internet (for retrieve_*) functions
 # which leads to errors due to lack of internet access from non-"io" partitions
 rerun-trigger:
-  - code
-  - input
-  - mtime
-  - params
+- code
+- input
+- mtime
+- params
 restart-times: 3
 scheduler: greedy
-verbose: True
+verbose: true
