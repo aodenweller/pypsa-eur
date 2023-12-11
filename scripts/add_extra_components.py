@@ -225,7 +225,9 @@ def attach_hydrogen_pipelines(n, costs, extendable_carriers):
     )
 
 
-def attach_RCL_generators(n, config, fp_p_nom_limits, fp_region_mapping, fp_technology_mapping):
+def attach_RCL_generators(
+    n, config, fp_p_nom_limits, fp_region_mapping, fp_technology_mapping
+):
     """
     Add additional generators to network for the RCL constraint used in the
     REMIND-EU <-> PyPSA-EUR coupling.
@@ -262,9 +264,7 @@ def attach_RCL_generators(n, config, fp_p_nom_limits, fp_region_mapping, fp_tech
     # Modify properties of to-be-added RCL generators which differ from the original generators
     old_generators = rcl_generators.index
     rcl_generators.index = old_generators + " (RCL)"
-    rcl_generators[
-        "capital_cost"
-    ] = config["capital_cost"]
+    rcl_generators["capital_cost"] = config["capital_cost"]
     rcl_generators["p_nom_min"] = 0.0
     rcl_generators["p_nom"] = 0.0
     rcl_generators["p_nom_max"] = np.inf

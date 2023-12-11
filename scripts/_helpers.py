@@ -4,12 +4,12 @@
 # SPDX-License-Identifier: MIT
 
 import contextlib
+import functools
 import logging
 import os
 import urllib
 from pathlib import Path
 
-import functools
 import pandas as pd
 import pytz
 import yaml
@@ -234,7 +234,7 @@ def mock_snakemake(rulename, root_dir=None, configfiles=[], **wildcards):
             f" {root_dir} or scripts directory {script_dir}"
         )
     try:
-        #for p in sm.SNAKEFILE_CHOICES:
+        # for p in sm.SNAKEFILE_CHOICES:
         for p in ["Snakefile_remind"]:
             if os.path.exists(p):
                 snakefile = p
@@ -441,7 +441,7 @@ def get_region_mapping(
         .apply("unique")
         .apply(list)
     )
-    
+
     if flatten:
         if (region_mapping.apply(lambda x: len(x)) != 1).any():
             logger.error(f"Cannot flatten mapping. Non-unique map contained:\n {df}")
@@ -453,8 +453,8 @@ def get_region_mapping(
 
 def read_remind_data(file_path, variable_name, rename_columns={}, error_on_empty=True):
     """
-    Auxiliary function for standardised and cached reading of REMIND-EU data files to
-    pandas.DataFrame.
+    Auxiliary function for standardised and cached reading of REMIND-EU data
+    files to pandas.DataFrame.
 
     Here all values read are considered variable, i.e. use
     "variable_name" also for what is considered a "parameter" in the GDX
@@ -471,7 +471,7 @@ def read_remind_data(file_path, variable_name, rename_columns={}, error_on_empty
 
     if error_on_empty and (df is None or df.empty):
         raise ValueError(f"{variable_name} is empty. In: {file_path}")
-    
+
     df = df.rename(columns=rename_columns, errors="raise")
 
     return df

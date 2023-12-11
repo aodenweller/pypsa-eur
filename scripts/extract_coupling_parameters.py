@@ -3,6 +3,7 @@
 import logging
 import re
 
+import gamspy as gt
 import numpy as np
 import pandas as pd
 import pypsa
@@ -12,7 +13,6 @@ from _helpers import (
     get_technology_mapping,
     read_remind_data,
 )
-import gamspy as gt
 from scipy.stats import zscore
 
 logger = logging.getLogger(__name__)
