@@ -1,4 +1,4 @@
-# Installation 
+# Installation
 
 * Install micromamba, see [documentation for details](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html). In the desired folder, call:
     ```
@@ -15,7 +15,7 @@
     ```
         - python>=3.8
     ```
-    to 
+    to
     ```
         - python>=3.8,<=3.10
     ```
@@ -63,7 +63,7 @@
             echo "SSH forwarding for Gurobi WLS access on port: $PORT"
 
             # set up and use ssh proxy on compute node to get access
-            (ssh -N -D $PORT $USER@login01 &); 
+            (ssh -N -D $PORT $USER@login01 &);
             export https_proxy=socks5://127.0.0.1:$PORT
 
             # Standard snakemake job execution
@@ -159,3 +159,18 @@ from REMINd -> PyPSA-EUR
     * By setting the time-resolution `opt` wildcard to `0H`, the time resolution is automatically adjusted based on the REMIND iteration PyPSA-Eur is currently in
     * The behaviour is configured via the config file in `remind_coupling['automatic_time_resolution']` where iteration ranges and their respective time resolutions can be configured
     * The behaviour is implemented in the checkpoint rule `determine_co2_price_scenarios`
+
+
+# Troubleshooting
+
+* Insufficient memory:
+    * Adjust this line in `rules/common.smk`
+    ```
+        return int(factor * (5000 + 195 * int(w.clusters)))
+    ```
+    to more base memory per `solve_network` rule, default PyPSA-Eur is:
+    ```
+        return int(factor * (10000 + 195 * int(w.clusters)))
+    ```
+* `KeyError` when calling `snakemake` with `--dry-run / -n`: This can happen due to `group-components` in `cluster_config/config.yaml` and be ignored. The non-dry-run of `snakemake` should run without issues
+* `snakemake` stuck in an endless loop: If running `snakemake` directly from the folder and only partially executing rules, e.g. regenerating some output files, sometimes an endless loop of repeating jobs may be submitted. This is related to a `snakemake` bug with checkpoints and cluster execution. To avoid this one can try to regenerate with the same `snakemake` call also the output of the checkpoint, i.e. `sanekmake [your regular arguments] [your target rule or output] -f results/[your scenario]/[your iteration]/co2_price_scenarios.csv`
