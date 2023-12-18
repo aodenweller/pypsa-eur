@@ -762,3 +762,11 @@ p = gt.Parameter(
 )
 
 gdx.write(snakemake.output["gdx"])
+
+# Export the technology mapping used
+logger.info(
+    f"Exporting technology mapping from {snakemake.input['technology_cost_mapping']}"
+)
+get_technology_mapping(
+    snakemake.input["technology_cost_mapping"], group_technologies=True
+).to_csv(snakemake.output["technology_mapping"], index=False)

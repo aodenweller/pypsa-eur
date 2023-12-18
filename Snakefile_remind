@@ -276,6 +276,7 @@ rule extract_coupling_parameters:
         potentials=RESULTS + "{scenario}/i{iteration}/validation/potentials.csv",
         optimal_capacities=RESULTS
         + "{scenario}/i{iteration}/validation/optimal_capacities.csv",
+        technology_mapping=RESULTS + "{scenario}/i{iteration}/validation/technology_mapping.csv",
         gdx=RESULTS + "{scenario}/i{iteration}/PyPSAEUR2REMIND.gdx",
     log:
         LOGS + "{scenario}/i{iteration}/extract_coupling_parameters.log",
