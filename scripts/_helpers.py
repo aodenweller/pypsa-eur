@@ -322,58 +322,94 @@ def update_config_with_sector_opts(config, sector_opts):
             update_config(config, parse(l))
 
 
+@functools.lru_cache
 def get_technology_mapping(
-    fn,
-    source: str = "REMIND-EU",
-    target: str = "PyPSA-EUR",
-    flatten: bool = False,
-) -> dict:
+    fn: str or Path,
+    group_technologies: bool = False,
+):
     """
-    Get a mapping between technologies in REMIND and PyPSA-EUR.
+    Get a mapping between technologies in REMIND and PyPSA-EUR, inferred from
+    the technology_cost_mapping file.
 
-    Some technologies may be mapped to generalised technologies.
-    Valid values for source and target are: remind, general, pypsa-eur.
-    Lower and uppercase are ignored.
+    Technologies can also be mapped to grouped technologies.
 
     Parameters
     ----------
     fn : str
-        Path to the technology mapping file.
-    source : str, optional
-        Technology mapping source.
-        Valid values are: PyPSA-EUR, General, REMIND-EU.
-        Default "REMIND-EU".
-    target : str, optional
-        Technology mapping target.
-        Valid values are: PyPSA-EUR, General, REMIND-EU.
-        Default "PyPSA-EUR".
-    flatten : bool, optional
-        Whether to try to flatten the mapping; only valid
-        if the mapping is unique for all keys.
-        Default False.
+        Path to the technology cost mapping file.
+    group_technologies : bool, optional
+        Whether to group technologies, by default False.
 
     Returns
     -------
-    dict
-        Dictionary with source technologies as keys and a list of target technologies (flatten = False) or a single element (flatten = True) as values.
+    pd.DataFrame
+        Dataframe containing the technology mapping with columns "PyPSA-Eur" and "REMIND-EU".
+        If group_technologies is True, the dataframe will contain an additional column "technology_group".
     """
-    # Group by source first and aggregate targets to list
-    # as targets could be one or more technologies which would
-    # vanish if we just convert it to a dict
-    df = (
-        pd.read_csv(fn)
-        .groupby(source.lower())[target.lower()]
-        .apply("unique")
-        .apply(list)
+
+    new_mapping = pd.read_csv(fn)
+    new_mapping = new_mapping.query("parameter == 'investment'")
+    new_mapping = new_mapping.query(
+        "`couple to` == 'mapping generation weighted to reference REMIND-EU technology'"
     )
 
-    if flatten:
-        if (df.apply(lambda x: len(x)) != 1).any():
-            logger.error(f"Cannot flatten mapping. Non-unique map contained:\n {df}")
+    new_mapping = new_mapping[["PyPSA-EUR technology", "reference"]]
+    # convert potential list-like entries to real list
+    new_mapping["reference"] = new_mapping["reference"].map(yaml.safe_load)
+    # Turn all list-entries into separate rows
+    new_mapping = new_mapping.explode("reference")
+    new_mapping = new_mapping.rename(
+        columns={"PyPSA-EUR technology": "PyPSA-Eur", "reference": "REMIND-EU"}
+    )
 
-        df = df.apply(lambda x: x[0])
+    if not (offwind := new_mapping.loc[new_mapping["PyPSA-Eur"] == "offwind"]).empty:
+        logger.info(
+            "'offwind' technology detected. Adding offwind-ac and offwind-dc to technology mapping..."
+        )
+        new_mapping = pd.concat(
+            [
+                new_mapping,
+                offwind.replace("offwind", "offwind-ac"),
+                offwind.replace("offwind", "offwind-dc"),
+            ]
+        ).reset_index(drop=True)
 
-    return df.to_dict()
+    if "hydro" in new_mapping["PyPSA-Eur"].unique() and (
+        "ror" not in new_mapping["PyPSA-Eur"].unique()
+        or "PHS" not in new_mapping["PyPSA-Eur"].unique()
+    ):
+        logger.info(
+            "'hydro' technology but 'ror' and/or 'PHS' are missing. Adding 'ror' and 'PHS' to technology mapping..."
+        )
+        hydro = new_mapping.loc[new_mapping["PyPSA-Eur"] == "hydro"]
+        new_mapping = pd.concat(
+            [
+                new_mapping,
+                hydro.replace({"PyPSA-Eur": {"hydro": "ror"}}),
+                hydro.replace({"PyPSA-Eur": {"hydro": "PHS"}}),
+            ]
+        ).reset_index(drop=True)
+
+    # get all unique row combinations
+    new_mapping = new_mapping.drop_duplicates().reset_index(drop=True)
+
+    if group_technologies:
+        # Determine PyPSA-Eur technologies/carriers which share the same constrained (= are mapped from the same REMIND technologies)
+        new_mapping = (
+            new_mapping.groupby("PyPSA-Eur")
+            .agg(lambda x: tuple(sorted(x)))
+            .reset_index()
+            .groupby("REMIND-EU", as_index=False)
+            .agg(lambda x: list(x))
+        )
+
+        # Create groups of PyPSA-Eur technologies, e.g. ['solar', 'solar rooftop'] -> "solar & solar rooftop"
+        new_mapping["technology_group"] = new_mapping["PyPSA-Eur"].apply(
+            lambda x: " & ".join(x)
+        )
+        new_mapping = new_mapping.explode("REMIND-EU").explode("PyPSA-Eur")
+
+    return new_mapping
 
 
 def get_region_mapping(

@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 # coding: utf-8
+# %%
 """
 Adds extra extendable components to the clustered and simplified network.
 
@@ -57,8 +58,6 @@ import pandas as pd
 import pypsa
 from _helpers import configure_logging, get_region_mapping, get_technology_mapping
 from add_electricity import load_costs, sanitize_carriers
-
-idx = pd.IndexSlice
 
 logger = logging.getLogger(__name__)
 
@@ -226,37 +225,43 @@ def attach_hydrogen_pipelines(n, costs, extendable_carriers):
 
 
 def attach_RCL_generators(
-    n, config, fp_p_nom_limits, fp_region_mapping, fp_technology_mapping
-):
+        n,
+        config,
+        fp_p_nom_limits,
+        fp_region_mapping,
+        fp_technology_cost_mapping,
+        ):
     """
     Add additional generators to network for the RCL constraint used in the
     REMIND-EU <-> PyPSA-EUR coupling.
     """
-
     p_nom_limits = pd.read_csv(fp_p_nom_limits)
     region_mapping = get_region_mapping(
         fp_region_mapping, source="REMIND-EU", target="PyPSA-Eur"
     )
-    technology_mapping = get_technology_mapping(
-        fp_technology_mapping, source="General", target="PyPSA-Eur"
-    )
 
-    # Apply mapping from REMIND/general to PyPSA-EUR countries and carriers
+    # Apply mapping from REMIND/general to PyPSA-EUR countries
     p_nom_limits["country"] = p_nom_limits["region_REMIND"].map(region_mapping)
-    p_nom_limits["carrier"] = p_nom_limits["general_technology"].map(technology_mapping)
+
+    # Determine "carrier" which are related to the technology groups
+    technology_mapping = get_technology_mapping(fp_technology_cost_mapping, group_technologies=True).set_index("technology_group").rename(columns={"PyPSA-Eur":"carrier"})["carrier"].drop_duplicates()
+    p_nom_limits = p_nom_limits.merge(technology_mapping, on="technology_group", how="left")
 
     # Flatten country column entries such that all lists are converted into individual rows
     p_nom_limits = p_nom_limits.explode("country").explode("carrier")
     # Add country-reference to generators for mapping
     n.generators["country"] = n.generators["bus"].map(n.buses["country"])
 
-    # Select all generators from n.generators where the combination of country and carrier can be found in p_nom_limits
+    # Select all generators from n.generators where the combination of country and carrier can be found in p_nom_limits,
+    # i.e. later a RCL constraint should be applied for
     rcl_generators = n.generators.join(
         p_nom_limits.set_index(["country", "carrier"]),
         on=["country", "carrier"],
-        how="right",
+        how="left",
         rsuffix="_rcl",
-    ).dropna(subset=["p_nom_max"])
+        validate="m:1",
+    )
+    rcl_generators = rcl_generators.dropna(subset="p_nom_min_rcl") # Drop all generators which are not subject to RCL constraint
 
     # Only consider RCL constraint for generators which are extendable
     rcl_generators = rcl_generators[rcl_generators["p_nom_extendable"] == True]
@@ -322,9 +327,10 @@ if __name__ == "__main__":
         snakemake.params["preinvestment_capacities"],
         snakemake.input["RCL_p_nom_limits"],
         snakemake.input["region_mapping"],
-        snakemake.input["technology_mapping"],
+        snakemake.input["technology_cost_mapping"],
     )
     sanitize_carriers(n, snakemake.config)
 
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
     n.export_to_netcdf(snakemake.output[0])
+

@@ -193,7 +193,7 @@ rule import_REMIND_RCL_p_nom_limits:
     input:
         remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
         region_mapping="config/regionmapping_21_EU11.csv",
-        technology_mapping="config/technology_mapping.csv",
+        technology_cost_mapping="config/technology_cost_mapping.csv",
     output:
         RCL_p_nom_limits=SCENARIO_RESOURCES
         + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
@@ -251,7 +251,7 @@ rule extract_coupling_parameters:
     input:
         networks=rules.solve_all_scenarios.input["networks"],
         region_mapping="config/regionmapping_21_EU11.csv",
-        technology_mapping="config/technology_mapping.csv",
+        technology_cost_mapping="config/technology_cost_mapping.csv",
         remind_weights=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
         capacity_factors=RESULTS

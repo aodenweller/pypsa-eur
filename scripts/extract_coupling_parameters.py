@@ -137,16 +137,23 @@ else:
 # Use a two step mapping approach between PyPSA-EUR and REMIND:
 # First mapping is aggregating PyPSA-EUR technologies to general technologies
 # Second mapping is disaggregating general technologies to REMIND technologies
-map_pypsaeur_to_general = get_technology_mapping(
-    snakemake.input["technology_mapping"],
-    source="PyPSA-EUR",
-    target="General",
-    flatten=True,
+map_pypsaeur_to_general = (
+    get_technology_mapping(
+        snakemake.input["technology_cost_mapping"], group_technologies=True
+    )
+    .groupby("PyPSA-Eur")
+    .agg(lambda x: list(set(x))[0])["technology_group"]
+    .to_dict()
 )
 map_pypsaeur_to_general.pop("offwind")  # not needed
 
-map_general_to_remind = get_technology_mapping(
-    snakemake.input["technology_mapping"], source="General", target="REMIND-EU"
+map_general_to_remind = (
+    get_technology_mapping(
+        snakemake.input["technology_cost_mapping"], group_technologies=True
+    )
+    .groupby("technology_group")
+    .agg(lambda x: list(set(x)))["REMIND-EU"]
+    .to_dict()
 )
 
 map_pypsaeur_to_remind_loads = {
@@ -240,7 +247,9 @@ for fp in input_networks:
         map_pypsaeur_to_general
     )
     network.stores["general_carrier"] = network.stores["carrier"]
-    network.storage_units["general_carrier"] = network.storage_units["carrier"]
+    network.storage_units["general_carrier"] = network.storage_units["carrier"].map(
+        map_pypsaeur_to_general
+    )
     network.links["general_carrier"] = network.links["carrier"]
     network.lines["general_carrier"] = network.lines["carrier"]
     network.loads["general_carrier"] = network.loads["bus"].map(
@@ -452,9 +461,10 @@ for fp in input_networks:
 
         logger.info(
             "Cutoff for electricity prices in market value calculation enabled. "
-            "Excluding {n} snapshots from calculations with electricity prices above {p} USD/MWh.".format(
+            "Excluding {n} snapshots from calculations with electricity prices above {p:.2f} USD/MWh.".format(
                 n=int(
                     network.snapshot_weightings["generators"].shape[0]
+                    * network.snapshot_weightings["generators"].iloc[0]
                     - network.snapshot_weightings["generators"].sum()
                 ),
                 p=network.buses_t["marginal_price"][relevant_buses]
@@ -494,7 +504,6 @@ def postprocess_dataframe(df, map_to_remind=True):
         ["year", "region", "carrier"]
     ).sort_index()  # set and sort by index for more logical sort order
 
-    # df = df[["value"]]
     df = df.reset_index().drop(
         columns=["level_0"],
         errors="ignore",

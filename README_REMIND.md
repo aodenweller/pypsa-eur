@@ -36,7 +36,13 @@
     The cplex Python API must be installed in the conda environment and possible to import, e.g. in `python -c 'import cplex'` must run without any error shown from within the `pypsa-eur` environment
 
 * regional mapping: currently stored in `config/regionmapping_21_EU11.csv` is mapping for REMIND-EU, used to map between PyPSA-EUR countries and REMIND-EU regions. Location configured via Snakefile.
-* technology mapping stored in `config/technology_mapping.csv` used by multiple rules
+
+* technology mapping between REMIND-EU and PyPSA-Eur is inferred based on `config/technology_cost_mapping.csv` and complemented with manual adjustments via `get_technology_mapping(...)` in `scripts/_helpers.py` (e.g. for `offwind-ac`, `offwind-dc` and `ror`, `PHS`)
+    * The technology / cost mapping is mainly used to extract costs and other technology data from REMIND
+    * It is additionally used for mapping the RCL constraint (pre-investment capacities) from REMIND in PyPSA-Eur
+    * It is further used to map back the results from PyPSA-Eur to REMIND-EU in `scripts/extract_coupling_parameters.py`
+    * The current setup and file structure is build around the rule `import_REMIND_costs`, which makes using the mapping a bit more complicated for other applications.
+    * Changes to the `technology_cost_mapping.csv` file should be made carefully (and results checked). Avoid mappings between REMIND and PyPSA-Eur of nature `m:n`; these mappings work e.g. for lignite and coal, but only as long as all mapped technologies are identical, i.e. lignite and coal map from PyPSA-Eur to exactly the same REMIND-EU technologies.
 
 * Setup Gurobi
     * Installation steps / setup

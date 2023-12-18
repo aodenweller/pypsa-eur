@@ -429,9 +429,8 @@ def add_RCL_constraints(n, config):
     scenario:
         opts: [1H-RCL]
     """
-
     logger.info(
-        "Adding generation capacity constraints (RCL) per carrier groups (general_technology) and country groups (REMIND regions)."
+        "Adding generation capacity constraints (RCL) per carrier groups (technology group) and country groups (REMIND regions)."
     )
     generators = n.generators.copy().rename_axis(index="Generator-ext")
 
@@ -445,113 +444,51 @@ def add_RCL_constraints(n, config):
             flatten=True,
         )
     )
-    generators["general_technology"] = generators.carrier.map(
-        get_technology_mapping(
-            snakemake.input["technology_mapping"],
-            source="pypsa-eur",
-            target="general",
-            flatten=True,
-        )
+
+    # Map PyPSA-Eur technologies to technology groups
+    technology_mapping = get_technology_mapping(
+        snakemake.input["technology_cost_mapping"], group_technologies=True
+    )[["PyPSA-Eur", "technology_group"]].drop_duplicates()
+    generators["technology_group"] = generators["carrier"].map(
+        technology_mapping.set_index("PyPSA-Eur")["technology_group"]
     )
 
     # RHS: p_nom_min from REMIND-EU
     p_nom_limits = pd.read_csv(
         snakemake.input["RCL_p_nom_limits"],
-        index_col=["region_REMIND", "general_technology"],
+    ).set_index(
+        ["region_REMIND", "technology_group"]
     )["p_nom_min"]
 
-    ## 1. Constraint: Maximum capacity for RCL generators
+    ## 1. Constraint: Maximum capacity for free/low-cost RCL generators
 
     # Get all RCL generators and their non-RCL counterparts; apply the constraint to their combined p_nom_opt
     idx_rcl = n.generators.query("index.str.contains(r' \(RCL\)')").index
     generators_rcl = generators.loc[idx_rcl]
     grouper_rcl = [
         generators_rcl["region_REMIND"],
-        generators_rcl["general_technology"],
+        generators_rcl["technology_group"],
     ]
 
-    # LHS: sum of generator nominal capacity per region / general technology
+    # LHS: sum of generator nominal capacity per region / technology group
     grouper_rcl = xr.DataArray(
         pd.MultiIndex.from_arrays(grouper_rcl), dims=["Generator-ext"]
     )
-    p_nom_rcl = n.model["Generator-p_nom"].loc[generators_rcl.index]
-    lhs_rcl = p_nom_rcl.groupby(grouper_rcl).sum()
+    p_nom_rcl = n.model["Generator-p_nom"].loc[generators_rcl.index].groupby(grouper_rcl).sum()
+    #lhs_rcl = p_nom_rcl.groupby(grouper_rcl).sum()
 
-    # Determine overlapping indices to only create constraint for generator technologies which are actually constrained by the REMIND-EU
-    indexes_rcl = lhs_rcl.indexes["group"].intersection(p_nom_limits.index)
+    # Determine overlapping indices to only create constraints for generator technologies which are actually constrained by the REMIND-EU
+    indexes_rcl = p_nom_rcl.indexes["group"].intersection(p_nom_limits.index)
+
+    # Add constraint
     if not indexes_rcl.empty:
-        # Add constraint
         n.model.add_constraints(
-            lhs_rcl.sel(group=indexes_rcl) <= p_nom_limits.loc[indexes_rcl],
+            p_nom_rcl.sel(group=indexes_rcl) <= p_nom_limits.loc[indexes_rcl],
             name="RCL_p_nom_max",
         )
 
-    # ## 2. Constraint: Minimum capacity for RCL generators and non-RCL counterparts
-    # # Get all RCL generators and their non-RCL counterparts; apply the constraint to their combined p_nom_opt
-    # idx_pairs = idx_rcl.append(idx_rcl.str.replace(" (RCL)", ""))
-    # generators_pairs = generators.loc[idx_pairs]
 
-    # # Substract existing capacities for non-extendable generators
-    # p_nom_limits = p_nom_limits.sub(
-    #     generators_pairs.query("p_nom_extendable == False")
-    #     .groupby(["region_REMIND", "general_technology"])["p_nom"]
-    #     .sum(),
-    #     fill_value=0,
-    # )
-
-    # # Only consider extendable generators; non-extendable generators do not have variables in n.model["Generator-p_nom"]
-    # generators_pairs = generators_pairs.query("p_nom_extendable == True")
-    # grouper_pairs = [
-    #     generators_pairs["region_REMIND"],
-    #     generators_pairs["general_technology"],
-    # ]
-
-    # # LHS: sum of generator nominal capacity per region / general technology
-    # grouper_pairs = xr.DataArray(
-    #     pd.MultiIndex.from_arrays(grouper_pairs), dims=["Generator-ext"]
-    # )
-    # p_nom_pairs = n.model["Generator-p_nom"].loc[
-    #     generators_pairs.query("p_nom_extendable == True").index
-    # ]
-    # lhs_pairs = p_nom_pairs.groupby(grouper_pairs).sum()
-
-    # # Determine overlapping indices to only create constraint for generator technologies which are actually constrained by the REMIND-EU
-    # indexes_pairs = lhs_pairs.indexes["group"].intersection(p_nom_limits.index)
-    # if not indexes_pairs.empty:
-    #     # Add constraint
-    #     n.model.add_constraints(
-    #         lhs_pairs.sel(group=indexes_pairs) >= p_nom_limits.loc[indexes_pairs],
-    #         name="RCL-and-counterparts_p_nom_min",
-    #     )
-
-    # 3. Constraint: p_nom_max of original generator applies to RCL generator as well
-    # Assumptions:
-    # - each RCL generator has a non-RCL generator counterpart
-    # - all generators (RCL and non-RCL counterparts) are extendable
-    # - p_nom_max of non-RCL generator should apply to original+RCL generator together
-
-    # Get all RCL generators and their non-RCL counterparts; apply the constraint to their combined p_nom_opt
-    idx_rcl = n.generators.query("index.str.contains(r' \(RCL\)')").index
-    generators_nonrcl = n.generators.loc[idx_rcl.str.replace(" (RCL)", "")]
-
-    # Remove generators with infinite p_nom_max (non-relevant constraints and bugfix for CPLEX which doesn't like inf constraints)
-    # and select only affected RCL generators
-    generators_nonrcl = generators_nonrcl.loc[~np.isinf(generators_nonrcl["p_nom_max"])]
-    generators_rcl = n.generators.loc[generators_nonrcl.index + " (RCL)"]
-
-    # LHS: sum of generator nominal capacity per region / general technology
-    p_nom_rcl = n.model["Generator-p_nom"].loc[generators_rcl.index]
-    p_nom_nonrcl = n.model["Generator-p_nom"].loc[generators_nonrcl.index]
-    p_nom_max = generators_nonrcl["p_nom_max"].values
-
-    # Add constraint
-    if not idx_rcl.empty:
-        n.model.add_constraints(
-            p_nom_rcl + p_nom_nonrcl <= p_nom_max,
-            name="RCL+nonRCL_p_nom_max",
-        )
-
-
+# %%
 def add_CCL_constraints(n, config):
     """
     Add CCL (country & carrier limit) constraint to the network.
@@ -1039,6 +976,7 @@ if __name__ == "__main__":
         co2_sequestration_potential=snakemake.params["co2_sequestration_potential"],
     )
 
+    # %%
     with memory_logger(
         filename=getattr(snakemake.log, "memory", None), interval=30.0
     ) as mem:
