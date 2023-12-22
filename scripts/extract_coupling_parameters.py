@@ -83,8 +83,8 @@ if "snakemake" not in globals():
     snakemake = mock_snakemake(
         "extract_coupling_parameters",
         configfiles="config/config.remind.yaml",
-        iteration="6",
-        scenario="PyPSA_NPi_preFacAuto_Avg_preFacFadeOut_adjCost_2023-10-08_10.52.45",
+        iteration="45",
+        scenario="PyPSA_NPi_preFacAuto_Avg_2023-12-21_00.05.58",
     )
 
     # mock_snakemake doesn't work with checkpoints
@@ -394,53 +394,37 @@ for fp in input_networks:
     optimal_capacities.append(optimal_capacity)
 
     ## Calculate peak residual load
+    dispatchable_technologies = set(network.generators.index) - set(network.generators_t.p_max_pu.columns)
+
+    # Add attribute to network.generators to distinguish between dispatchable and non-dispatchable technologies
+    network.generators["peak_residual_load"] = "No"
+    network.generators.loc[list(dispatchable_technologies), "peak_residual_load"] = "Yes"
+    network.loads["peak_residual_load"] = "Load"
+    network.stores["peak_residual_load"] = "No"
+    network.storage_units["peak_residual_load"] = "No"
+
     residual_load = network.statistics.dispatch(
         comps=["Generator", "Store", "StorageUnit", "Load"],
-        groupby=["region", "general_carrier"],
+        groupby=["region", "peak_residual_load"],
         aggregate_time=False,
-    ).reset_index()
-    # Mapping of "general_carrier" into auxiliary categories required for calculation
-    residual_load["category"] = residual_load["general_carrier"].map(
-        {
-            "AC": "AC",
-            "hydro": "storage",
-            "PHS": "storage",
-            "battery": "storage",
-            "H2": "storage",
-            "wind_onshore": "RES",
-            "wind_offshore": "RES",
-            "solar_pv": "RES",
-            "oil": "dispatchable",
-            "nuclear": "dispatchable",
-            "hydro": "RES",
-            "biomass": "RES",
-            "all_coal": "dispatchable",
-            "OCGT": "dispatchable",
-            "CCGT": "dispatchable",
-        }
+    ).groupby(["region", "peak_residual_load"]).sum()
+    # Filter hour with maximum residual load
+    peak_residual_load_abs = residual_load.query("peak_residual_load=='Yes'").T.max()
+    # Relative peak residual load
+    peak_residual_load_rel = - residual_load.query("peak_residual_load=='Yes'").T.max() / (
+        residual_load.query("peak_residual_load=='Load'")[residual_load.query("peak_residual_load=='Yes'").T.idxmax().item()].item()
     )
-    # Calculate demand / supply per category
-    residual_load = (
-        residual_load.drop(columns=["general_carrier", "level_0"])
-        .groupby(["region", "category"])
-        .sum()
-    )
-    # Calculate peak residual load, defined as load (demand = negative) which is not met from RES or storage (supply = positive)
-    peak_residual_load_abs = (
-        -1 * residual_load.xs("AC", level=1)
-        - residual_load.xs("RES", level=1)
-        - residual_load.xs("storage", level=1)
-    ).T.max()
-    peak_residual_load_relative = (
-        peak_residual_load_abs / residual_load.xs("AC", level=1).T.mean().abs()
-    ).to_frame("relative")
-    peak_residual_load_abs = peak_residual_load_abs.to_frame("absolute").reset_index()
+
+    # Convert to DataFrame
+    peak_residual_load_abs = peak_residual_load_abs.to_frame("absolute")
+    peak_residual_load_rel = peak_residual_load_rel.to_frame("relative")
+
     peak_residual_load = peak_residual_load_abs.merge(
-        peak_residual_load_relative, on=["region"]
+        peak_residual_load_rel, on=["region"]
     )
     peak_residual_load["carrier"] = "AC"
     peak_residual_load["year"] = year
-    peak_residual_loads.append(peak_residual_load)
+    peak_residual_loads.append(peak_residual_load.reset_index())
 
     if cutoff_market_values := snakemake.config["remind_coupling"][
         "extract_coupling_parameters"
