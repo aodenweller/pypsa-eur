@@ -394,37 +394,59 @@ for fp in input_networks:
     optimal_capacities.append(optimal_capacity)
 
     ## Calculate peak residual load
-    dispatchable_technologies = set(network.generators.index) - set(network.generators_t.p_max_pu.columns)
+    dispatchable_technologies = set(network.generators.index) - set(
+        network.generators_t.p_max_pu.columns
+    )
 
     # Add attribute to network.generators to distinguish between dispatchable and non-dispatchable technologies
     network.generators["peak_residual_load"] = "No"
-    network.generators.loc[list(dispatchable_technologies), "peak_residual_load"] = "Yes"
+    network.generators.loc[
+        list(dispatchable_technologies), "peak_residual_load"
+    ] = "Yes"
     network.loads["peak_residual_load"] = "Load"
     network.stores["peak_residual_load"] = "No"
     network.storage_units["peak_residual_load"] = "No"
 
-    residual_load = network.statistics.dispatch(
-        comps=["Generator", "Store", "StorageUnit", "Load"],
-        groupby=["region", "peak_residual_load"],
-        aggregate_time=False,
-    ).groupby(["region", "peak_residual_load"]).sum()
-    # Filter hour with maximum residual load
-    peak_residual_load_abs = residual_load.query("peak_residual_load=='Yes'").T.max()
-    # Relative peak residual load
-    peak_residual_load_rel = - residual_load.query("peak_residual_load=='Yes'").T.max() / (
-        residual_load.query("peak_residual_load=='Load'")[residual_load.query("peak_residual_load=='Yes'").T.idxmax().item()].item()
+    residual_load = (
+        network.statistics.dispatch(
+            comps=["Generator", "Store", "StorageUnit", "Load"],
+            groupby=["region", "peak_residual_load"],
+            aggregate_time=False,
+        )
+        .groupby(["region", "peak_residual_load"])
+        .sum()
     )
 
-    # Convert to DataFrame
-    peak_residual_load_abs = peak_residual_load_abs.to_frame("absolute")
-    peak_residual_load_rel = peak_residual_load_rel.to_frame("relative")
+    # Helper function to be used with groupby
+    def get_absolute_and_relative_prl(x):
+        # Find the snapshot with absolute peak residual load
+        max_prl_snapshot = x.xs("Yes", level="peak_residual_load").idxmax(
+            axis="columns"
+        )
 
-    peak_residual_load = peak_residual_load_abs.merge(
-        peak_residual_load_rel, on=["region"]
+        return pd.Series(
+            {
+                # Use snapshot to determine absolute and calculate relative peak residual load
+                "absolute": x.xs("Yes", level="peak_residual_load")[max_prl_snapshot]
+                .iloc[0]
+                .item(),
+                "relative": (
+                    x.xs("Yes", level="peak_residual_load")[max_prl_snapshot]
+                    / (-1 * x.xs("Load", level="peak_residual_load")[max_prl_snapshot])
+                )
+                .iloc[0]
+                .item(),
+            }
+        )
+
+    peak_residual_load = (
+        residual_load.groupby("region")
+        .apply(get_absolute_and_relative_prl)
+        .reset_index()
     )
-    peak_residual_load["carrier"] = "AC"
     peak_residual_load["year"] = year
-    peak_residual_loads.append(peak_residual_load.reset_index())
+    peak_residual_load["carrier"] = "AC"
+    peak_residual_loads.append(peak_residual_load)
 
     if cutoff_market_values := snakemake.config["remind_coupling"][
         "extract_coupling_parameters"
