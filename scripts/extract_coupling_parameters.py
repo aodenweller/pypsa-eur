@@ -83,8 +83,8 @@ if "snakemake" not in globals():
     snakemake = mock_snakemake(
         "extract_coupling_parameters",
         configfiles="config/config.remind.yaml",
-        iteration="45",
-        scenario="PyPSA_NPi_preFacAuto_Avg_2023-12-21_00.05.58",
+        iteration="18",
+        scenario="PyPSA_NPi_preFacAuto_Avg_2023-12-22_13.04.10",
     )
 
     # mock_snakemake doesn't work with checkpoints
@@ -431,11 +431,9 @@ for fp in input_networks:
                 .iloc[0]
                 .item(),
                 "relative": (
-                    x.xs("Yes", level="peak_residual_load")[max_prl_snapshot]
-                    / (-1 * x.xs("Load", level="peak_residual_load")[max_prl_snapshot])
-                )
-                .iloc[0]
-                .item(),
+                    x.xs("Yes", level="peak_residual_load")[max_prl_snapshot].iloc[0].item()
+                    / (-1 * x.xs("Load", level="peak_residual_load").mean(axis=1)).item()
+                ),
             }
         )
 
