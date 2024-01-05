@@ -51,6 +51,9 @@ dependencies:
   # Keep in conda environment when calling ipython
 - ipython
 
+  # From Adrian's wishlist
+- ipykernel
+
   # GIS dependencies:
 - cartopy
 - descartes
