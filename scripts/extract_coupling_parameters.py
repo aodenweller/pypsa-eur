@@ -83,13 +83,13 @@ if "snakemake" not in globals():
     snakemake = mock_snakemake(
         "extract_coupling_parameters",
         configfiles="config/config.remind.yaml",
-        iteration="18",
-        scenario="PyPSA_NPi_preFacAuto_Avg_2023-12-22_13.04.10",
+        iteration="22",
+        scenario="PyPSA_NPi_multiregion_preFacAuto_Avg_2024-01-03_13.54.32",
     )
 
     # mock_snakemake doesn't work with checkpoints
     input_networks = [
-        f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_1H-RCL-Ep{ep:.1f}.nc"
+        f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_6_ec_lcopt_1H-RCL-Ep{ep:.1f}.nc"
         for (year, ep) in zip(
             # pairs of years and ...
             [
@@ -316,7 +316,7 @@ for fp in input_networks:
         / network.statistics.supply(
             comps=["Generator"],
             groupby=["region", "general_carrier"],
-        ).sum()
+        ).groupby(["region"]).sum()
     )
     generation_share = generation_share.to_frame("value").reset_index()
     generation_share["year"] = year
@@ -650,9 +650,14 @@ peak_residual_loads = peak_residual_loads.query("carrier == 'AC'").drop(
 # Special treatment: Weigh values of df based on installed capacities in REMIND
 generation_shares = weigh_by_REMIND_capacity(generation_shares)
 
-if any(generation_shares.groupby(["year", "region"])["value"].sum() != 1.0):
+# Throw warning if sum is not between 0.9999 and 1.0001 for each year and region (allowing for some numerical tolerance)
+if any(
+    generation_shares.groupby(["year", "region"])["value"].sum()
+    .where(lambda x: (x < 0.9999) | (x > 1.0001))
+    .notna()
+):
     logger.warning(
-        "Sum of generation shares is not equal to 1.0 for each year and region."
+        "Sum of generation shares is not between 0.9999 and 1.0001 for each year and region."
     )
 
 # %%
