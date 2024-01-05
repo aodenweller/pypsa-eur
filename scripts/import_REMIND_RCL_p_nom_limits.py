@@ -4,11 +4,7 @@ import logging
 
 import numpy as np
 import pandas as pd
-from _helpers import (
-    configure_logging,
-    get_technology_mapping,
-    read_remind_data,
-)
+from _helpers import configure_logging, get_technology_mapping, read_remind_data
 
 logger = logging.getLogger(__name__)
 

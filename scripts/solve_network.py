@@ -474,8 +474,10 @@ def add_RCL_constraints(n, config):
     grouper_rcl = xr.DataArray(
         pd.MultiIndex.from_arrays(grouper_rcl), dims=["Generator-ext"]
     )
-    p_nom_rcl = n.model["Generator-p_nom"].loc[generators_rcl.index].groupby(grouper_rcl).sum()
-    #lhs_rcl = p_nom_rcl.groupby(grouper_rcl).sum()
+    p_nom_rcl = (
+        n.model["Generator-p_nom"].loc[generators_rcl.index].groupby(grouper_rcl).sum()
+    )
+    # lhs_rcl = p_nom_rcl.groupby(grouper_rcl).sum()
 
     # Determine overlapping indices to only create constraints for generator technologies which are actually constrained by the REMIND-EU
     indexes_rcl = p_nom_rcl.indexes["group"].intersection(p_nom_limits.index)
