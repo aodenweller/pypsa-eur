@@ -203,6 +203,8 @@ generations = []
 preinstalled_capacities = []
 potentials = []
 peak_residual_loads = []
+grid_capacities = []
+grid_investments = []
 market_values = []
 electricity_prices = []
 hourly_electricity_prices = []
@@ -242,6 +244,9 @@ for fp in input_networks:
     network.links["region"] = network.links["bus0"].map(network.buses["region"])
     network.lines["region"] = network.lines["bus0"].map(network.buses["region"])
     network.loads["region"] = network.loads["bus"].map(network.buses["region"])
+    # Links/lines have two buses, and can be attributed to two regions (used for e.g. grid length calculations)
+    network.links["region1"] = network.links["bus1"].map(network.buses["region"])
+    network.lines["region1"] = network.lines["bus1"].map(network.buses["region"])
 
     network.generators["general_carrier"] = network.generators["carrier"].map(
         map_pypsaeur_to_general
@@ -431,8 +436,12 @@ for fp in input_networks:
                 .iloc[0]
                 .item(),
                 "relative": (
-                    x.xs("Yes", level="peak_residual_load")[max_prl_snapshot].iloc[0].item()
-                    / (-1 * x.xs("Load", level="peak_residual_load").mean(axis=1)).item()
+                    x.xs("Yes", level="peak_residual_load")[max_prl_snapshot]
+                    .iloc[0]
+                    .item()
+                    / (
+                        -1 * x.xs("Load", level="peak_residual_load").mean(axis=1)
+                    ).item()
                 ),
             }
         )
@@ -445,6 +454,63 @@ for fp in input_networks:
     peak_residual_load["year"] = year
     peak_residual_load["carrier"] = "AC"
     peak_residual_loads.append(peak_residual_load)
+
+    ## Determime grid sizes and investments per region
+    # The full grid: Combine DC and AC lines into one dataframe
+    grid = pd.concat(
+        [
+            network.links.query("carrier == 'DC'")[
+                ["p_nom_opt", "length", "region", "region1", "carrier", "capital_cost"]
+            ],
+            network.lines[
+                ["s_nom_opt", "length", "region", "region1", "carrier", "capital_cost"]
+            ].rename(columns={"s_nom_opt": "p_nom_opt"}),
+        ]
+    )
+
+    # Separate national and international grid, as the international grid requires further preprocessing
+    national_grid = grid.where(grid["region"] == grid["region1"]).dropna()
+    international_grid = grid.where(grid["region"] != grid["region1"]).dropna()
+
+    # National grid: "region" is left unchanged; same region for both buses
+    # International grid: assigning to a region is more difficult, as the grid is connected to two regions,
+    # solution: duplicate the connections and assign half the length to each region
+    international_grid["length"] /= 2
+    new_region = pd.concat(
+        [international_grid["region"], international_grid["region1"]]
+    )
+    international_grid = pd.concat([international_grid] * 2)
+    international_grid["region"] = new_region.values
+    international_grid.index = international_grid.index + international_grid["region"]
+
+    # Recombine national and international grid
+    grid = pd.concat([national_grid, international_grid])
+
+    # calculate total grid capacity in (MW*km) per region
+    grid_capacity = (
+        grid.groupby(["region"])
+        .apply(lambda x: (x["p_nom_opt"] * x["length"]).sum())
+        .to_frame("value")
+        .reset_index()
+    )
+    grid_capacity["year"] = year
+    grid_capacity["carrier"] = "AC-DC"
+    grid_capacities.append(grid_capacity)
+
+    grid_investment = (
+        grid.groupby(["region"])
+        .apply(lambda x: (x["p_nom_opt"] * x["capital_cost"]).sum())
+        .to_frame("value")
+        .reset_index()
+    )
+    # Hack: Convert annualised investment costs to total investment costs; "17" corresponds to the approximate annuity factor for 30 years at 5% interest rate
+    # TODO:
+    # Implement transmission technology in REMIND and couple REMIND investment costs to PyPSA-Eur.
+    # This would allow us to avoid passing the investment costs from PyPSA-Eur to REMIND alltogether.
+    grid_investment["value"] *= 17
+    grid_investment["year"] = year
+    grid_investment["carrier"] = "AC-DC"
+    grid_investments.append(grid_investment)
 
     if cutoff_market_values := snakemake.config["remind_coupling"][
         "extract_coupling_parameters"
@@ -618,6 +684,8 @@ availability_factors = postprocess_dataframe(availability_factors)
 curtailments = postprocess_dataframe(curtailments)
 generation_shares = postprocess_dataframe(generation_shares)
 peak_residual_loads = postprocess_dataframe(peak_residual_loads, map_to_remind=False)
+grid_capacities = postprocess_dataframe(grid_capacities, map_to_remind=False)
+grid_investments = postprocess_dataframe(grid_investments, map_to_remind=False)
 market_values = postprocess_dataframe(market_values)
 hourly_electricity_prices = postprocess_dataframe(hourly_electricity_prices)
 electricity_prices = postprocess_dataframe(electricity_prices)
@@ -668,6 +736,8 @@ for fn, df in {
     "curtailments": curtailments,
     "generation_shares": generation_shares,
     "peak_residual_loads": peak_residual_loads,
+    "grid_capacities": grid_capacities,
+    "grid_investments": grid_investments,
     "preinstalled_capacities": preinstalled_capacities,
     "market_values": market_values,
     "hourly_electricity_prices": hourly_electricity_prices,
@@ -688,6 +758,17 @@ sets = {
     "year": market_values["year"].unique(),
     "region": market_values["region"].unique(),
     "carrier": market_values["carrier"].unique(),
+    "storage_and_transmission_technologies": [
+        "AC",
+        "DC",
+        "H2",
+        "H2 fuel cell",
+        "H2 electrolysis",
+        "battery",
+        "battery charger",
+        "battery discharger",
+    ],
+    "grid_technologies": ["AC-DC"],
 }
 
 # First add sets to the container
@@ -703,6 +784,18 @@ s_carrier = gt.Set(
     "carrier",
     records=sets["carrier"],
     description="PyPSA technology by which the values were aggregated",
+)
+s_storage_and_transmission_technologies = gt.Set(
+    gdx,
+    "storage_and_transmission_technologies",
+    records=sets["storage_and_transmission_technologies"],
+    description="Storage and transmission technologies exported from PyPSAEur",
+)
+s_grid_technologies = gt.Set(
+    gdx,
+    "grid_technologies",
+    records=sets["grid_technologies"],
+    description="Grid technologies exported from PyPSAEur",
 )
 
 # Now we can add data to the container
@@ -754,6 +847,24 @@ prlr = gt.Parameter(
     description="Peak residual load per year and region relative to mean load in p.u.",
 )
 
+gc = gt.Parameter(
+    gdx,
+    name="grid_capacity",
+    domain=[s_year, s_region, s_grid_technologies],
+    records=grid_capacities,
+    description="AC and DC Grid capacity per year and region in (MW*km)",
+)
+
+gi = gt.Parameter(
+    gdx,
+    name="grid_investment",
+    domain=[s_year, s_region, s_grid_technologies],
+    records=grid_investments,
+    description="AC and DC Grid investment (estimated!) per year and region in USD. "
+    "Reminder to implement transmission technology in REMIND and couple REMIND investment costs to PyPSA-Eur. "
+    "Then remove this coupled parameter and use the REMIND investment costs instead.",
+)
+
 m = gt.Parameter(
     gdx,
     name="market_value",
@@ -768,6 +879,17 @@ p = gt.Parameter(
     domain=[s_year, s_region],
     records=electricity_prices,
     description="Electricity price per year and region in EUR/MWh",
+)
+
+oc_st = gt.Parameter(
+    gdx,
+    name="storage_and_transmission_capacities",
+    domain=[s_year, s_region, s_storage_and_transmission_technologies],
+    # restrict output here to selected technologies and slice for only the relevant columns
+    records=optimal_capacities.loc[
+        optimal_capacities.carrier.isin(sets["storage_and_transmission_technologies"])
+    ][["year", "region", "carrier", "value"]],
+    description="Optimal capacity per year and region in MW (generators, links, lines) or MWh (stores)",
 )
 
 gdx.write(snakemake.output["gdx"])
