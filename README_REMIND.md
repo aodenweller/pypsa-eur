@@ -147,6 +147,9 @@ from REMINd -> PyPSA-EUR
     * (currently commented out and deactivated in code: the minimum capacities are then enforced with a constraint: `RCL capacities (PyPSA-Eur) <= preinvestment capcaities (REMIND)` in `solve_network.py`)
     * The functionality is enabled with the new wildcard option `{opts} = RCL`
     * The functionality can be configred via the config.yaml file: config["remind_coupling"]["preinvestment_capacities"]
+    * The RCL constraint requires `config["electricity"]["everywhere_powerplants"]` to specify all types of carriers to which the RCL constraint should apply, in order for powerplants of every type to be attached to every nodes of the final model.
+        If a carrier is missing here and no pre-existing capacities of that type can be found in a country, e.g. `OCGT` in France today with the current data in `powerplants.csv` from `powerplantmatching`, then the RCL capacity constraint cannot be applied to the model and
+        will be ignored silently (i.e. not preinvestment capacities for `OCGT` would be built in France).
 
 
 ## Changes to config.yaml (incomplete; TODO: update!)

@@ -124,6 +124,7 @@ electricity:
 
   powerplants_filter: (DateOut >= 2022 or DateOut.isna())
   custom_powerplants: false
+  everywhere_powerplants: [OCGT, nuclear, oil, CCGT, coal, lignite, biomass] # REMIND coupling specific required for RCL constraint to work properly; ignores existing powerplant locations
 
   conventional_carriers: []  # REMIND coupling specific: Set starting capacities of existing conventional powerplants to zero
   renewable_carriers: [solar, onwind, offwind-ac, offwind-dc, hydro]
