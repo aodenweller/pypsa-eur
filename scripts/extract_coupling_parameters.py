@@ -83,13 +83,13 @@ if "snakemake" not in globals():
     snakemake = mock_snakemake(
         "extract_coupling_parameters",
         configfiles="config/config.remind.yaml",
-        iteration="18",
-        scenario="PyPSA_NPi_preFacAuto_Avg_2023-12-22_13.04.10",
+        iteration="22",
+        scenario="PyPSA_NPi_multiregion_preFacAuto_Avg_2024-01-03_13.54.32",
     )
 
     # mock_snakemake doesn't work with checkpoints
     input_networks = [
-        f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_1H-RCL-Ep{ep:.1f}.nc"
+        f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_6_ec_lcopt_1H-RCL-Ep{ep:.1f}.nc"
         for (year, ep) in zip(
             # pairs of years and ...
             [
@@ -195,6 +195,63 @@ def check_for_mapping_completeness(n):
         )
 
 
+def determine_crossborder_flow(network, kind="exports", carrier=["AC", "DC"]):
+    """
+    Function to determine exports (or imports) by lines and links (restricted
+    to carrier) between REMIND regions.
+
+    Returns an annual aggregate.
+    """
+
+    if kind == "exports":
+        column_names = ["from", "to"]
+        values_comparator = lambda x: x > 0
+    elif kind == "imports":
+        column_names = ["to", "from"]
+        values_comparator = lambda x: x < 0
+
+    # links and lines connecting different regions of appropriate carrier
+    relevant_connectors = pd.concat([network.links, network.lines]).query(
+        "carrier in @carrier and region!=region1"
+    )[["region", "region1"]]
+    # p0 and p1 of each line/link have to be considered, as they represent exports and imports at the same time
+    p0 = pd.concat([network.links_t["p0"], network.lines_t["p0"]], axis="columns")[
+        relevant_connectors.index
+    ]
+    p1 = pd.concat([network.links_t["p1"], network.lines_t["p1"]], axis="columns")[
+        relevant_connectors.index
+    ]
+
+    # Assign from/to regions pair-wise as multi-column index
+    p0.columns = pd.MultiIndex.from_frame(
+        relevant_connectors.loc[p0.columns, ["region", "region1"]], names=column_names
+    )
+    p1.columns = pd.MultiIndex.from_frame(
+        relevant_connectors.loc[p1.columns, ["region1", "region"]], names=column_names
+    )  # reverse order of regions as p1 is the reverse flow
+
+    # Combine p0 and p1 to one dataframe
+    p = pd.concat([p0, p1], axis="columns")
+
+    # apply snapshot weightings, if time-resolution is not hourly (1H)
+    p = p.mul(network.snapshot_weightings["objective"], axis="rows")
+
+    # Aggregate values to region pairs and yearly values
+    p = (
+        p.where(values_comparator)
+        .abs()
+        .T.groupby(["from", "to"])
+        .sum()
+        .sum(axis="columns")
+    )
+
+    # Convert to dataframe
+    p = p.to_frame(kind).reset_index()
+    p["carrier"] = "-".join(sorted(carrier))
+
+    return p
+
+
 capacity_factors = []
 availability_factors = []
 curtailments = []
@@ -208,6 +265,7 @@ grid_investments = []
 market_values = []
 electricity_prices = []
 hourly_electricity_prices = []
+crossborder_flows = []
 
 # Values used for reporting but not for coupling
 electricity_loads = []
@@ -390,6 +448,12 @@ for fp in input_networks:
     electricity_load["year"] = year
     electricity_loads.append(electricity_load)
 
+    crossborder_flow = determine_crossborder_flow(
+        network, kind="exports", carrier=["AC", "DC"]
+    )
+    crossborder_flow["year"] = year
+    crossborder_flows.append(crossborder_flow)
+
     optimal_capacity = network.statistics.optimal_capacity(
         comps=["Generator", "Load", "Link", "Line", "Store", "StorageUnit"],
         groupby=["region", "general_carrier"],
@@ -554,6 +618,7 @@ for fp in input_networks:
     market_values.append(market_value)
 
 
+# %%
 ## Combine DataFrames to same format
 # Helper function
 def postprocess_dataframe(df, map_to_remind=True):
@@ -705,6 +770,13 @@ optimal_capacities = (
     .reset_index()
 )
 
+crossborder_flows = (
+    pd.concat(crossborder_flows)
+    .set_index(["year", "from", "to", "carrier"])
+    .sort_index()
+    .reset_index()
+)
+
 # For loads only output AC (electricity) prices
 electricity_prices = electricity_prices.query("carrier == 'AC'").drop(
     columns=["carrier"]
@@ -741,6 +813,7 @@ for fn, df in {
     "generations": generations,
     "potentials": potentials,
     "optimal_capacities": optimal_capacities,
+    "crossborder_flows": crossborder_flows,
 }.items():
     df.to_csv(snakemake.output[fn], index=False)
 
@@ -764,6 +837,7 @@ sets = {
         "battery discharger",
     ],
     "grid_technologies": ["AC-DC"],
+    "cross_border_flow_carrier": crossborder_flows["carrier"].unique(),
 }
 
 # First add sets to the container
@@ -791,6 +865,12 @@ s_grid_technologies = gt.Set(
     "grid_technologies",
     records=sets["grid_technologies"],
     description="Grid technologies exported from PyPSAEur",
+)
+s_xbf_carrier = gt.Set(
+    gdx,
+    "cross_border_flow_carrier",
+    records=sets["cross_border_flow_carrier"],
+    description="Carrier of crossborder flows (exports) exported from PyPSAEur",
 )
 
 # Now we can add data to the container
@@ -840,6 +920,14 @@ prlr = gt.Parameter(
     domain=[s_year, s_region],
     records=peak_residual_loads[["year", "region", "relative"]],
     description="Peak residual load per year and region relative to mean load in p.u.",
+)
+
+xbf = gt.Parameter(
+    gdx,
+    name="crossborder_flow",
+    domain=[s_year, s_region, s_region, s_xbf_carrier],
+    records=crossborder_flows,
+    description="Crossborder flows (exports) per year and region in MWh",
 )
 
 gc = gt.Parameter(

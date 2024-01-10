@@ -280,6 +280,8 @@ rule extract_coupling_parameters:
         potentials=RESULTS + "{scenario}/i{iteration}/validation/potentials.csv",
         optimal_capacities=RESULTS
         + "{scenario}/i{iteration}/validation/optimal_capacities.csv",
+        crossborder_flows=RESULTS
+        + "{scenario}/i{iteration}/validation/crossborder_flows.csv",
         technology_mapping=RESULTS
         + "{scenario}/i{iteration}/validation/technology_mapping.csv",
         gdx=RESULTS + "{scenario}/i{iteration}/PyPSAEUR2REMIND.gdx",
