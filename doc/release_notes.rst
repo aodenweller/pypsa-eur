@@ -12,6 +12,8 @@ Upcoming Release
 
 * Updated Global Energy Monitor LNG terminal data to March 2023 version.
 
+* New configuration option ``everywhere_powerplants`` to build conventional powerplants everywhere, irrespective of existing powerplants locations, in the network (https://github.com/PyPSA/pypsa-eur/pull/850).
+
 * For industry distribution, use EPRTR as fallback if ETS data is not available.
 
 * The minimum capacity for renewable generators when using the myopic option has been fixed.
