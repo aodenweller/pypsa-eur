@@ -247,7 +247,7 @@ def determine_crossborder_flow(network, kind="exports", carrier=["AC", "DC"]):
 
     # Convert to dataframe
     p = p.to_frame(kind).reset_index()
-    p["carrier"] = "-".join(sorted(carrier))
+    #p["carrier"] = "-".join(sorted(carrier))
 
     return p
 
@@ -772,7 +772,7 @@ optimal_capacities = (
 
 crossborder_flows = (
     pd.concat(crossborder_flows)
-    .set_index(["year", "from", "to", "carrier"])
+    .set_index(["year", "from", "to"])
     .sort_index()
     .reset_index()
 )
@@ -837,7 +837,6 @@ sets = {
         "battery discharger",
     ],
     "grid_technologies": ["AC-DC"],
-    "cross_border_flow_carrier": crossborder_flows["carrier"].unique(),
 }
 
 # First add sets to the container
@@ -865,12 +864,6 @@ s_grid_technologies = gt.Set(
     "grid_technologies",
     records=sets["grid_technologies"],
     description="Grid technologies exported from PyPSAEur",
-)
-s_xbf_carrier = gt.Set(
-    gdx,
-    "cross_border_flow_carrier",
-    records=sets["cross_border_flow_carrier"],
-    description="Carrier of crossborder flows (exports) exported from PyPSAEur",
 )
 
 # Now we can add data to the container
@@ -925,7 +918,7 @@ prlr = gt.Parameter(
 xbf = gt.Parameter(
     gdx,
     name="crossborder_flow",
-    domain=[s_year, s_region, s_region, s_xbf_carrier],
+    domain=[s_year, s_region, s_region],
     records=crossborder_flows,
     description="Crossborder flows (exports) per year and region in MWh",
 )
