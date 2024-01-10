@@ -379,7 +379,7 @@ for fp in input_networks:
         / network.statistics.supply(
             comps=["Generator"],
             groupby=["region", "general_carrier"],
-        ).sum()
+        ).groupby(["region"]).sum()
     )
     generation_share = generation_share.to_frame("value").reset_index()
     generation_share["year"] = year
@@ -790,9 +790,14 @@ peak_residual_loads = peak_residual_loads.query("carrier == 'AC'").drop(
 # Special treatment: Weigh values of df based on installed capacities in REMIND
 generation_shares = weigh_by_REMIND_capacity(generation_shares)
 
-if any(generation_shares.groupby(["year", "region"])["value"].sum() != 1.0):
+# Throw warning if sum is not between 0.9999 and 1.0001 for each year and region (allowing for some numerical tolerance)
+if any(
+    generation_shares.groupby(["year", "region"])["value"].sum()
+    .where(lambda x: (x < 0.9999) | (x > 1.0001))
+    .notna()
+):
     logger.warning(
-        "Sum of generation shares is not equal to 1.0 for each year and region."
+        "Sum of generation shares is not between 0.9999 and 1.0001 for each year and region."
     )
 
 # %%
