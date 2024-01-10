@@ -54,7 +54,7 @@ scenario:
   ll:
   - copt  # REMIND coupling specific
   clusters:
-  - 4  # REMIND coupling specific
+  - 6  # REMIND coupling specific
   opts:  # REMIND coupling specific
   - '0H-RCL-EpREMIND' #"-EpREMIND" is placeholder for setting the emissions prices through REMIND
   year: [2025, 2030, 2035, 2040, 2045, 2050, 2055, 2060, 2070, 2080, 2090, 2100, 2110, 2130, 2150]
@@ -64,7 +64,8 @@ scenario:
   - ''  # REMIND coupling specific
 
 # docs in https://pypsa-eur.readthedocs.io/en/latest/configuration.html#countries
-countries: ['DE']  # REMIND coupling specific
+#countries: ['DE']  # REMIND coupling specific
+countries: ['DE', 'FR', 'NL', 'BE', 'LU', 'AT']  # REMIND coupling specific
 #countries: ['AL', 'AT', 'BA', 'BE', 'BG', 'CH', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GB', 'GR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'ME', 'MK', 'NL', 'NO', 'PL', 'PT', 'RO', 'RS', 'SE', 'SI', 'SK']
 
 # docs in https://pypsa-eur.readthedocs.io/en/latest/configuration.html#snapshots
