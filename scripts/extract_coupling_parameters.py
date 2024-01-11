@@ -925,7 +925,7 @@ xbf = gt.Parameter(
     name="crossborder_flow",
     domain=[s_year, s_region, s_region],
     records=crossborder_flows,
-    description="Crossborder flows (exports) per year and region in MWh",
+    description="Crossborder flows (exports) from region (columnn 2) to region (column 3) per year in MWh",
 )
 
 gc = gt.Parameter(
