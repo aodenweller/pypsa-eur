@@ -7,7 +7,7 @@ channels:
 - conda-forge
 - bioconda
 dependencies:
-- python>=3.11
+- python>=3.8,<=3.10  # CPLEX requires python<=3.10
 - pip
 
 - atlite>=0.2.9
