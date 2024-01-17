@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: : 2023 Adrian Odenweller <adrian.odenweller@pik-potsdam.de>, Johannes Hampp <johannes.hampp@pik-potsdam.de>
+# SPDX-FileCopyrightText: : 2024 Adrian Odenweller <adrian.odenweller@pik-potsdam.de>, Johannes Hampp <johannes.hampp@pik-potsdam.de>
 #
 # SPDX-License-Identifier: MIT
 
@@ -102,12 +102,22 @@ rule dag:
         """
 
 
+rule doc:
+    message:
+        "Build documentation."
+    output:
+        directory("doc/_build"),
+    shell:
+        "make -C doc html"
+
+
 rule sync:
     params:
         cluster=f"{config['remote']['ssh']}:{config['remote']['path']}",
     shell:
         """
         rsync -uvarh --ignore-missing-args --files-from=.sync-send . {params.cluster}
+        rsync -uvarh --no-g {params.cluster}/resources . || echo "No resources directory, skipping rsync"
         rsync -uvarh --no-g {params.cluster}/results . || echo "No results directory, skipping rsync"
         rsync -uvarh --no-g {params.cluster}/logs . || echo "No logs directory, skipping rsync"
         """
