@@ -83,13 +83,13 @@ if "snakemake" not in globals():
     snakemake = mock_snakemake(
         "extract_coupling_parameters",
         configfiles="config/config.remind.yaml",
-        iteration="22",
-        scenario="PyPSA_NPi_multiregion_preFacAuto_Avg_2024-01-03_13.54.32",
+        iteration="99",
+        scenario="PyPSA_NPi_DEU_2024-01-15_13.56.00",
     )
 
     # mock_snakemake doesn't work with checkpoints
     input_networks = [
-        f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_6_ec_lcopt_1H-RCL-Ep{ep:.1f}.nc"
+        f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_1H-RCL-Ep{ep:.1f}.nc"
         for (year, ep) in zip(
             # pairs of years and ...
             [
@@ -345,21 +345,21 @@ for fp in input_networks:
     capacity_factor = network.statistics.capacity_factor(
         comps=["Generator"], groupby=["region", "general_carrier"]
     )
-    capacity_factor = capacity_factor.to_frame("value").reset_index()
+    capacity_factor = capacity_factor.to_frame("value").reset_index().drop(columns=["component"])
     capacity_factor["year"] = year
     capacity_factors.append(capacity_factor)
 
     availability_factor = calculate_availability_factor(
         network, comps=["Generator"], groupby=["region", "general_carrier"]
     )
-    availability_factor = availability_factor.to_frame("value").reset_index()
+    availability_factor = availability_factor.to_frame("value").reset_index().drop(columns=["component"])
     availability_factor["year"] = year
     availability_factors.append(availability_factor)
 
     curtailment = network.statistics.curtailment(
         comps=["Generator"], groupby=["region", "general_carrier"]
     )
-    curtailment = curtailment.to_frame("value").reset_index()
+    curtailment = curtailment.to_frame("value").reset_index().drop(columns=["component"])
     curtailment["year"] = year
     curtailments.append(curtailment)
 
@@ -437,7 +437,7 @@ for fp in input_networks:
             comps=["Load"], groupby=["region", "general_carrier"]
         )
     )
-    electricity_price = electricity_price.to_frame("value").reset_index()
+    electricity_price = electricity_price.to_frame("value").reset_index().drop(columns=["component"])
     electricity_price["year"] = year
     electricity_prices.append(electricity_price)
 
@@ -613,7 +613,7 @@ for fp in input_networks:
         comps=["Generator"],
         groupby=["region", "general_carrier"],
     )
-    market_value = market_value.to_frame("value").reset_index()
+    market_value = market_value.to_frame("value").reset_index().drop(columns=["component"])
     market_value["year"] = year
     market_values.append(market_value)
 
@@ -764,7 +764,7 @@ potentials = postprocess_dataframe(potentials, map_to_remind=False)
 
 optimal_capacities = (
     pd.concat(optimal_capacities)
-    .rename(columns={"level_0": "type", "general_carrier": "carrier"})
+    .rename(columns={"component": "type", "general_carrier": "carrier"})
     .set_index(["year", "region", "type", "carrier"])
     .sort_index()["value"]
     .reset_index()
@@ -982,3 +982,5 @@ logger.info(
 get_technology_mapping(
     snakemake.input["technology_cost_mapping"], group_technologies=True
 ).to_csv(snakemake.output["technology_mapping"], index=False)
+
+# %%
