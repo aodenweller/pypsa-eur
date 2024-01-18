@@ -34,7 +34,7 @@ if __name__ == "__main__":
     # Load REMIND-EU demand data
     demand = read_remind_data(
         snakemake.input["remind_data"],
-        "v32_usableSeDisp",
+        "v32_usableSeDispNet",
         rename_columns={
             "all_enty": "sector",
             "ttot": "year",
