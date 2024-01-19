@@ -202,7 +202,7 @@ renewable:
       method: wind
       turbine: NREL_ReferenceTurbine_2020ATB_5.5MW
       add_cutout_windspeed: true
-    capacity_per_sqkm: 2
+    capacity_per_sqkm: 4 # REMIND coupling specific: Increase default to meet German potential of 50 GW used in REMIND    correction_factor: 0.8855
     correction_factor: 0.8855
     corine: [44, 255]
     luisa: false # [0, 5230]
@@ -218,7 +218,7 @@ renewable:
       method: wind
       turbine: NREL_ReferenceTurbine_2020ATB_5.5MW
       add_cutout_windspeed: true
-    capacity_per_sqkm: 2
+    capacity_per_sqkm: 4 # REMIND coupling specific: Increase default to meet German potential of 50 GW used in REMIND
     correction_factor: 0.8855
     corine: [44, 255]
     luisa: false # [0, 5230]
