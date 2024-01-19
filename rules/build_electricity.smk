@@ -535,6 +535,7 @@ rule add_extra_components:
         max_hours=config["electricity"]["max_hours"],
         costs=config["costs"],
         preinvestment_capacities=config["remind_coupling"]["preinvestment_capacities"],
+        h2_demand=config["remind_coupling"]["h2_demand"],
     input:
         network=rules.cluster_network.output["network"],
         tech_costs=rules.add_electricity.input["tech_costs"],
@@ -542,6 +543,7 @@ rule add_extra_components:
         RCL_p_nom_limits=SCENARIO_RESOURCES
         + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
+        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
         SCENARIO_RESOURCES
         + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec.nc",

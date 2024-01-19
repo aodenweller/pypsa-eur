@@ -56,7 +56,12 @@ import logging
 import numpy as np
 import pandas as pd
 import pypsa
-from _helpers import configure_logging, get_region_mapping, get_technology_mapping
+from _helpers import (
+    configure_logging,
+    get_region_mapping,
+    get_technology_mapping,
+    read_remind_data,
+)
 from add_electricity import load_costs, sanitize_carriers
 
 logger = logging.getLogger(__name__)
@@ -305,6 +310,104 @@ def attach_RCL_generators(
     )
 
 
+def attach_hydrogen_demand(
+    n,
+    year,
+    config,
+    fp_remind_data,
+    fp_region_mapping,
+):
+    """
+    Add optional H2 demand for hydrogen from electrolysis based on REMIND
+    scenarios to the network.
+
+    Each REMIND region is assigned a single shared H2 demand which is
+    connected to all existing H2 buses from PyPSAEur within this region.
+    The connection is made using a uni-directional link. The hydrogen
+    demand is converted from annual TWa (REMIND) to MW of constant load.
+    An optional H2 buffer store with configurable size can be added.
+    Links and H2 buffer are added without any cost.
+    """
+    # map countries to REMIND regions
+    # Create region mapping
+    region_mapping = get_region_mapping(
+        fp_region_mapping, source="PyPSA-EUR", target="REMIND-EU"
+    )
+    region_mapping = pd.DataFrame(region_mapping).T.reset_index()
+    region_mapping.columns = ["PyPSA-EUR", "REMIND-EU"]
+    region_mapping = region_mapping.set_index("PyPSA-EUR")
+
+    # Find all H2 buses which we connect to REMIND demand bus
+    original_h2_buses = n.buses[n.buses["carrier"] == "H2"][["country"]]
+
+    # Map countries to REMIND regions
+    original_h2_buses["region"] = original_h2_buses["country"].map(
+        region_mapping["REMIND-EU"]
+    )
+
+    # Load H2 demand from REMIND gdx file
+    h2_demand = read_remind_data(
+        fp_remind_data,
+        "p32_ElecH2Demand",
+        rename_columns={"ttot": "year", "all_regi": "region"},
+    )
+    h2_demand["value"] *= 8760 * 1e6  # convert TWa to MWh
+    # Restrict to relevant year and regions inside the model
+    h2_demand = h2_demand.loc[
+        (h2_demand["year"] == str(year))
+        & (h2_demand["region"].isin(original_h2_buses["region"].unique()))
+    ]
+
+    n.buses["region"] = ""
+
+    for idx, row in h2_demand.iterrows():
+        n.add(
+            "Bus",
+            name=f"{row['region']} H2 demand",
+            carrier="H2 demand REMIND",
+        )
+        # Add the region for the H2 demand bus directly to the dataframe, as they are more difficult to map later
+        n.buses.loc[f"{row['region']} H2 demand", "region"] = row["region"]
+
+        n.add(
+            "Load",
+            name=f"{row['region']} H2 demand REMIND",
+            bus=f"{row['region']} H2 demand",
+            p_set=row["value"] / 8760,
+        )
+
+        n.add(
+            "Store",
+            name=f"{row['region']} H2 demand buffer REMIND",
+            bus=f"{row['region']} H2 demand",
+            e_nom_extendable=False,
+            e_cyclic=True,
+            e_nom=row["value"] / 8760 * config["buffer_max_hours"],
+            capital_cost=0,
+            marginal_cost=0,
+            carrier="H2 demand buffer REMIND",
+        )
+
+    # Connect PyPSAEur H2 buses (per node) to REMIND H2 demand buses (per region)
+    for idx, row in original_h2_buses.iterrows():
+        n.add(
+            "Link",
+            name=f"{idx} transfer to {row['region']} H2 demand REMIND",
+            bus0=idx,
+            bus1=f"{row['region']} H2 demand",
+            p_min_pu=0,  # unidirectional, only allow flow from PyPSAEur H2 buses to REMIND demand
+            p_max_pu=1,
+            p_nom=h2_demand[
+                "value"
+            ].max(),  # no need for extendable, just allow max. throughput of max demand of any region
+            p_nom_extendable=False,
+            efficiency=1,
+            capital_cost=0,
+            marginal_cost=0,
+            carrier="H2 transfer to H2 demand REMIND",
+        )
+
+
 if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
@@ -312,10 +415,10 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "add_extra_components",
             simpl="",
-            clusters=4,
-            scenario="test",
-            iteration=1,
-            year=2040,
+            clusters=6,
+            scenario="h2demand",
+            iteration=200,
+            year=2050,
         )
     configure_logging(snakemake)
 
@@ -338,7 +441,17 @@ if __name__ == "__main__":
         snakemake.input["region_mapping"],
         snakemake.input["technology_cost_mapping"],
     )
+    if snakemake.params["h2_demand"]["enabled"]:
+        attach_hydrogen_demand(
+            n,
+            config=snakemake.params["h2_demand"],
+            year=snakemake.wildcards["year"],
+            fp_region_mapping=snakemake.input["region_mapping"],
+            fp_remind_data=snakemake.input["remind_data"],
+        )
     sanitize_carriers(n, snakemake.config)
 
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
     n.export_to_netcdf(snakemake.output[0])
+
+# %%

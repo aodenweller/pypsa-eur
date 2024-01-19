@@ -40,9 +40,9 @@ import xarray as xr
 from _benchmark import memory_logger
 from _helpers import (
     configure_logging,
+    get_opt,
     get_region_mapping,
     get_technology_mapping,
-    get_opt,
     update_config_with_sector_opts,
 )
 from pypsa.descriptors import get_activity_mask

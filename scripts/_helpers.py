@@ -81,6 +81,7 @@ def configure_logging(snakemake, skip_handlers=False):
         Do (not) skip the default handlers created for redirecting output to STDERR and file.
     """
     import logging
+    import sys
 
     kwargs = snakemake.config.get("logging", dict()).copy()
     kwargs.setdefault("level", "INFO")
@@ -103,6 +104,16 @@ def configure_logging(snakemake, skip_handlers=False):
             }
         )
     logging.basicConfig(**kwargs)
+
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        # Log the exception
+        logger = logging.getLogger()
+        logger.error(
+            "Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback)
+        )
+
+    # Set the function 'handle_exception' as the handler for uncaught exceptions
+    sys.excepthook = handle_exception
 
 
 def update_p_nom_max(n):

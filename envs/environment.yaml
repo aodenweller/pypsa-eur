@@ -54,6 +54,11 @@ dependencies:
   # From Adrian's wishlist
 - ipykernel
 
+# Auto-formatting and linting, etc....
+# call with pre-commit run --all-files
+- pre-commit
+- hvplot
+
   # GIS dependencies:
 - cartopy
 - descartes
