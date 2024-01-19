@@ -2,14 +2,9 @@
 #
 # SPDX-License-Identifier: MIT
 
-import os, sys, glob
+import os, sys
 
-helper_source_path = [match for match in glob.glob("**/_helpers.py", recursive=True)]
-
-for path in helper_source_path:
-    path = os.path.dirname(os.path.abspath(path))
-    sys.path.insert(0, os.path.abspath(path))
-
+sys.path.insert(0, os.path.abspath("scripts"))
 from _helpers import validate_checksum
 
 
