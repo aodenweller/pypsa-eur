@@ -183,3 +183,16 @@ from REMINd -> PyPSA-EUR
     ```
 * `KeyError` when calling `snakemake` with `--dry-run / -n`: This can happen due to `group-components` in `cluster_config/config.yaml` and be ignored. The non-dry-run of `snakemake` should run without issues
 * `snakemake` stuck in an endless loop: If running `snakemake` directly from the folder and only partially executing rules, e.g. regenerating some output files, sometimes an endless loop of repeating jobs may be submitted. This is related to a `snakemake` bug with checkpoints and cluster execution. To avoid this one can try to regenerate with the same `snakemake` call also the output of the checkpoint, i.e. `sanekmake [your regular arguments] [your target rule or output] -f results/[your scenario]/[your iteration]/co2_price_scenarios.csv`
+* Random filesystem errors with `snakemake`: This can happen on the cluster when the filesystem index is not updated fast enough. Also see [this GitHub issue](Ihttps://github.com/snakemake/snakemake/issues/39).
+    * Workaround 1: Add
+    ```
+        for f in files:
+        os.listdir(os.path.dirname(f))
+    ```
+    to the function `wait_for_files` in  `io.py` in the `snakemake` directory of the environment, e.g. `/p/tmp/adrianod/software/micromamba_20240118/envs/pypsa-eur-20240118/lib/python3.10/site-packages/snakemake`. This needs to be repeated for every new environment.
+        * Actually, this seems to lead to another weird issue where `snakemake` keeps resubmitting jobs, although they were finished. 
+    * Workaround 2: Open another session and run an infinite loop
+    ```
+    while :; do ls $OUTDIR ; sleep 10; done
+    ```
+    in the `pypsa-eur/results/<scenario>/<iteration>` directory or even
