@@ -121,36 +121,41 @@ Due to specific nature of PIK cluster, the following resources specific to the c
     * Using this combination of `partition` and `qos` runs these rules on the cluster login node, thus granting them limited internet access
     * These `qsub` modifiers can be set by CLI for Snakemake (thus keeping them out of the `Snakefile`) or inside the `Snakefile`
 
-## coupling parameters
+## Coupling parameters
 
+### REMIND to PyPSA-Eur
 
-from PyPSA-EUR -> REMIND are extract with specific snakemake rule and script `extract_coupling_parameters.py`.
-
-Extracted values are aggregated by REMIND region and mapped to REMIND technologies.
-
-* Some mapping is 1:n from PyPSA-EUR:REMIND, see the mapping in the file.
-* some extracted parameters are weighted by the installed capacity in *REMIND* in from the run before PyPSA-EUR is called, where the weighing is between the different technologies mapped from 1 PyPSA-EUR tech -> n REMIND techs. Currently weighted are: generation shares, installed capacities
-
-
-from REMINd -> PyPSA-EUR
-
-* Dedicated scripts creating input files for PyPSA-EUR from the REMIND export ("REMIND2PyPSAEUR.gdx")
+* Dedicated scripts creating input files for PyPSA-EUR from the REMIND export (`REMIND2PyPSAEUR.gdx`)
 * Output form is imitating original PyPSA-EUR files input format, trying to thereby create drop-in replacements for the original files
 * New files are then used in the PyPSA-EUR rules, by modifying the specified input files (but not the model scripts) in the Snakefile / <rules>.smk filesa
 * CO2 price via wildcard, placeholder in config.remind.yaml ; extract prices from REMIND and then create dataframe / file `resources/<scenario>/i<iteration>/co2_price_scnearios.csv` with all combinations of scenarios to be run in PyPSA-EUR
 
-* preinvestment capacities (for generators) from REMIND are implemented via a constraint ("RCL constraint" = Regional Carrier Limit):
+* Preinvestment capacities (for generators) from REMIND are implemented via a constraint ("RCL constraint" = Regional Carrier Limit):
     * preinvestment capacities are determined from REMIND in `import_REMIND_RCL_p_nom_limits.py` (per remind region and technology <-> mapped between REMIND and PyPSA-Eur)
-    * In the locations of existing conventional powerplants in PyPSA-Eur, additional generators (clones of original PyPSA-Eur generators) are created (in `add_extra_components.py`) with zero costs (can be build for free); these are required for the constraint to work properly.
+    * The config parameter `everywhere_powerplants` controls which powerplants can be built everywhere (also see below). This is set to all dispatchable powerplants. Only allowing additional generators in locations of existing powerplants (from `powerplantmatching`) can lead to problems if there is e.g. no OCGT generator in France in `powerplantmatching`, but REMIND has a non-zero amount of OCGT in France (real example). Therefore, currently we effectively don't use the locational information from `powerplantmatching` but use PyPSA in a greenfield setting w.r.t. to generators, *not* w.r.t. transmission lines.
+    * Additional RCL generators are created (in `add_extra_components.py`) with zero costs (can be build for free); these are required for the constraint to work properly.
     * In `solve_network.py` the RCL constraint is added
     * The ensures that per region and mapped technology, the RCL generators can expand up to the preinvestment capacities passed by REMIND. Only after this limit is exhausted, PyPSA-Eur may choose to build additional capacities (at regular costs) of non-RCL generators.
     * (currently commented out and deactivated in code: the minimum capacities are then enforced with a constraint: `RCL capacities (PyPSA-Eur) <= preinvestment capcaities (REMIND)` in `solve_network.py`)
     * The functionality is enabled with the new wildcard option `{opts} = RCL`
     * The functionality can be configred via the config.yaml file: config["remind_coupling"]["preinvestment_capacities"]
     * The RCL constraint requires `config["electricity"]["everywhere_powerplants"]` to specify all types of carriers to which the RCL constraint should apply, in order for powerplants of every type to be attached to every nodes of the final model.
-        If a carrier is missing here and no pre-existing capacities of that type can be found in a country, e.g. `OCGT` in France today with the current data in `powerplants.csv` from `powerplantmatching`, then the RCL capacity constraint cannot be applied to the model and
-        will be ignored silently (i.e. not preinvestment capacities for `OCGT` would be built in France).
+    * If a carrier is missing here and no pre-existing capacities of that type can be found in a country, e.g. `OCGT` in France today with the current data in `powerplants.csv` from `powerplantmatching`, then the RCL capacity constraint cannot be applied to the model and will be ignored silently (i.e. not preinvestment capacities for `OCGT` would be built in France).
+* Costs
+    * Currently no regional costs in PyPSA-Eur
+    * CO2 costs are extracted before in `determine_co2_scenarios` and implemented via wildcards
+    * TODO in future: Implement regional costs, maybe even implement some kind of annualised foresight costs 
+* Load
+    * Currently only a single load time series that is scaled-up
+    * In the future, the gdx parameter `load_price` could also be used for several electricity subsectors (EVs, heat pumps, etc.) 
 
+### PyPSA-Eur to REMIND
+Parameters are extracted with a specific snakemake rule and script `extract_coupling_parameters.py`.
+
+Extracted values are aggregated by REMIND region and mapped to REMIND technologies.
+
+* Some mapping is 1:n from PyPSA-EUR:REMIND, see the mapping in the file.
+* some extracted parameters are weighted by the installed capacity in *REMIND* in from the run before PyPSA-EUR is called, where the weighing is between the different technologies mapped from 1 PyPSA-EUR tech -> n REMIND techs. Currently weighted are: generation shares, installed capacities
 
 ## Changes to config.yaml (incomplete; TODO: update!)
 
@@ -195,4 +200,4 @@ from REMINd -> PyPSA-EUR
     ```
     while :; do ls $OUTDIR ; sleep 10; done
     ```
-    in the `pypsa-eur/results/<scenario>/<iteration>` directory or even
+    in the `pypsa-eur/results/<scenario>/<iteration>` directory
