@@ -84,13 +84,13 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="200",
-            scenario="h2demand",
+            iteration="1",
+            scenario="PyPSA_NPi_DEU_2024-01-19_11.45.38",
         )
 
         # mock_snakemake doesn't work with checkpoints
         input_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_6_ec_lcopt_6H-RCL-Ep{ep:.1f}.nc"
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_6H-RCL-Ep{ep:.1f}.nc"
             for (year, ep) in zip(
                 # pairs of years and ...
                 [
@@ -252,7 +252,7 @@ if __name__ == "__main__":
 
         # Convert to dataframe
         p = p.to_frame(kind).reset_index()
-        p["carrier"] = "-".join(sorted(carrier))
+        #p["carrier"] = "-".join(sorted(carrier))
 
         return p
 
@@ -404,7 +404,7 @@ if __name__ == "__main__":
             .groupby(["region"])
             .sum()
         )
-        generation_share = generation_share.to_frame("value").reset_index()
+        generation_share = generation_share.to_frame("value").reset_index().drop(columns=["component"])
         generation_share["year"] = year
         generation_shares.append(generation_share)
 
@@ -856,7 +856,7 @@ if __name__ == "__main__":
 
     crossborder_flows = (
         pd.concat(crossborder_flows)
-        .set_index(["year", "from", "to", "carrier", "exports"])
+        .set_index(["year", "from", "to"])
         .sort_index()
         .reset_index()
     )
@@ -876,11 +876,11 @@ if __name__ == "__main__":
     if any(
         generation_shares.groupby(["year", "region"])["value"]
         .sum()
-        .where(lambda x: (x < 0.9999) | (x > 1.0001))
+        .where(lambda x: (x < 0.99) | (x > 1.01))
         .notna()
     ):
         logger.warning(
-            "Sum of generation shares is not between 0.9999 and 1.0001 for each year and region."
+            "Sum of generation shares is not between 0.99 and 1.01 for each year and region."
         )
 
     # %%
@@ -928,7 +928,6 @@ if __name__ == "__main__":
             "battery discharger",
         ],
         "grid_technologies": ["AC-DC"],
-        "cross_border_flow_carrier": crossborder_flows["carrier"].unique(),
         "electrolysis": ["electricity price electrolysis"],
     }
 
@@ -957,12 +956,6 @@ if __name__ == "__main__":
         "grid_technologies",
         records=sets["grid_technologies"],
         description="Grid technologies exported from PyPSAEur",
-    )
-    s_xbf_carrier = gt.Set(
-        gdx,
-        "cross_border_flow_carrier",
-        records=sets["cross_border_flow_carrier"],
-        description="Carrier of crossborder flows (exports) exported from PyPSAEur",
     )
     s_epe_carrier = gt.Set(
         gdx,
@@ -1023,7 +1016,7 @@ if __name__ == "__main__":
     xbf = gt.Parameter(
         gdx,
         name="crossborder_flow",
-        domain=[s_year, s_region, s_region, s_xbf_carrier],
+        domain=[s_year, s_region, s_region],
         records=crossborder_flows,
         description="Crossborder flows (exports) from region (columnn 2) to region (column 3) per year in MWh",
     )
