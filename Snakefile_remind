@@ -43,7 +43,7 @@ RESULTS = "results/"
 SCENARIO_RESULTS = RESULTS + RDIR
 ITERATION_RESULTS = SCENARIO_RESULTS + IDIR
 
-
+# Rules that are run locally, not via a SLURM job
 localrules:
     purge,
     dag,
@@ -148,13 +148,11 @@ rule download_and_prepare:
 
 
 # # This part contains all rules, which get data from REMIND between iterations.
-# # PyPSA-EUR networks are solved between iterations via snakemake calls:
-# # > snakemake -call -s Snakefile_remind --config iteration=<iteration> -- remind_solve_all_networks
+# # PyPSA-EUR networks are solved between iterations via snakemake calls
 # #
 # # Some of the new rules have additional wildcards:
 # # * {year}: Indicating the REMIND year for which the model is built
 # # * {iteration}: Indicating the REMIND iteration for which the model is built
-
 
 # Build cost data compatible with the original PyPSA-EUR cost data structure from technology-data
 # as part of the coupling with REMIND.
