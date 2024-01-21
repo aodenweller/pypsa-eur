@@ -84,13 +84,13 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="1",
-            scenario="PyPSA_NPi_DEU_2024-01-19_11.45.38",
+            iteration="5",
+            scenario="PyPSA_NPi_multiregion_2024-01-21_15.14.36",
         )
 
         # mock_snakemake doesn't work with checkpoints
         input_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_6H-RCL-Ep{ep:.1f}.nc"
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_6_ec_lcopt_3H-RCL-Ep{ep:.1f}.nc"
             for (year, ep) in zip(
                 # pairs of years and ...
                 [
@@ -291,6 +291,10 @@ if __name__ == "__main__":
             raise ValueError(
                 f"Network {fp} missing objective attribute, something probably went wrong in solving process during network optimisation."
             )
+
+        # Add region to buses if it doesnt exist (this is the case if additionakl h2demand is not enabled)
+        if "region" not in network.buses.columns:
+            network.buses["region"] = ""
 
         # First map the PyPSA-EUR countries to REMIND-EU regions;
         # .statistics(..) can then automatically take care of the aggregation
@@ -503,7 +507,7 @@ if __name__ == "__main__":
         electricity_price_electrolysis["year"] = year
         electricity_prices_electrolysis.append(electricity_price_electrolysis)
 
-        electricity_load = (-1) * network.statistics.withdrawal(
+        electricity_load = network.statistics.withdrawal(
             comps=["Load"], groupby=["region", "general_carrier"]
         )
         electricity_load = electricity_load.to_frame("value").reset_index()

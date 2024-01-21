@@ -280,7 +280,7 @@ rule extract_coupling_parameters:
         market_values=RESULTS + "{scenario}/i{iteration}/validation/market_values.csv",
         hourly_prices=RESULTS + "{scenario}/i{iteration}/validation/hourly_prices.csv",
         load_prices=RESULTS
-        + "{scenario}/i{iteration}/validation/electricity_prices.csv",
+        + "{scenario}/i{iteration}/validation/load_prices.csv",
         electricity_prices_electrolysis=RESULTS
         + "{scenario}/i{iteration}/validation/electricity_prices_electrolysis.csv",
         electricity_loads=RESULTS
