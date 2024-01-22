@@ -291,6 +291,8 @@ rule extract_coupling_parameters:
         + "{scenario}/i{iteration}/validation/optimal_capacities.csv",
         crossborder_flows=RESULTS
         + "{scenario}/i{iteration}/validation/crossborder_flows.csv",
+        crossborder_prices=RESULTS
+        + "{scenario}/i{iteration}/validation/crossborder_prices.csv",
         technology_mapping=RESULTS
         + "{scenario}/i{iteration}/validation/technology_mapping.csv",
         gdx=RESULTS + "{scenario}/i{iteration}/PyPSAEUR2REMIND.gdx",

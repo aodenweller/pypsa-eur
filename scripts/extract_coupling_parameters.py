@@ -198,63 +198,85 @@ if __name__ == "__main__":
                 f"PyPSA-EUR countries without mapping to REMIND-EU regions::\n {tmp_set}"
             )
 
-    def determine_crossborder_flow(network, kind="exports", carrier=["AC", "DC"]):
+    def determine_crossborder_flow_and_price(network, carrier=["AC", "DC"]):
         """
-        Function to determine exports (or imports) by lines and links
-        (restricted to carrier) between REMIND regions.
+        Function to determine (i) electricity exports by lines and links
+        and (ii) corresponding electricity prices paid by the importing
+        region (i.e. paid by region in "to" to region in "from").
 
-        Returns an annual aggregate.
+        Restricted to carrier. Aggregated to REMIND regions.
+        Returns annual aggregates of (i) and (ii).
         """
 
-        if kind == "exports":
-            column_names = ["from", "to"]
-            values_comparator = lambda x: x > 0
-        elif kind == "imports":
-            column_names = ["to", "from"]
-            values_comparator = lambda x: x < 0
-
-        # links and lines connecting different regions of appropriate carrier
+        # Determine relevant connector between regions
         relevant_connectors = pd.concat([network.links, network.lines]).query(
             "carrier in @carrier and region!=region1"
-        )[["region", "region1"]]
-        # p0 and p1 of each line/link have to be considered, as they represent exports and imports at the same time
-        p0 = pd.concat([network.links_t["p0"], network.lines_t["p0"]], axis="columns")[
-            relevant_connectors.index
-        ]
-        p1 = pd.concat([network.links_t["p1"], network.lines_t["p1"]], axis="columns")[
-            relevant_connectors.index
-        ]
+        )[["bus0", "bus1"]]
 
-        # Assign from/to regions pair-wise as multi-column index
+        # Read both p0 and p1 of both links and lines
+        p0 = pd.concat([network.links_t["p0"], network.lines_t["p0"]], axis="columns")[relevant_connectors.index]
+        p1 = pd.concat([network.links_t["p1"], network.lines_t["p1"]], axis="columns")[relevant_connectors.index]
+
+        # Map relevant_connectors to buses, from which marginal prices are taken
         p0.columns = pd.MultiIndex.from_frame(
-            relevant_connectors.loc[p0.columns, ["region", "region1"]],
-            names=column_names,
+            relevant_connectors.loc[p0.columns, ["bus0", "bus1"]],
+            names=["from", "to"],
         )
         p1.columns = pd.MultiIndex.from_frame(
-            relevant_connectors.loc[p1.columns, ["region1", "region"]],
-            names=column_names,
-        )  # reverse order of regions as p1 is the reverse flow
-
-        # Combine p0 and p1 to one dataframe
-        p = pd.concat([p0, p1], axis="columns")
-
-        # apply snapshot weightings, if time-resolution is not hourly (1H)
-        p = p.mul(network.snapshot_weightings["objective"], axis="rows")
-
-        # Aggregate values to region pairs and yearly values
-        p = (
-            p.where(values_comparator)
-            .abs()
-            .T.groupby(["from", "to"])
-            .sum()
-            .sum(axis="columns")
+            relevant_connectors.loc[p1.columns, ["bus1", "bus0"]],  # Reverse order as p1 is the reverse flow
+            names=["from", "to"],
         )
 
-        # Convert to dataframe
-        p = p.to_frame(kind).reset_index()
-        #p["carrier"] = "-".join(sorted(carrier))
+        # Concatenate both and filter for positive values (exports)
+        # This is fine because we have included both p0 and p1
+        p = pd.concat([p0, p1], axis="columns").where(lambda x: x > 0)
 
-        return p
+        # Apply snapshot weightings if the time resolution is not hourly (1H)
+        p = p.mul(network.snapshot_weightings["objective"], axis="rows")
+
+        # Get marginal prices at importing buses, i.e. at "to" buses
+        price_import = network.buses_t["marginal_price"][p.columns.get_level_values("to")]  # Change "to" to use column_names?
+        price_import.columns = p.columns
+
+        # Calculate total expenditure for importing electricity
+        expenditure_import = p.mul(price_import).T
+
+        # Map buses to regions
+        expenditure_import.index = (
+            pd.MultiIndex.from_arrays([
+                expenditure_import.index.get_level_values("from")
+                .map(network.buses["region"]),
+                expenditure_import.index.get_level_values("to")
+                .map(network.buses["region"])
+            ], names=["from", "to"])
+        )
+
+        expenditure_import = expenditure_import.groupby(["from", "to"]).sum().sum(axis="columns")
+
+        # Transpose
+        p = p.T
+        
+        # Map buses to regions
+        p.index = (
+            pd.MultiIndex.from_arrays([
+                p.index.get_level_values("from")
+                .map(network.buses["region"]),
+                p.index.get_level_values("to")
+                .map(network.buses["region"])
+            ], names=["from", "to"])
+        )
+
+        # Calculate total electricity flow
+        p = p.groupby(["from", "to"]).sum().sum(axis="columns")
+
+        # Calculate average electricity price paid by importing region
+        price = expenditure_import / p
+
+        # Convert to dataframe
+        p = p.to_frame("exports").reset_index()
+        price = price.to_frame("price").reset_index()
+
+        return p, price
 
     capacity_factors = []
     availability_factors = []
@@ -271,6 +293,7 @@ if __name__ == "__main__":
     electricity_prices_electrolysis = []
     hourly_prices = []
     crossborder_flows = []
+    crossborder_prices = []
 
     # Values used for reporting but not for coupling
     electricity_loads = []
@@ -514,11 +537,13 @@ if __name__ == "__main__":
         electricity_load["year"] = year
         electricity_loads.append(electricity_load)
 
-        crossborder_flow = determine_crossborder_flow(
-            network, kind="exports", carrier=["AC", "DC"]
+        crossborder_flow, crossborder_price = determine_crossborder_flow_and_price(
+            network, carrier=["AC", "DC"]
         )
         crossborder_flow["year"] = year
+        crossborder_price["year"] = year
         crossborder_flows.append(crossborder_flow)
+        crossborder_prices.append(crossborder_price)
 
         optimal_capacity = network.statistics.optimal_capacity(
             comps=["Generator", "Load", "Link", "Line", "Store", "StorageUnit"],
@@ -865,6 +890,13 @@ if __name__ == "__main__":
         .reset_index()
     )
 
+    crossborder_prices = (
+        pd.concat(crossborder_prices)
+        .set_index(["year", "from", "to"])
+        .sort_index()
+        .reset_index()
+    )
+
     electricity_loads = electricity_loads.query("carrier == 'AC'").drop(
         columns=["carrier"]
     )
@@ -907,6 +939,7 @@ if __name__ == "__main__":
         "potentials": potentials,
         "optimal_capacities": optimal_capacities,
         "crossborder_flows": crossborder_flows,
+        "crossborder_prices": crossborder_prices,
     }.items():
         df.to_csv(snakemake.output[fn], index=False)
 
@@ -1023,6 +1056,14 @@ if __name__ == "__main__":
         domain=[s_year, s_region, s_region],
         records=crossborder_flows,
         description="Crossborder flows (exports) from region (columnn 2) to region (column 3) per year in MWh",
+    )
+
+    xbp = gt.Parameter(
+        gdx,
+        name="crossborder_price",
+        domain=[s_year, s_region, s_region],
+        records=crossborder_prices,
+        description="Crossborder prices paid by the importing region (column 3) to the exporting region (column 2) per year in EUR/MWh",
     )
 
     gc = gt.Parameter(
