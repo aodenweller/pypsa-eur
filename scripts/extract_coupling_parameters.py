@@ -269,7 +269,7 @@ if __name__ == "__main__":
         # Calculate total electricity flow
         p = p.groupby(["from", "to"]).sum().sum(axis="columns")
 
-        # Calculate average electricity price paid by importing region
+        # Calculate average electricity price paid by importing region in EUR/MWh
         price = expenditure_import / p
 
         # Convert to dataframe
@@ -294,6 +294,7 @@ if __name__ == "__main__":
     hourly_prices = []
     crossborder_flows = []
     crossborder_prices = []
+    generation_region_shares = []
 
     # Values used for reporting but not for coupling
     electricity_loads = []
@@ -391,6 +392,7 @@ if __name__ == "__main__":
         capacity_factor["year"] = year
         capacity_factors.append(capacity_factor)
 
+        # Calculate availability factors
         availability_factor = calculate_availability_factor(
             network, comps=["Generator"], groupby=["region", "general_carrier"]
         )
@@ -402,6 +404,7 @@ if __name__ == "__main__":
         availability_factor["year"] = year
         availability_factors.append(availability_factor)
 
+        # Calculate curtailment
         curtailment = network.statistics.curtailment(
             comps=["Generator"], groupby=["region", "general_carrier"]
         )
@@ -411,6 +414,7 @@ if __name__ == "__main__":
         curtailment["year"] = year
         curtailments.append(curtailment)
 
+        # Calculate generation
         generation = network.statistics.supply(
             comps=["Generator"], groupby=["region", "general_carrier"]
         )
@@ -529,7 +533,8 @@ if __name__ == "__main__":
         ] = "electricity price electrolysis"
         electricity_price_electrolysis["year"] = year
         electricity_prices_electrolysis.append(electricity_price_electrolysis)
-
+    
+        # Calculate electricity loads per region
         electricity_load = network.statistics.withdrawal(
             comps=["Load"], groupby=["region", "general_carrier"]
         )
@@ -537,6 +542,7 @@ if __name__ == "__main__":
         electricity_load["year"] = year
         electricity_loads.append(electricity_load)
 
+        # Calculate crossborder flows and prices
         crossborder_flow, crossborder_price = determine_crossborder_flow_and_price(
             network, carrier=["AC", "DC"]
         )
@@ -545,6 +551,19 @@ if __name__ == "__main__":
         crossborder_flows.append(crossborder_flow)
         crossborder_prices.append(crossborder_price)
 
+        # Calculate share of the generation in each region in total generation
+        # This is used to parametrise the pre-factor equation for electricity trade in REMIND 
+        generation_region_share = (
+            network.statistics.supply(comps=["Generator"], groupby=["region"])
+            .to_frame("value")
+            .apply(lambda x: x/sum(x))
+            )
+
+        generation_region_share = generation_region_share.reset_index().drop(columns=["component"])
+        generation_region_share["year"] = year
+        generation_region_shares.append(generation_region_share)
+
+        ## Calculate optimal capacities
         optimal_capacity = network.statistics.optimal_capacity(
             comps=["Generator", "Load", "Link", "Line", "Store", "StorageUnit"],
             groupby=["region", "general_carrier"],
@@ -685,6 +704,7 @@ if __name__ == "__main__":
         grid_investment["carrier"] = "AC-DC"
         grid_investments.append(grid_investment)
 
+        # Calculate market values after applying cutoff for electricity prices
         if cutoff_market_values := snakemake.config["remind_coupling"][
             "extract_coupling_parameters"
         ]["cutoff_market_values"]:
@@ -897,6 +917,13 @@ if __name__ == "__main__":
         .reset_index()
     )
 
+    generation_region_shares = (
+        pd.concat(generation_region_shares)
+        .set_index(["year", "region"])
+        .sort_index()
+        .reset_index()
+    )
+
     electricity_loads = electricity_loads.query("carrier == 'AC'").drop(
         columns=["carrier"]
     )
@@ -940,6 +967,7 @@ if __name__ == "__main__":
         "optimal_capacities": optimal_capacities,
         "crossborder_flows": crossborder_flows,
         "crossborder_prices": crossborder_prices,
+        "generation_region_shares": generation_region_shares,
     }.items():
         df.to_csv(snakemake.output[fn], index=False)
 
@@ -1064,6 +1092,14 @@ if __name__ == "__main__":
         domain=[s_year, s_region, s_region],
         records=crossborder_prices,
         description="Crossborder prices paid by the importing region (column 3) to the exporting region (column 2) per year in EUR/MWh",
+    )
+
+    grs = gt.Parameter(
+        gdx,
+        name="generation_region_share",
+        domain=[s_year, s_region],
+        records=generation_region_shares,
+        description="Share of generation of region in total generation per year in p.u.",
     )
 
     gc = gt.Parameter(
