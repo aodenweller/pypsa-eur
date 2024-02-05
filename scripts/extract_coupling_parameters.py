@@ -84,13 +84,13 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="5",
-            scenario="PyPSA_NPi_multiregion_2024-01-21_15.14.36",
+            iteration="3",
+            scenario="PyPSA_NPi_multiregion_2024-01-31_14.56.12",
         )
 
         # mock_snakemake doesn't work with checkpoints
         input_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_6_ec_lcopt_3H-RCL-Ep{ep:.1f}.nc"
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_6_ec_lcopt_6H-RCL-Ep{ep:.1f}.nc"
             for (year, ep) in zip(
                 # pairs of years and ...
                 [
@@ -235,23 +235,39 @@ if __name__ == "__main__":
         p = p.mul(network.snapshot_weightings["objective"], axis="rows")
 
         # Get marginal prices at importing buses, i.e. at "to" buses
-        price_import = network.buses_t["marginal_price"][p.columns.get_level_values("to")]  # Change "to" to use column_names?
+        price_import = network.buses_t["marginal_price"][p.columns.get_level_values("to")] 
         price_import.columns = p.columns
 
-        # Calculate total expenditure for importing electricity
-        expenditure_import = p.mul(price_import).T
+        # Get marginal prices at exporting buses, i.e. at "from" buses
+        price_export = network.buses_t["marginal_price"][p.columns.get_level_values("from")]
+        price_export.columns = p.columns
+
+        # Calculate total expenses for importing and revenue for exporting
+        expense_import = p.mul(price_import).T
+        revenue_export = p.mul(price_export).T
 
         # Map buses to regions
-        expenditure_import.index = (
+        expense_import.index = (
             pd.MultiIndex.from_arrays([
-                expenditure_import.index.get_level_values("from")
+                expense_import.index.get_level_values("from")
                 .map(network.buses["region"]),
-                expenditure_import.index.get_level_values("to")
+                expense_import.index.get_level_values("to")
                 .map(network.buses["region"])
             ], names=["from", "to"])
         )
 
-        expenditure_import = expenditure_import.groupby(["from", "to"]).sum().sum(axis="columns")
+        revenue_export.index = (
+            pd.MultiIndex.from_arrays([
+                revenue_export.index.get_level_values("from")
+                .map(network.buses["region"]),
+                revenue_export.index.get_level_values("to")
+                .map(network.buses["region"])
+            ], names=["from", "to"])
+        )
+
+        # Sum over hours
+        expense_import = expense_import.groupby(["from", "to"]).sum().sum(axis="columns")
+        revenue_export = revenue_export.groupby(["from", "to"]).sum().sum(axis="columns")
 
         # Transpose
         p = p.T
@@ -270,13 +286,15 @@ if __name__ == "__main__":
         p = p.groupby(["from", "to"]).sum().sum(axis="columns")
 
         # Calculate average electricity price paid by importing region in EUR/MWh
-        price = expenditure_import / p
+        price_import_avg = expense_import / p
+        price_export_avg = revenue_export / p
 
         # Convert to dataframe
         p = p.to_frame("exports").reset_index()
-        price = price.to_frame("price").reset_index()
+        price_import_avg = price_import_avg.to_frame("price").reset_index()
+        price_export_avg = price_export_avg.to_frame("price").reset_index()
 
-        return p, price
+        return p, price_import_avg, price_export_avg
 
     capacity_factors = []
     availability_factors = []
@@ -293,7 +311,8 @@ if __name__ == "__main__":
     electricity_prices_electrolysis = []
     hourly_prices = []
     crossborder_flows = []
-    crossborder_prices = []
+    crossborder_prices_import = []
+    crossborder_prices_export = []
     generation_region_shares = []
 
     # Values used for reporting but not for coupling
@@ -543,13 +562,15 @@ if __name__ == "__main__":
         electricity_loads.append(electricity_load)
 
         # Calculate crossborder flows and prices
-        crossborder_flow, crossborder_price = determine_crossborder_flow_and_price(
+        crossborder_flow, crossborder_price_import, crossborder_price_export = determine_crossborder_flow_and_price(
             network, carrier=["AC", "DC"]
         )
         crossborder_flow["year"] = year
-        crossborder_price["year"] = year
+        crossborder_price_import["year"] = year
+        crossborder_price_export["year"] = year
         crossborder_flows.append(crossborder_flow)
-        crossborder_prices.append(crossborder_price)
+        crossborder_prices_import.append(crossborder_price_import)
+        crossborder_prices_export.append(crossborder_price_export)
 
         # Calculate share of the generation in each region in total generation
         # This is used to parametrise the pre-factor equation for electricity trade in REMIND 
@@ -910,8 +931,15 @@ if __name__ == "__main__":
         .reset_index()
     )
 
-    crossborder_prices = (
-        pd.concat(crossborder_prices)
+    crossborder_prices_import = (
+        pd.concat(crossborder_prices_import)
+        .set_index(["year", "from", "to"])
+        .sort_index()
+        .reset_index()
+    )
+
+    crossborder_prices_export = (
+        pd.concat(crossborder_prices_export)
         .set_index(["year", "from", "to"])
         .sort_index()
         .reset_index()
@@ -935,7 +963,7 @@ if __name__ == "__main__":
     # Special treatment: Weigh values of df based on installed capacities in REMIND
     generation_shares = weigh_by_REMIND_capacity(generation_shares)
 
-    # Throw warning if sum is not between 0.9999 and 1.0001 for each year and region (allowing for some numerical tolerance)
+    # Throw warning if sum is not between 0.99 and 1.01 for each year and region (allowing for some numerical tolerance)
     if any(
         generation_shares.groupby(["year", "region"])["value"]
         .sum()
@@ -966,7 +994,8 @@ if __name__ == "__main__":
         "potentials": potentials,
         "optimal_capacities": optimal_capacities,
         "crossborder_flows": crossborder_flows,
-        "crossborder_prices": crossborder_prices,
+        "crossborder_prices_import": crossborder_prices_import,
+        "crossborder_prices_export": crossborder_prices_export,
         "generation_region_shares": generation_region_shares,
     }.items():
         df.to_csv(snakemake.output[fn], index=False)
@@ -1083,15 +1112,23 @@ if __name__ == "__main__":
         name="crossborder_flow",
         domain=[s_year, s_region, s_region],
         records=crossborder_flows,
-        description="Crossborder flows (exports) from region (columnn 2) to region (column 3) per year in MWh",
+        description="Crossborder flows from region (columnn 2) to region (column 3) per year in MWh",
     )
 
-    xbp = gt.Parameter(
+    xbpi = gt.Parameter(
         gdx,
-        name="crossborder_price",
+        name="crossborder_price_import",
         domain=[s_year, s_region, s_region],
-        records=crossborder_prices,
-        description="Crossborder prices paid by the importing region (column 3) to the exporting region (column 2) per year in EUR/MWh",
+        records=crossborder_prices_import,
+        description="Crossborder prices paid by the importing region (column 3) from trade with the exporting region (column 2) per year in EUR/MWh",
+    )
+
+    xbpe = gt.Parameter(
+        gdx,
+        name="crossborder_price_export",
+        domain=[s_year, s_region, s_region],
+        records=crossborder_prices_export,
+        description="Crossborder prices received by the exporting region (column 2) from trade with the importing region (column 3) per year in EUR/MWh",
     )
 
     grs = gt.Parameter(

@@ -291,8 +291,12 @@ rule extract_coupling_parameters:
         + "{scenario}/i{iteration}/validation/optimal_capacities.csv",
         crossborder_flows=RESULTS
         + "{scenario}/i{iteration}/validation/crossborder_flows.csv",
-        crossborder_prices=RESULTS
-        + "{scenario}/i{iteration}/validation/crossborder_prices.csv",
+        crossborder_prices_import=RESULTS
+        + "{scenario}/i{iteration}/validation/crossborder_prices_import.csv",
+        crossborder_prices_export=RESULTS
+        + "{scenario}/i{iteration}/validation/crossborder_prices_export.csv",
+        generation_region_shares=RESULTS
+        + "{scenario}/i{iteration}/validation/generation_region_shares.csv",
         technology_mapping=RESULTS
         + "{scenario}/i{iteration}/validation/technology_mapping.csv",
         gdx=RESULTS + "{scenario}/i{iteration}/PyPSAEUR2REMIND.gdx",
