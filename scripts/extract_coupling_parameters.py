@@ -85,7 +85,7 @@ if __name__ == "__main__":
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
             iteration="3",
-            scenario="PyPSA_NPi_multiregion_2024-01-31_14.56.12",
+            scenario="PyPSA_NPi_multiregion_absQ_absP_anticipOff_max1_2024-02-14_17.44.38",
         )
 
         # mock_snakemake doesn't work with checkpoints
@@ -289,6 +289,10 @@ if __name__ == "__main__":
         price_import_avg = expense_import / p
         price_export_avg = revenue_export / p
 
+        # If value in p is zero (no crossborder in entire year), replace NaN price with 1
+        price_import_avg = price_import_avg.where(p > 0, 1)
+        price_export_avg = price_export_avg.where(p > 0, 1)
+
         # Convert to dataframe
         p = p.to_frame("exports").reset_index()
         price_import_avg = price_import_avg.to_frame("price").reset_index()
@@ -477,9 +481,9 @@ if __name__ == "__main__":
         df["potential"] = df["p_nom"].where(
             df["p_nom_extendable"] == False, df["p_nom_max"]
         )
-        potential = df.groupby(["region", "general_carrier"])["potential"].apply(
-            np.sum
-        )  # np.sum: work-around pandas bug turnin inf to nan
+        potential = df.groupby(["region", "general_carrier"])["potential"].sum()
+        # Drop infinities
+        potential = potential.replace([np.inf, -np.inf], np.nan).dropna()
         potential = potential.to_frame("value").reset_index()
         potential["year"] = year
         potentials.append(potential)
@@ -909,12 +913,12 @@ if __name__ == "__main__":
         electricity_prices_electrolysis, map_to_remind=False
     )
     electricity_loads = postprocess_dataframe(electricity_loads)
+    potentials = postprocess_dataframe(potentials, map_to_remind=True)
     # Only reporting for plotting, not coupled, therefore other treatment
     preinstalled_capacities = postprocess_dataframe(
         preinstalled_capacities, map_to_remind=False
     )
     generations = postprocess_dataframe(generations, map_to_remind=False)
-    potentials = postprocess_dataframe(potentials, map_to_remind=False)
 
     optimal_capacities = (
         pd.concat(optimal_capacities)
@@ -971,8 +975,14 @@ if __name__ == "__main__":
         .notna()
     ):
         logger.warning(
-            "Sum of generation shares is not between 0.99 and 1.01 for each year and region."
+            "Sum of generation shares is not between 0.99 and 1.01 for each year and region:"
         )
+        logger.warning(
+            generation_shares.groupby(["year", "region"])["value"].sum().where(
+                lambda x: (x < 0.99) | (x > 1.01)
+            ).dropna()
+        )
+        
 
     # %%
     # Export as csv values (informative purposes only, coupling parameters below via GDX)
@@ -1192,6 +1202,14 @@ if __name__ == "__main__":
         domain=[s_year, s_region, s_epe_carrier],
         records=electricity_prices_electrolysis,
         description="Electricity price for electrolysis per year and region in [EUR/MWh electricity] (weighted, based on the electricity drawn to meet the H2 demand from REMIND).",
+    )
+
+    pot = gt.Parameter(
+        gdx,
+        name="potential",
+        domain=[s_year, s_region, s_carrier],
+        records=potentials,
+        description="Maximum potential of technology per year and region in MW",
     )
 
     gdx.write(snakemake.output["gdx"])
