@@ -489,7 +489,35 @@ def add_RCL_constraints(n, config):
             p_nom_rcl.sel(group=indexes_rcl) <= p_nom_limits.loc[indexes_rcl],
             name="RCL_p_nom_max",
         )
+    
+    # 3. Constraint: Maximum capacity for original generators and RCL counterparts
+    # Similar to n.model.constraints["Generator-ext-p_nom-upper"]
+    
+    # LHS: sum of generator nominal capacity per carrier and bus    
+    # Filter all generators with p_nom_extendable True
+    ext_i = n.generators.query("p_nom_extendable").index
+    generators_ext = generators.loc[ext_i]
+    grouper = xr.DataArray(
+        pd.MultiIndex.from_arrays([generators_ext.bus, generators_ext.carrier]), dims=["Generator-ext"]
+    )
+    lhs = n.model["Generator-p_nom"].groupby(grouper).sum()
 
+    # RHS: p_nom_max from non-RCL generator
+    idx_nonrcl = generators_ext.query("~index.str.contains(r' \(RCL\)')").index
+    generators_ext_nonrcl = generators_ext.loc[idx_nonrcl].set_index(["bus", "carrier"])
+    potential = generators_ext_nonrcl[["p_nom_max"]]
+    # Drop cases with inf
+    potential = potential[~potential.isin([np.inf, np.nan])].dropna()
+
+    # Determine overlapping indices
+    index = potential.index.intersection(lhs.indexes["group"])
+
+    # Add constraint
+    if not index.empty:
+        n.model.add_constraints(
+            lhs.sel(group=index) <= potential.loc[index]["p_nom_max"],
+            name="RCL_p_nom_max_pot"
+        )
 
 # %%
 def add_CCL_constraints(n, config):
@@ -1007,12 +1035,12 @@ if __name__ == "__main__":
             "solve_network",
             configfiles="config/config.remind.yaml",
             simpl="",
-            opts="1H-RCL-Ep0.0",
+            opts="1H-RCL-Ep55.0",
             clusters="4",
             ll="copt",
-            scenario="PyPSA_base_testOneRegi_2023-08-14_17.17.57",
-            iteration="1",
-            year="2025",
+            scenario="PyPSA_NPi_DEU_freeWindOff_PyPSAPotentials_2024-02-16_08.30.41",
+            iteration="10",
+            year="2100",
         )
     configure_logging(snakemake)
     if "sector_opts" in snakemake.wildcards.keys():
