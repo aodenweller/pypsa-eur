@@ -416,6 +416,8 @@ rule add_electricity:
         load=SCENARIO_RESOURCES + "i{iteration}/y{year}/load.csv",
         nuts3_shapes=RESOURCES + "nuts3_shapes.geojson",
         ua_md_gdp="data/GDP_PPP_30arcsec_v3_mapped_default.csv",
+        region_mapping="config/regionmapping_21_EU11.csv",
+        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
         SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec.nc",
         costs_validation=RESULTS + "{scenario}/i{iteration}/validation/costs_{year}.csv",  # should be used only for validation purposes

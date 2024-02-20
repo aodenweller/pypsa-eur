@@ -81,7 +81,6 @@ It further adds extendable ``generators`` with **zero** capacity for
 - photovoltaic, onshore and AC- as well as DC-connected offshore wind installations with today's locational, hourly wind and solar capacity factors (but **no** current capacities),
 - additional open- and combined-cycle gas turbines (if ``OCGT`` and/or ``CCGT`` is listed in the config setting ``electricity: extendable_carriers``)
 """
-
 import logging
 from itertools import product
 from typing import Dict, List
@@ -93,7 +92,7 @@ import powerplantmatching as pm
 import pypsa
 import scipy.sparse as sparse
 import xarray as xr
-from _helpers import configure_logging, update_p_nom_max
+from _helpers import configure_logging, update_p_nom_max, read_remind_data, get_region_mapping
 from powerplantmatching.export import map_country_bus
 from shapely.prepared import prep
 
@@ -514,7 +513,7 @@ def attach_conventional_generators(
                 n.generators.loc[idx, attr] = values
 
 
-def attach_hydro(n, costs, ppl, profile_hydro, hydro_capacities, carriers, **params):
+def attach_hydro(n, costs, ppl, profile_hydro, hydro_capacities, carriers, fp_remind_data, fp_region_mapping, year, **params):
     add_missing_carriers(n, carriers)
     add_co2_emissions(n, costs, carriers)
 
@@ -527,11 +526,55 @@ def attach_hydro(n, costs, ppl, profile_hydro, hydro_capacities, carriers, **par
     phs = ppl.query('technology == "Pumped Storage"')
     hydro = ppl.query('technology == "Reservoir"')
 
-    country = ppl["bus"].map(n.buses.country).rename("country")
+    # 1. REMIND-specific change: Adjust ror and hydro capacities such that the sum per region matches REMIND
+    region_mapping = get_region_mapping(
+        fp_region_mapping, source="PyPSA-EUR", target="REMIND-EU", flatten = True
+    )
+
+    hydro_cap_REMIND = read_remind_data(
+        fp_remind_data,
+        "p32_hydroCap",
+        rename_columns={"ttot": "year", "all_regi": "region"},
+    )
+    hydro_cap_REMIND = hydro_cap_REMIND.loc[(hydro_cap_REMIND["year"] == str(year))]
+    hydro_cap_REMIND = hydro_cap_REMIND.set_index(["year", "region"])
+    hydro_cap_REMIND *= 1e6  # Convert from TW to MW
+
+    # Create rorhydro dataframe that contains both ror and hydro
+    rorhydro = pd.concat([ror, hydro], axis=0)
+
+    # Add REMIND region to rorhydro
+    rorhydro["region_REMIND"] = rorhydro["country"].map(region_mapping)
+
+    # Group rorhydro by region_REMIND and adjust p_nom such that the sum of all p_nom matches hydro_cap_REMIND
+    rorhydro = rorhydro.groupby("region_REMIND").apply(lambda x: x.assign(p_nom=x["p_nom"] * hydro_cap_REMIND.loc[(str(year), x.name), "value"] / x["p_nom"].sum()))
+
+    # Replace ror and hydro in ppl and rebuild index
+    ppl_adj = (pd.concat([phs, rorhydro], axis=0)
+               .reset_index(drop=True)
+               .rename(index=lambda s: f"{str(s)} hydro"))
+    
+    ror = ppl_adj.query('technology == "Run-Of-River"')
+    phs = ppl_adj.query('technology == "Pumped Storage"')
+    hydro = ppl_adj.query('technology == "Reservoir"')
+
+    # Logging info: Compare sum of ror and hydro capacities before and after adjustment
+    rorhydro_cap_before = ppl.copy().query('technology != "Pumped Storage"')
+    rorhydro_cap_before["region_REMIND"] = rorhydro_cap_before["country"].map(region_mapping)
+    rorhydro_cap_after = ppl_adj.copy().query('technology != "Pumped Storage"')
+    rorhydro_cap_after["region_REMIND"] = rorhydro_cap_after["country"].map(region_mapping)
+    rorhydro_cap_compare = pd.concat(
+        [rorhydro_cap_before.groupby("region_REMIND")["p_nom"].sum(),
+         rorhydro_cap_after.groupby("region_REMIND")["p_nom"].sum()],
+         axis = 1)
+    rorhydro_cap_compare.columns = ["PyPSA (before)", "REMIND (after)"]
+    logger.info(f"Adjusting sum of ror and hydro capacities (MW) following REMIND values: \n{rorhydro_cap_compare}")
+
+    country = ppl_adj["bus"].map(n.buses.country).rename("country")
 
     inflow_idx = ror.index.union(hydro.index)
     if not inflow_idx.empty:
-        dist_key = ppl.loc[inflow_idx, "p_nom"].groupby(country).transform(normed)
+        dist_key = ppl_adj.loc[inflow_idx, "p_nom"].groupby(country).transform(normed)
 
         with xr.open_dataarray(profile_hydro) as inflow:
             inflow_countries = pd.Index(country[inflow_idx])
@@ -551,6 +594,46 @@ def attach_hydro(n, costs, ppl, profile_hydro, hydro_capacities, carriers, **par
                 .to_pandas()
                 .multiply(dist_key, axis=1)
             )
+
+    # 2. REMIND-specific change: Adjust inflow_t such that it matches the capacites factor from REMIND
+    hydro_gen_REMIND = read_remind_data(
+        fp_remind_data,
+        "p32_hydroGen",
+        rename_columns={"ttot": "year", "all_regi": "region"},
+    )
+    hydro_gen_REMIND = hydro_gen_REMIND.loc[(hydro_gen_REMIND["year"] == str(year))]
+    hydro_gen_REMIND = hydro_gen_REMIND.set_index(["year", "region"])
+    hydro_gen_REMIND *= 8760 * 1e6  # Convert from TWa to MWh
+
+    # Calculate REMIND capacity factor
+    hydro_cf_REMIND = hydro_gen_REMIND / (hydro_cap_REMIND * 8760)
+    # Remove year and rename region to region_REMIND
+    hydro_cf_REMIND = hydro_cf_REMIND.droplevel(0).rename_axis("region_REMIND")
+
+    # Calculate current capacity factor for each REMIND region
+    inflow_t_adj = inflow_t.transpose()
+    inflow_t_adj["region_REMIND"] = inflow_t_adj.index.map(country).map(region_mapping)
+    hydro_cf_pypsa = (
+        inflow_t_adj.groupby("region_REMIND").sum().sum(axis=1).to_frame("value")
+        / (8760*pd.concat([ror,hydro])["p_nom"].sum())
+    )
+
+    # Calculate correction factor
+    correction_factor_hydro = hydro_cf_REMIND / hydro_cf_pypsa
+    
+    # Logger info
+    cf_compare = pd.concat([hydro_cf_pypsa, hydro_cf_REMIND, correction_factor_hydro], axis = 1)
+    cf_compare.columns = ["PyPSA (before)", "REMIND (after)", "Correction factor"]
+    logger.info(f"Adjusting inflow time series for ror and hydro to match capacity factors (p.u.) from REMIND: \n{cf_compare}")
+
+    # Adjust inflow_t_adj using correction_factor_hydro for each REMIND region
+    inflow_t_adj = inflow_t_adj.groupby("region_REMIND").apply(lambda x: x * correction_factor_hydro.loc[x.name, "value"])
+
+    # Remove region_REMIND multiindex of inflow_t_adj
+    inflow_t_adj.index = inflow_t_adj.index.droplevel(0)
+    inflow_t_adj = inflow_t_adj.transpose()
+    # Overwrite inflow_t with adjusted inflow_t_adj
+    inflow_t = inflow_t_adj
 
     if "ror" in carriers and not ror.empty:
         n.madd(
@@ -848,9 +931,9 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "add_electricity",
-            scenario="PyPSA_NPi_preFacAuto_Avg_preFacFadeOut_adjCost_2023-10-08_10.52.45",
-            iteration="6",
-            year="2055",
+            scenario="PyPSA_NPi_DEU_freeWindOff_PyPSAPotentials_2024-02-19_02.32.29",
+            iteration="10",
+            year="2030",
         )
     configure_logging(snakemake)
 
@@ -933,6 +1016,9 @@ if __name__ == "__main__":
             snakemake.input.profile_hydro,
             snakemake.input.hydro_capacities,
             carriers,
+            fp_region_mapping=snakemake.input["region_mapping"],
+            fp_remind_data=snakemake.input["remind_data"],
+            year=snakemake.wildcards["year"],
             **p,
         )
 
