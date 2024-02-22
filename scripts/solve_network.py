@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# SPDX-FileCopyrightText: : 2017-2023 The PyPSA-Eur Authors
+# SPDX-FileCopyrightText: : 2017-2024 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
 # %%
@@ -46,10 +46,10 @@ from _helpers import (
     update_config_with_sector_opts,
 )
 from pypsa.descriptors import get_activity_mask
+from pypsa.descriptors import get_switchable_as_dense as get_as_dense
 
 logger = logging.getLogger(__name__)
 pypsa.pf.logger.setLevel(logging.WARNING)
-from pypsa.descriptors import get_switchable_as_dense as get_as_dense
 
 
 def add_land_use_constraint(n, planning_horizons, config):
@@ -215,7 +215,7 @@ def add_co2_sequestration_limit(n, config, limit=200):
 
 
 def add_carbon_constraint(n, snapshots):
-    glcs = n.global_constraints.query('type == "co2_limit"')
+    glcs = n.global_constraints.query('type == "co2_atmosphere"')
     if glcs.empty:
         return
     for name, glc in glcs.iterrows():
@@ -348,6 +348,8 @@ def prepare_network(
         for df in (
             n.generators_t.p_max_pu,
             n.generators_t.p_min_pu,
+            n.links_t.p_max_pu,
+            n.links_t.p_min_pu,
             n.storage_units_t.inflow,
         ):
             df.where(df > solve_opts["clip_p_max_pu"], other=0.0, inplace=True)
@@ -536,7 +538,7 @@ def add_CCL_constraints(n, config):
     Example
     -------
     scenario:
-        opts: [Co2L-CCL-24H]
+        opts: [Co2L-CCL-24h]
     electricity:
         agg_p_nom_limits: data/agg_p_nom_minmax.csv
     """
@@ -581,7 +583,7 @@ def add_EQ_constraints(n, o, scaling=1e-1):
     Example
     -------
     scenario:
-        opts: [Co2L-EQ0.7-24H]
+        opts: [Co2L-EQ0.7-24h]
 
     Require each country or node to on average produce a minimal share
     of its total electricity consumption itself. Example: EQ0.7c demands each country
@@ -645,7 +647,7 @@ def add_BAU_constraints(n, config):
     Example
     -------
     scenario:
-        opts: [Co2L-BAU-24H]
+        opts: [Co2L-BAU-24h]
     electricity:
         BAU_mincapacities:
             solar: 0
@@ -682,7 +684,7 @@ def add_SAFE_constraints(n, config):
     config.yaml requires to specify opts:
 
     scenario:
-        opts: [Co2L-SAFE-24H]
+        opts: [Co2L-SAFE-24h]
     electricity:
         SAFE_reservemargin: 0.1
     Which sets a reserve margin of 10% above the peak demand.
@@ -690,7 +692,7 @@ def add_SAFE_constraints(n, config):
     peakdemand = n.loads_t.p_set.sum(axis=1).max()
     margin = 1.0 + config["electricity"]["SAFE_reservemargin"]
     reserve_margin = peakdemand * margin
-    conventional_carriers = config["electricity"]["conventional_carriers"]
+    conventional_carriers = config["electricity"]["conventional_carriers"]  # noqa: F841
     ext_gens_i = n.generators.query(
         "carrier in @conventional_carriers & p_nom_extendable"
     ).index
@@ -808,11 +810,11 @@ def add_battery_constraints(n):
 
 
 def add_lossy_bidirectional_link_constraints(n):
-    if not n.links.p_nom_extendable.any() or not "reversed" in n.links.columns:
+    if not n.links.p_nom_extendable.any() or "reversed" not in n.links.columns:
         return
 
     n.links["reversed"] = n.links.reversed.fillna(0).astype(bool)
-    carriers = n.links.loc[n.links.reversed, "carrier"].unique()
+    carriers = n.links.loc[n.links.reversed, "carrier"].unique()  # noqa: F841
 
     forward_i = n.links.query(
         "carrier in @carriers and ~reversed and p_nom_extendable"
@@ -821,9 +823,11 @@ def add_lossy_bidirectional_link_constraints(n):
     def get_backward_i(forward_i):
         return pd.Index(
             [
-                re.sub(r"-(\d{4})$", r"-reversed-\1", s)
-                if re.search(r"-\d{4}$", s)
-                else s + "-reversed"
+                (
+                    re.sub(r"-(\d{4})$", r"-reversed-\1", s)
+                    if re.search(r"-\d{4}$", s)
+                    else s + "-reversed"
+                )
                 for s in forward_i
             ]
         )
@@ -915,6 +919,29 @@ def add_pipe_retrofit_constraint(n):
     n.model.add_constraints(lhs == rhs, name="Link-pipe_retrofit")
 
 
+def add_co2_atmosphere_constraint(n, snapshots):
+    glcs = n.global_constraints[n.global_constraints.type == "co2_atmosphere"]
+
+    if glcs.empty:
+        return
+    for name, glc in glcs.iterrows():
+        carattr = glc.carrier_attribute
+        emissions = n.carriers.query(f"{carattr} != 0")[carattr]
+
+        if emissions.empty:
+            continue
+
+        # stores
+        n.stores["carrier"] = n.stores.bus.map(n.buses.carrier)
+        stores = n.stores.query("carrier in @emissions.index and not e_cyclic")
+        if not stores.empty:
+            last_i = snapshots[-1]
+            lhs = n.model["Store-e"].loc[last_i, stores.index]
+            rhs = glc.constant
+
+            n.model.add_constraints(lhs <= rhs, name=f"GlobalConstraint-{name}")
+
+
 def extra_functionality(n, snapshots):
     """
     Collects supplementary constraints which will be passed to
@@ -958,6 +985,8 @@ def extra_functionality(n, snapshots):
         add_carbon_constraint(n, snapshots)
         add_carbon_budget_constraint(n, snapshots)
         add_retrofit_gas_boiler_constraint(n, snapshots)
+    else:
+        add_co2_atmosphere_constraint(n, snapshots)
 
     if snakemake.params.custom_extra_functionality:
         source_path = snakemake.params.custom_extra_functionality
@@ -984,6 +1013,7 @@ def solve_network(n, config, solving, opts="", **kwargs):
         "linearized_unit_commitment", False
     )
     kwargs["assign_all_duals"] = cf_solving.get("assign_all_duals", False)
+    kwargs["io_api"] = cf_solving.get("io_api", None)
 
     if kwargs["solver_name"] == "gurobi":
         logging.getLogger("gurobipy").setLevel(logging.CRITICAL)
@@ -1019,7 +1049,7 @@ def solve_network(n, config, solving, opts="", **kwargs):
         )
     if "infeasible" in condition:
         labels = n.model.compute_infeasibilities()
-        logger.info("Labels:\n" + labels)
+        logger.info(f"Labels:\n{labels}")
         n.model.print_infeasibilities()
         raise RuntimeError("Solving status 'infeasible'")
 

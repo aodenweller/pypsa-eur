@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: : 2023 The PyPSA-Eur Authors
+# SPDX-FileCopyrightText: : 2023-2024 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
 
@@ -34,7 +34,7 @@ rule solve_network:
             ITERATION_BENCHMARKS
             + "y{year}/solve_network/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
         )
-    threads: 4
+    threads: solver_threads
     group:
         "iy"
     resources:

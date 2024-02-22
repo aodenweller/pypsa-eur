@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: : 2023 The PyPSA-Eur Authors
+# SPDX-FileCopyrightText: : 2023-2024 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
 
@@ -123,7 +123,7 @@ rule cluster_gas_network:
         "../scripts/cluster_gas_network.py"
 
 
-rule build_heat_demands:
+rule build_daily_heat_demand:
     params:
         snapshots={k: config["snapshots"][k] for k in ["start", "end", "inclusive"]},
     input:
@@ -131,18 +131,39 @@ rule build_heat_demands:
         regions_onshore=RESOURCES + "regions_onshore_elec_s{simpl}_{clusters}.geojson",
         cutout="cutouts/" + CDIR + config["atlite"]["default_cutout"] + ".nc",
     output:
-        heat_demand=RESOURCES + "heat_demand_{scope}_elec_s{simpl}_{clusters}.nc",
+        heat_demand=RESOURCES + "daily_heat_demand_{scope}_elec_s{simpl}_{clusters}.nc",
     resources:
         mem_mb=20000,
     threads: 8
     log:
-        LOGS + "build_heat_demands_{scope}_{simpl}_{clusters}.loc",
+        LOGS + "build_daily_heat_demand_{scope}_{simpl}_{clusters}.loc",
     benchmark:
-        BENCHMARKS + "build_heat_demands/{scope}_s{simpl}_{clusters}"
+        BENCHMARKS + "build_daily_heat_demand/{scope}_s{simpl}_{clusters}"
     conda:
         "../envs/environment.yaml"
     script:
-        "../scripts/build_heat_demand.py"
+        "../scripts/build_daily_heat_demand.py"
+
+
+rule build_hourly_heat_demand:
+    params:
+        snapshots={k: config["snapshots"][k] for k in ["start", "end", "inclusive"]},
+    input:
+        heat_profile="data/heat_load_profile_BDEW.csv",
+        heat_demand=RESOURCES + "daily_heat_demand_{scope}_elec_s{simpl}_{clusters}.nc",
+    output:
+        heat_demand=RESOURCES + "hourly_heat_demand_{scope}_elec_s{simpl}_{clusters}.nc",
+    resources:
+        mem_mb=2000,
+    threads: 8
+    log:
+        LOGS + "build_hourly_heat_demand_{scope}_{simpl}_{clusters}.loc",
+    benchmark:
+        BENCHMARKS + "build_hourly_heat_demand/{scope}_s{simpl}_{clusters}"
+    conda:
+        "../envs/environment.yaml"
+    script:
+        "../scripts/build_hourly_heat_demand.py"
 
 
 rule build_temperature_profiles:
@@ -227,7 +248,7 @@ rule build_energy_totals:
     input:
         nuts3_shapes=RESOURCES + "nuts3_shapes.geojson",
         co2="data/bundle-sector/eea/UNFCCC_v23.csv",
-        swiss="data/bundle-sector/switzerland-sfoe/switzerland-new_format.csv",
+        swiss="data/switzerland-new_format-all_years.csv",
         idees="data/bundle-sector/jrc-idees-2015",
         district_heat_share="data/district_heat_share.csv",
         eurostat=input_eurostat,
@@ -235,6 +256,7 @@ rule build_energy_totals:
         energy_name=RESOURCES + "energy_totals.csv",
         co2_name=RESOURCES + "co2_totals.csv",
         transport_name=RESOURCES + "transport_data.csv",
+        district_heat_share=RESOURCES + "district_heat_share.csv",
     threads: 16
     resources:
         mem_mb=10000,
@@ -370,8 +392,6 @@ rule build_salt_cavern_potentials:
 
 
 rule build_ammonia_production:
-    params:
-        countries=config["countries"],
     input:
         usgs="data/bundle-sector/myb1-2017-nitro.xls",
     output:
@@ -409,6 +429,31 @@ rule build_industry_sector_ratios:
         "../envs/environment.yaml"
     script:
         "../scripts/build_industry_sector_ratios.py"
+
+
+rule build_industry_sector_ratios_intermediate:
+    params:
+        industry=config["industry"],
+    input:
+        industry_sector_ratios=RESOURCES + "industry_sector_ratios.csv",
+        industrial_energy_demand_per_country_today=RESOURCES
+        + "industrial_energy_demand_per_country_today.csv",
+        industrial_production_per_country=RESOURCES
+        + "industrial_production_per_country.csv",
+    output:
+        industry_sector_ratios=RESOURCES
+        + "industry_sector_ratios_{planning_horizons}.csv",
+    threads: 1
+    resources:
+        mem_mb=1000,
+    log:
+        LOGS + "build_industry_sector_ratios_{planning_horizons}.log",
+    benchmark:
+        BENCHMARKS + "build_industry_sector_ratios_{planning_horizons}"
+    conda:
+        "../envs/environment.yaml"
+    script:
+        "../scripts/build_industry_sector_ratios_intermediate.py"
 
 
 rule build_industrial_production_per_country:
@@ -513,7 +558,8 @@ rule build_industrial_production_per_node:
 
 rule build_industrial_energy_demand_per_node:
     input:
-        industry_sector_ratios=RESOURCES + "industry_sector_ratios.csv",
+        industry_sector_ratios=RESOURCES
+        + "industry_sector_ratios_{planning_horizons}.csv",
         industrial_production_per_node=RESOURCES
         + "industrial_production_elec_s{simpl}_{clusters}_{planning_horizons}.csv",
         industrial_energy_demand_per_node_today=RESOURCES
@@ -544,7 +590,6 @@ rule build_industrial_energy_demand_per_country_today:
         industry=config["industry"],
     input:
         jrc="data/bundle-sector/jrc-idees-2015",
-        ammonia_production=RESOURCES + "ammonia_production.csv",
         industrial_production_per_country=RESOURCES
         + "industrial_production_per_country.csv",
     output:
@@ -688,6 +733,60 @@ rule build_transport_demand:
         "../scripts/build_transport_demand.py"
 
 
+rule build_district_heat_share:
+    params:
+        sector=config["sector"],
+    input:
+        district_heat_share=RESOURCES + "district_heat_share.csv",
+        clustered_pop_layout=RESOURCES + "pop_layout_elec_s{simpl}_{clusters}.csv",
+    output:
+        district_heat_share=RESOURCES
+        + "district_heat_share_elec_s{simpl}_{clusters}_{planning_horizons}.csv",
+    threads: 1
+    resources:
+        mem_mb=1000,
+    log:
+        LOGS + "build_district_heat_share_s{simpl}_{clusters}_{planning_horizons}.log",
+    conda:
+        "../envs/environment.yaml"
+    script:
+        "../scripts/build_district_heat_share.py"
+
+
+rule build_existing_heating_distribution:
+    params:
+        baseyear=config["scenario"]["planning_horizons"][0],
+        sector=config["sector"],
+        existing_capacities=config["existing_capacities"],
+    input:
+        existing_heating="data/existing_infrastructure/existing_heating_raw.csv",
+        clustered_pop_layout=RESOURCES + "pop_layout_elec_s{simpl}_{clusters}.csv",
+        clustered_pop_energy_layout=RESOURCES
+        + "pop_weighted_energy_totals_s{simpl}_{clusters}.csv",
+        district_heat_share=RESOURCES
+        + "district_heat_share_elec_s{simpl}_{clusters}_{planning_horizons}.csv",
+    output:
+        existing_heating_distribution=RESOURCES
+        + "existing_heating_distribution_elec_s{simpl}_{clusters}_{planning_horizons}.csv",
+    wildcard_constraints:
+        planning_horizons=config["scenario"]["planning_horizons"][0],  #only applies to baseyear
+    threads: 1
+    resources:
+        mem_mb=2000,
+    log:
+        LOGS
+        + "build_existing_heating_distribution_elec_s{simpl}_{clusters}_{planning_horizons}.log",
+    benchmark:
+        (
+            BENCHMARKS
+            + "build_existing_heating_distribution/elec_s{simpl}_{clusters}_{planning_horizons}"
+        )
+    conda:
+        "../envs/environment.yaml"
+    script:
+        "../scripts/build_existing_heating_distribution.py"
+
+
 rule prepare_sector_network:
     params:
         co2_budget=config["co2_budget"],
@@ -721,16 +820,19 @@ rule prepare_sector_network:
         dsm_profile=RESOURCES + "dsm_profile_s{simpl}_{clusters}.csv",
         co2_totals_name=RESOURCES + "co2_totals.csv",
         co2="data/bundle-sector/eea/UNFCCC_v23.csv",
-        biomass_potentials=RESOURCES
-        + "biomass_potentials_s{simpl}_{clusters}_"
-        + "{}.csv".format(config["biomass"]["year"])
-        if config["foresight"] == "overnight"
-        else RESOURCES
-        + "biomass_potentials_s{simpl}_{clusters}_{planning_horizons}.csv",
-        heat_profile="data/heat_load_profile_BDEW.csv",
-        costs="data/costs_{}.csv".format(config["costs"]["year"])
-        if config["foresight"] == "overnight"
-        else "data/costs_{planning_horizons}.csv",
+        biomass_potentials=(
+            RESOURCES
+            + "biomass_potentials_s{simpl}_{clusters}_"
+            + "{}.csv".format(config["biomass"]["year"])
+            if config["foresight"] == "overnight"
+            else RESOURCES
+            + "biomass_potentials_s{simpl}_{clusters}_{planning_horizons}.csv"
+        ),
+        costs=(
+            "data/costs_{}.csv".format(config["costs"]["year"])
+            if config["foresight"] == "overnight"
+            else "data/costs_{planning_horizons}.csv"
+        ),
         profile_offwind_ac=RESOURCES + "profile_offwind-ac.nc",
         profile_offwind_dc=RESOURCES + "profile_offwind-dc.nc",
         h2_cavern=RESOURCES + "salt_cavern_potentials_s{simpl}_{clusters}.csv",
@@ -740,9 +842,10 @@ rule prepare_sector_network:
         simplified_pop_layout=RESOURCES + "pop_layout_elec_s{simpl}.csv",
         industrial_demand=RESOURCES
         + "industrial_energy_demand_elec_s{simpl}_{clusters}_{planning_horizons}.csv",
-        heat_demand_urban=RESOURCES + "heat_demand_urban_elec_s{simpl}_{clusters}.nc",
-        heat_demand_rural=RESOURCES + "heat_demand_rural_elec_s{simpl}_{clusters}.nc",
-        heat_demand_total=RESOURCES + "heat_demand_total_elec_s{simpl}_{clusters}.nc",
+        hourly_heat_demand_total=RESOURCES
+        + "hourly_heat_demand_total_elec_s{simpl}_{clusters}.nc",
+        district_heat_share=RESOURCES
+        + "district_heat_share_elec_s{simpl}_{clusters}_{planning_horizons}.csv",
         temp_soil_total=RESOURCES + "temp_soil_total_elec_s{simpl}_{clusters}.nc",
         temp_soil_rural=RESOURCES + "temp_soil_rural_elec_s{simpl}_{clusters}.nc",
         temp_soil_urban=RESOURCES + "temp_soil_urban_elec_s{simpl}_{clusters}.nc",
@@ -755,18 +858,21 @@ rule prepare_sector_network:
         cop_air_total=RESOURCES + "cop_air_total_elec_s{simpl}_{clusters}.nc",
         cop_air_rural=RESOURCES + "cop_air_rural_elec_s{simpl}_{clusters}.nc",
         cop_air_urban=RESOURCES + "cop_air_urban_elec_s{simpl}_{clusters}.nc",
-        solar_thermal_total=RESOURCES
-        + "solar_thermal_total_elec_s{simpl}_{clusters}.nc"
-        if config["sector"]["solar_thermal"]
-        else [],
-        solar_thermal_urban=RESOURCES
-        + "solar_thermal_urban_elec_s{simpl}_{clusters}.nc"
-        if config["sector"]["solar_thermal"]
-        else [],
-        solar_thermal_rural=RESOURCES
-        + "solar_thermal_rural_elec_s{simpl}_{clusters}.nc"
-        if config["sector"]["solar_thermal"]
-        else [],
+        solar_thermal_total=(
+            RESOURCES + "solar_thermal_total_elec_s{simpl}_{clusters}.nc"
+            if config["sector"]["solar_thermal"]
+            else []
+        ),
+        solar_thermal_urban=(
+            RESOURCES + "solar_thermal_urban_elec_s{simpl}_{clusters}.nc"
+            if config["sector"]["solar_thermal"]
+            else []
+        ),
+        solar_thermal_rural=(
+            RESOURCES + "solar_thermal_rural_elec_s{simpl}_{clusters}.nc"
+            if config["sector"]["solar_thermal"]
+            else []
+        ),
     output:
         RESULTS
         + "prenetworks/elec_s{simpl}_{clusters}_l{ll}_{opts}_{sector_opts}_{planning_horizons}.nc",

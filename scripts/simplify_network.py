@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# SPDX-FileCopyrightText: : 2017-2023 The PyPSA-Eur Authors
+# SPDX-FileCopyrightText: : 2017-2024 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
 
@@ -86,7 +86,7 @@ The rule :mod:`simplify_network` does up to four things:
 """
 
 import logging
-from functools import partial, reduce
+from functools import reduce
 
 import numpy as np
 import pandas as pd
@@ -468,9 +468,9 @@ def aggregate_to_substations(n, aggregation_strategies=dict(), buses_i=None):
         dijkstra(adj, directed=False, indices=bus_indexer), buses_i, n.buses.index
     )
 
-    dist[
-        buses_i
-    ] = np.inf  # bus in buses_i should not be assigned to different bus in buses_i
+    dist[buses_i] = (
+        np.inf
+    )  # bus in buses_i should not be assigned to different bus in buses_i
 
     for c in n.buses.country.unique():
         incountry_b = n.buses.country == c
@@ -611,6 +611,7 @@ if __name__ == "__main__":
         "symbol",
         "tags",
         "under_construction",
+        "onshore_bus",
         "substation_lv",
         "substation_off",
         "geometry",

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# SPDX-FileCopyrightText: : 2017-2023 The PyPSA-Eur Authors
+# SPDX-FileCopyrightText: : 2017-2024 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
 
@@ -62,7 +62,7 @@ from _helpers import (
     get_technology_mapping,
     read_remind_data,
 )
-from add_electricity import load_costs, sanitize_carriers
+from add_electricity import load_costs, sanitize_carriers, sanitize_locations
 
 logger = logging.getLogger(__name__)
 
@@ -104,10 +104,9 @@ def attach_stores(n, costs, extendable_carriers):
     n.madd("Carrier", carriers)
 
     buses_i = n.buses.index
-    bus_sub_dict = {k: n.buses[k].values for k in ["x", "y", "country"]}
 
     if "H2" in carriers:
-        h2_buses_i = n.madd("Bus", buses_i + " H2", carrier="H2", **bus_sub_dict)
+        h2_buses_i = n.madd("Bus", buses_i + " H2", carrier="H2", location=buses_i)
 
         n.madd(
             "Store",
@@ -147,7 +146,7 @@ def attach_stores(n, costs, extendable_carriers):
 
     if "battery" in carriers:
         b_buses_i = n.madd(
-            "Bus", buses_i + " battery", carrier="battery", **bus_sub_dict
+            "Bus", buses_i + " battery", carrier="battery", location=buses_i
         )
 
         n.madd(
@@ -450,6 +449,7 @@ if __name__ == "__main__":
             fp_remind_data=snakemake.input["remind_data"],
         )
     sanitize_carriers(n, snakemake.config)
+    sanitize_locations(n)
 
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
     n.export_to_netcdf(snakemake.output[0])

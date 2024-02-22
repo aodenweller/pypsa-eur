@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: : 2023 The PyPSA-Eur Authors
+# SPDX-FileCopyrightText: : 2023-2024 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
 
@@ -24,9 +24,9 @@ rule build_electricity_demand:
         countries=config["countries"],
         load=config["load"],
     input:
-        ancient(RESOURCES + "load_raw.csv"),
+        ancient("data/electricity_demand_raw.csv"),
     output:
-        RESOURCES + "load.csv",
+        RESOURCES + "electricity_demand.csv",
     log:
         LOGS + "build_electricity_demand.log",
     resources:
@@ -401,19 +401,23 @@ rule add_electricity:
             if str(fn).startswith("data/")
         },
         base_network=RESOURCES + "networks/base.nc",
-        line_rating=RESOURCES + "networks/line_rating.nc"
-        if config["lines"]["dynamic_line_rating"]["activate"]
-        else RESOURCES + "networks/base.nc",
+        line_rating=(
+            RESOURCES + "networks/line_rating.nc"
+            if config["lines"]["dynamic_line_rating"]["activate"]
+            else RESOURCES + "networks/base.nc"
+        ),
         tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",
         regions=rules.build_bus_regions.output["regions_onshore"],
         powerplants=RESOURCES + "powerplants.csv",
         hydro_capacities=ancient("data/bundle/hydro_capacities.csv"),
         geth_hydro_capacities="data/geth2015_hydro_capacities.csv",
         unit_commitment="data/unit_commitment.csv",
-        fuel_price=RESOURCES + "monthly_fuel_price.csv"
-        if config["conventional"]["dynamic_fuel_price"]
-        else [],
-        load=SCENARIO_RESOURCES + "i{iteration}/y{year}/load.csv",
+        fuel_price=(
+            RESOURCES + "monthly_fuel_price.csv"
+            if config["conventional"]["dynamic_fuel_price"]
+            else []
+        ),
+        load=SCENARIO_RESOURCES + "i{iteration}/y{year}/electricity_demand.csv",
         nuts3_shapes=RESOURCES + "nuts3_shapes.geojson",
         ua_md_gdp="data/GDP_PPP_30arcsec_v3_mapped_default.csv",
         region_mapping="config/regionmapping_21_EU11.csv",

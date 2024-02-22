@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# SPDX-FileCopyrightText: : 2017-2023 The PyPSA-Eur Authors
+# SPDX-FileCopyrightText: : 2017-2024 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
 
@@ -45,6 +45,12 @@ if __name__ == "__main__":
         header=[0, 1],
         parse_dates=True,
     )
+    subset_technologies = ["Geothermal", "Nuclear", "Biomass", "Lignite", "Oil", "Coal"]
+    lowercase_technologies = [
+        technology.lower() if technology in subset_technologies else technology
+        for technology in historic.columns.levels[1]
+    ]
+    historic.columns = historic.columns.set_levels(lowercase_technologies, level=1)
 
     colors = n.carriers.set_index("nice_name").color.where(
         lambda s: s != "", "lightgrey"

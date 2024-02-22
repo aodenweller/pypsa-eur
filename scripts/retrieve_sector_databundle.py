@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# SPDX-FileCopyrightText: : 2021-2023 The PyPSA-Eur Authors
+# SPDX-FileCopyrightText: : 2021-2024 The PyPSA-Eur Authors
 #
 # SPDX-License-Identifier: MIT
 """
@@ -7,13 +7,12 @@ Retrieve and extract data bundle for sector-coupled studies.
 """
 
 import logging
-
-logger = logging.getLogger(__name__)
-
 import tarfile
 from pathlib import Path
 
 from _helpers import configure_logging, progress_retrieve, validate_checksum
+
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     if "snakemake" not in globals():
