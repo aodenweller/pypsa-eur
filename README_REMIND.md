@@ -103,9 +103,15 @@
 
 (Suggested method for large number of changes; often `git` should automatically be able to merge the two code basis by pulling from `upstream/master`,
 but some issues could arise where changes to the configuration / code base were made which are not considered conflicts, thus leading
-to silend errors / problems when running the REMIND-coupled PyPSA-EUR version.
+to silent errors / problems when running the REMIND-coupled PyPSA-EUR version.
 
-* Download REMIND-coupled PyPSA-EUR and original (upstream) version of PyPSA-EUR you want to update to into separate folders
+* Git stuff:
+    * Clone REMIND-coupled PyPSA-Eur into new folder, e.g. `git clone git@github.com:aodenweller/pypsa-eur.git pypsa-eur_v0.10.0`
+    * Add PyPSA upstream, `git remote add upstream git@github.com:PyPSA/pypsa-eur.git`
+    * Switch to previous branch, e.g. `git checkout remind_develop_pypsa_090` 
+    * Create and checkout new branch, e.g. `git checkout -b remind_develop_pypsa_v0.10.0`
+    * Fetch from upstream, `git fetch upstream`, this also gets the release tags
+    * Merge release into branch, e.g. `git merge v0.10.0`
 * Use a programm to compare the two repository folders, e.g. "Meld" or "GitLens" for VSCode and see what changes were made and whether the should be compatible with the code-base changes made for the REMIND-coupling
 * Special attention has to be given to the following files (open in compare view side-by-side!)
     * `configs/config.default.yaml` -> configuration changes might be relevant to be transfered into `config/config.remind.yaml`
