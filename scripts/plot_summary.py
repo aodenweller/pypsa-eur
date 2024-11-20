@@ -11,6 +11,7 @@ import logging
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import pandas as pd
+from _helpers import configure_logging, set_scenario_config
 from prepare_sector_network import co2_emissions_year
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ def rename_techs(label):
         "offwind": "offshore wind",
         "offwind-ac": "offshore wind (AC)",
         "offwind-dc": "offshore wind (DC)",
+        "offwind-float": "offshore wind (Float)",
         "onwind": "onshore wind",
         "ror": "hydroelectricity",
         "hydro": "hydroelectricity",
@@ -351,7 +353,7 @@ def plot_balances():
             frameon=False,
         )
 
-        fig.savefig(snakemake.output.balances[:-10] + k + ".pdf", bbox_inches="tight")
+        fig.savefig(snakemake.output.balances[:-10] + k + ".svg", bbox_inches="tight")
 
 
 def historical_emissions(countries):
@@ -427,13 +429,13 @@ def historical_emissions(countries):
     )
 
     emissions = co2_totals.loc["electricity"]
-    if "T" in opts:
+    if options["transport"]:
         emissions += co2_totals.loc[[i + " non-elec" for i in ["rail", "road"]]].sum()
-    if "H" in opts:
+    if options["heating"]:
         emissions += co2_totals.loc[
             [i + " non-elec" for i in ["residential", "services"]]
         ].sum()
-    if "I" in opts:
+    if options["industry"]:
         emissions += co2_totals.loc[
             [
                 "industrial non-elec",
@@ -447,7 +449,7 @@ def historical_emissions(countries):
     return emissions
 
 
-def plot_carbon_budget_distribution(input_eurostat):
+def plot_carbon_budget_distribution(input_eurostat, options):
     """
     Plot historical carbon emissions in the EU and decarbonization path.
     """
@@ -461,7 +463,6 @@ def plot_carbon_budget_distribution(input_eurostat):
     plt.rcParams["ytick.labelsize"] = 20
 
     emissions_scope = snakemake.params.emissions_scope
-    report_year = snakemake.params.eurostat_report_year
     input_co2 = snakemake.input.co2
 
     # historic emissions
@@ -469,17 +470,17 @@ def plot_carbon_budget_distribution(input_eurostat):
     e_1990 = co2_emissions_year(
         countries,
         input_eurostat,
-        opts,
+        options,
         emissions_scope,
-        report_year,
         input_co2,
         year=1990,
     )
     emissions = historical_emissions(countries)
     # add other years https://sdi.eea.europa.eu/data/0569441f-2853-4664-a7cd-db969ef54de0
-    emissions.loc[2019] = 2.971372
-    emissions.loc[2020] = 2.691958
-    emissions.loc[2021] = 2.869355
+    emissions.loc[2019] = 3.414362
+    emissions.loc[2020] = 3.092434
+    emissions.loc[2021] = 3.290418
+    emissions.loc[2022] = 3.213025
 
     if snakemake.config["foresight"] == "myopic":
         path_cb = "results/" + snakemake.params.RDIR + "/csvs/"
@@ -562,7 +563,7 @@ def plot_carbon_budget_distribution(input_eurostat):
     )
 
     plt.grid(axis="y")
-    path = snakemake.output.balances.split("balances")[0] + "carbon_budget.pdf"
+    path = snakemake.output.balances.split("balances")[0] + "carbon_budget.svg"
     plt.savefig(path, bbox_inches="tight")
 
 
@@ -572,7 +573,8 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake("plot_summary")
 
-    logging.basicConfig(level=snakemake.config["logging"]["level"])
+    configure_logging(snakemake)
+    set_scenario_config(snakemake)
 
     n_header = 4
 
@@ -582,7 +584,9 @@ if __name__ == "__main__":
 
     plot_balances()
 
-    for sector_opts in snakemake.params.sector_opts:
-        opts = sector_opts.split("-")
-        if any("cb" in o for o in opts) or snakemake.config["foresight"] == "perfect":
-            plot_carbon_budget_distribution(snakemake.input.eurostat)
+    co2_budget = snakemake.params["co2_budget"]
+    if (
+        isinstance(co2_budget, str) and co2_budget.startswith("cb")
+    ) or snakemake.params["foresight"] == "perfect":
+        options = snakemake.params.sector
+        plot_carbon_budget_distribution(snakemake.input.eurostat, options)

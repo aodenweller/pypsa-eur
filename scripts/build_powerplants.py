@@ -7,7 +7,7 @@
 # %%
 """
 Retrieves conventional powerplant capacities and locations from
-`powerplantmatching <https://github.com/FRESNA/powerplantmatching>`_, assigns
+`powerplantmatching <https://github.com/PyPSA/powerplantmatching>`_, assigns
 these to buses and creates a ``.csv`` file. It is possible to amend the
 powerplant database with custom entries provided in
 ``data/custom_powerplants.csv``.
@@ -31,17 +31,17 @@ Inputs
 ------
 
 - ``networks/base.nc``: confer :ref:`base`.
-- ``data/custom_powerplants.csv``: custom powerplants in the same format as `powerplantmatching <https://github.com/FRESNA/powerplantmatching>`_ provides
+- ``data/custom_powerplants.csv``: custom powerplants in the same format as `powerplantmatching <https://github.com/PyPSA/powerplantmatching>`_ provides
 
 Outputs
 -------
 
-- ``resource/powerplants.csv``: A list of conventional power plants (i.e. neither wind nor solar) with fields for name, fuel type, technology, country, capacity in MW, duration, commissioning year, retrofit year, latitude, longitude, and dam information as documented in the `powerplantmatching README <https://github.com/FRESNA/powerplantmatching/blob/master/README.md>`_; additionally it includes information on the closest substation/bus in ``networks/base.nc``.
+- ``resource/powerplants.csv``: A list of conventional power plants (i.e. neither wind nor solar) with fields for name, fuel type, technology, country, capacity in MW, duration, commissioning year, retrofit year, latitude, longitude, and dam information as documented in the `powerplantmatching README <https://github.com/PyPSA/powerplantmatching/blob/master/README.md>`_; additionally it includes information on the closest substation/bus in ``networks/base.nc``.
 
     .. image:: img/powerplantmatching.png
         :scale: 30 %
 
-    **Source:** `powerplantmatching on GitHub <https://github.com/FRESNA/powerplantmatching>`_
+    **Source:** `powerplantmatching on GitHub <https://github.com/PyPSA/powerplantmatching>`_
 
 Description
 -----------
@@ -92,7 +92,7 @@ import numpy as np
 import pandas as pd
 import powerplantmatching as pm
 import pypsa
-from _helpers import configure_logging
+from _helpers import configure_logging, set_scenario_config
 from powerplantmatching.export import map_country_bus
 
 logger = logging.getLogger(__name__)
@@ -149,7 +149,11 @@ def add_everywhere_powerplants(ppl, substations, everywhere_powerplants):
 
 
 def replace_natural_gas_technology(df):
-    mapping = {"Steam Turbine": "CCGT", "Combustion Engine": "OCGT"}
+    mapping = {
+        "Steam Turbine": "CCGT",
+        "Combustion Engine": "OCGT",
+        "Not Found": "CCGT",
+    }
     tech = df.Technology.replace(mapping).fillna("CCGT")
     return df.Technology.mask(df.Fueltype == "Natural Gas", tech)
 
@@ -167,6 +171,7 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake("build_powerplants")
     configure_logging(snakemake)
+    set_scenario_config(snakemake)
 
     n = pypsa.Network(snakemake.input.base_network)
     countries = snakemake.params.countries
@@ -203,12 +208,11 @@ if __name__ == "__main__":
 
     # Add "everywhere powerplants" to all bus locations
     ppl = add_everywhere_powerplants(
-        ppl, n.buses.query("substation_lv"), snakemake.params.everywhere_powerplants
+        ppl, n.buses, snakemake.params.everywhere_powerplants
     )
 
-    substations = n.buses.query("substation_lv")
     ppl = ppl.dropna(subset=["lat", "lon"])
-    ppl = map_country_bus(ppl, substations)
+    ppl = map_country_bus(ppl, n.buses)
 
     bus_null_b = ppl["bus"].isnull()
     if bus_null_b.any():

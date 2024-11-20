@@ -58,6 +58,7 @@ import pandas as pd
 import pypsa
 from _helpers import (
     configure_logging,
+    set_scenario_config,
     get_region_mapping,
     get_technology_mapping,
     read_remind_data,
@@ -420,6 +421,7 @@ if __name__ == "__main__":
             year=2050,
         )
     configure_logging(snakemake)
+    set_scenario_config(snakemake)
 
     n = pypsa.Network(snakemake.input.network)
     extendable_carriers = snakemake.params.extendable_carriers
@@ -449,7 +451,8 @@ if __name__ == "__main__":
             fp_remind_data=snakemake.input["remind_data"],
         )
     sanitize_carriers(n, snakemake.config)
-    sanitize_locations(n)
+    if "location" in n.buses:
+        sanitize_locations(n)
 
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
     n.export_to_netcdf(snakemake.output[0])

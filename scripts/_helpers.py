@@ -4,23 +4,146 @@
 # SPDX-License-Identifier: MIT
 
 import contextlib
+import copy
 import functools
 import hashlib
 import logging
 import os
 import re
 import urllib
+from functools import partial
+from os.path import exists
 from pathlib import Path
+from shutil import copyfile
 
 import pandas as pd
 import pytz
 import requests
 import yaml
+from snakemake.utils import update_config
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
 REGION_COLS = ["geometry", "name", "x", "y", "country"]
+
+
+def copy_default_files(workflow):
+    default_files = {
+        "config/config.default.yaml": "config/config.yaml",
+        "config/scenarios.template.yaml": "config/scenarios.yaml",
+    }
+    for template, target in default_files.items():
+        target = os.path.join(workflow.current_basedir, target)
+        template = os.path.join(workflow.current_basedir, template)
+        if not exists(target) and exists(template):
+            copyfile(template, target)
+
+
+def get_scenarios(run):
+    scenario_config = run.get("scenarios", {})
+    if run["name"] and scenario_config.get("enable"):
+        fn = Path(scenario_config["file"])
+        if fn.exists():
+            scenarios = yaml.safe_load(fn.read_text())
+            if run["name"] == "all":
+                run["name"] = list(scenarios.keys())
+            return scenarios
+    return {}
+
+
+def get_rdir(run):
+    scenario_config = run.get("scenarios", {})
+    if run["name"] and scenario_config.get("enable"):
+        RDIR = "{run}/"
+    elif run["name"]:
+        RDIR = run["name"] + "/"
+    else:
+        RDIR = ""
+
+    prefix = run.get("prefix", "")
+    if prefix:
+        RDIR = f"{prefix}/{RDIR}"
+
+    return RDIR
+
+
+def get_run_path(fn, dir, rdir, shared_resources, exclude_from_shared):
+    """
+    Dynamically provide paths based on shared resources and filename.
+
+    Use this function for snakemake rule inputs or outputs that should be
+    optionally shared across runs or created individually for each run.
+
+    Parameters
+    ----------
+    fn : str
+        The filename for the path to be generated.
+    dir : str
+        The base directory.
+    rdir : str
+        Relative directory for non-shared resources.
+    shared_resources : str or bool
+        Specifies which resources should be shared.
+        - If string is "base", special handling for shared "base" resources (see notes).
+        - If random string other than "base", this folder is used instead of the `rdir` keyword.
+        - If boolean, directly specifies if the resource is shared.
+    exclude_from_shared: list
+        List of filenames to exclude from shared resources. Only relevant if shared_resources is "base".
+
+    Returns
+    -------
+    str
+        Full path where the resource should be stored.
+
+    Notes
+    -----
+    Special case for "base" allows no wildcards other than "technology", "year"
+    and "scope" and excludes filenames starting with "networks/elec" or
+    "add_electricity". All other resources are shared.
+    """
+    if shared_resources == "base":
+        pattern = r"\{([^{}]+)\}"
+        existing_wildcards = set(re.findall(pattern, fn))
+        irrelevant_wildcards = {"technology", "year", "scope", "kind"}
+        no_relevant_wildcards = not existing_wildcards - irrelevant_wildcards
+        not_shared_rule = (
+            not fn.startswith("networks/elec")
+            and not fn.startswith("add_electricity")
+            and not any(fn.startswith(ex) for ex in exclude_from_shared)
+        )
+        is_shared = no_relevant_wildcards and not_shared_rule
+        rdir = "" if is_shared else rdir
+    elif isinstance(shared_resources, str):
+        rdir = shared_resources + "/"
+    elif isinstance(shared_resources, bool):
+        rdir = "" if shared_resources else rdir
+    else:
+        raise ValueError(
+            "shared_resources must be a boolean, str, or 'base' for special handling."
+        )
+
+    return f"{dir}{rdir}{fn}"
+
+
+def path_provider(dir, rdir, shared_resources, exclude_from_shared):
+    """
+    Returns a partial function that dynamically provides paths based on shared
+    resources and the filename.
+
+    Returns
+    -------
+    partial function
+        A partial function that takes a filename as input and
+        returns the path to the file based on the shared_resources parameter.
+    """
+    return partial(
+        get_run_path,
+        dir=dir,
+        rdir=rdir,
+        shared_resources=shared_resources,
+        exclude_from_shared=exclude_from_shared,
+    )
 
 
 def get_opt(opts, expr, flags=None):
@@ -44,9 +167,9 @@ def find_opt(opts, expr):
     """
     for o in opts:
         if expr in o:
-            m = re.findall("[0-9]*\.?[0-9]+$", o)
+            m = re.findall(r"m?\d+(?:[\.p]\d+)?", o)
             if len(m) > 0:
-                return True, float(m[0])
+                return True, float(m[-1].replace("p", ".").replace("m", "-"))
             else:
                 return True, None
     return False, None
@@ -58,6 +181,21 @@ def mute_print():
     with open(os.devnull, "w") as devnull:
         with contextlib.redirect_stdout(devnull):
             yield
+
+
+def set_scenario_config(snakemake):
+    scenario = snakemake.config["run"].get("scenarios", {})
+    if scenario.get("enable") and "run" in snakemake.wildcards.keys():
+        try:
+            with open(scenario["file"], "r") as f:
+                scenario_config = yaml.safe_load(f)
+        except FileNotFoundError:
+            # fallback for mock_snakemake
+            script_dir = Path(__file__).parent.resolve()
+            root_dir = script_dir.parent
+            with open(root_dir / scenario["file"], "r") as f:
+                scenario_config = yaml.safe_load(f)
+        update_config(snakemake.config, scenario_config[snakemake.wildcards.run])
 
 
 def configure_logging(snakemake, skip_handlers=False):
@@ -143,6 +281,38 @@ def aggregate_p(n):
             -n.loads_t.p.sum().groupby(n.loads.carrier).sum(),
         ]
     )
+
+
+def get(item, investment_year=None):
+    """
+    Check whether item depends on investment year.
+    """
+    if not isinstance(item, dict):
+        return item
+    elif investment_year in item.keys():
+        return item[investment_year]
+    else:
+        logger.warning(
+            f"Investment key {investment_year} not found in dictionary {item}."
+        )
+        keys = sorted(item.keys())
+        if investment_year < keys[0]:
+            logger.warning(f"Lower than minimum key. Taking minimum key {keys[0]}")
+            return item[keys[0]]
+        elif investment_year > keys[-1]:
+            logger.warning(f"Higher than maximum key. Taking maximum key {keys[0]}")
+            return item[keys[-1]]
+        else:
+            logger.warning(
+                "Interpolate linearly between the next lower and next higher year."
+            )
+            lower_key = max(k for k in keys if k < investment_year)
+            higher_key = min(k for k in keys if k > investment_year)
+            lower = item[lower_key]
+            higher = item[higher_key]
+            return lower + (higher - lower) * (investment_year - lower_key) / (
+                higher_key - lower_key
+            )
 
 
 def aggregate_e_nom(n):
@@ -236,7 +406,7 @@ def progress_retrieve(url, file, disable=False):
 def mock_snakemake(
     rulename,
     root_dir=None,
-    configfiles=[],
+    configfiles=None,
     submodule_dir="workflow/submodules/pypsa-eur",
     **wildcards,
 ):
@@ -266,7 +436,16 @@ def mock_snakemake(
 
     import snakemake as sm
     from pypsa.descriptors import Dict
+    from snakemake.api import Workflow
+    from snakemake.common import SNAKEFILE_CHOICES
     from snakemake.script import Snakemake
+    from snakemake.settings.types import (
+        ConfigSettings,
+        DAGSettings,
+        ResourceSettings,
+        StorageSettings,
+        WorkflowSettings,
+    )
 
     script_dir = Path(__file__).parent.resolve()
     if root_dir is None:
@@ -286,16 +465,28 @@ def mock_snakemake(
             f" {root_dir} or scripts directory {script_dir}"
         )
     try:
-        # for p in sm.SNAKEFILE_CHOICES:
+        # for p in SNAKEFILE_CHOICES:
         for p in ["Snakefile_remind"]:
             if os.path.exists(p):
                 snakefile = p
                 break
-        if isinstance(configfiles, str):
+        if configfiles is None:
+            configfiles = []
+        elif isinstance(configfiles, str):
             configfiles = [configfiles]
 
-        workflow = sm.Workflow(
-            snakefile, overwrite_configfiles=configfiles, rerun_triggers=[]
+        resource_settings = ResourceSettings()
+        config_settings = ConfigSettings(configfiles=map(Path, configfiles))
+        workflow_settings = WorkflowSettings()
+        storage_settings = StorageSettings()
+        dag_settings = DAGSettings(rerun_triggers=[])
+        workflow = Workflow(
+            config_settings,
+            resource_settings,
+            workflow_settings,
+            storage_settings,
+            dag_settings,
+            storage_provider_settings=dict(),
         )
         workflow.include(snakefile)
 
@@ -313,7 +504,7 @@ def mock_snakemake(
 
         def make_accessable(*ios):
             for io in ios:
-                for i in range(len(io)):
+                for i, _ in enumerate(io):
                     io[i] = os.path.abspath(io[i])
 
         make_accessable(job.input, job.output, job.log)
@@ -350,7 +541,8 @@ def generate_periodic_profiles(dt_index, nodes, weekly_profile, localize=None):
     week_df = pd.DataFrame(index=dt_index, columns=nodes)
 
     for node in nodes:
-        timezone = pytz.timezone(pytz.country_timezones[node[:2]][0])
+        ct = node[:2] if node[:2] != "XK" else "RS"
+        timezone = pytz.timezone(pytz.country_timezones[ct][0])
         tz_dt_index = dt_index.tz_convert(timezone)
         week_df[node] = [24 * dt.weekday() + dt.hour for dt in tz_dt_index]
         week_df[node] = week_df[node].map(weekly_profile)
@@ -381,13 +573,181 @@ def parse(infix):
         return {infix.pop(0): parse(infix)}
 
 
-def update_config_with_sector_opts(config, sector_opts):
-    from snakemake.utils import update_config
+def update_config_from_wildcards(config, w, inplace=True):
+    """
+    Parses configuration settings from wildcards and updates the config.
+    """
 
-    for o in sector_opts.split("-"):
-        if o.startswith("CF+"):
-            infix = o.split("+")[1:]
-            update_config(config, parse(infix))
+    if not inplace:
+        config = copy.deepcopy(config)
+
+    if w.get("opts"):
+        opts = w.opts.split("-")
+
+        if nhours := get_opt(opts, r"^\d+(h|seg)$"):
+            config["clustering"]["temporal"]["resolution_elec"] = nhours
+
+        co2l_enable, co2l_value = find_opt(opts, "Co2L")
+        if co2l_enable:
+            config["electricity"]["co2limit_enable"] = True
+            if co2l_value is not None:
+                config["electricity"]["co2limit"] = (
+                    co2l_value * config["electricity"]["co2base"]
+                )
+
+        gasl_enable, gasl_value = find_opt(opts, "CH4L")
+        if gasl_enable:
+            config["electricity"]["gaslimit_enable"] = True
+            if gasl_value is not None:
+                config["electricity"]["gaslimit"] = gasl_value * 1e6
+
+        if "Ept" in opts:
+            config["costs"]["emission_prices"]["co2_monthly_prices"] = True
+
+        ep_enable, ep_value = find_opt(opts, "Ep")
+        if ep_enable:
+            config["costs"]["emission_prices"]["enable"] = True
+            if ep_value is not None:
+                config["costs"]["emission_prices"]["co2"] = ep_value
+
+        if "ATK" in opts:
+            config["autarky"]["enable"] = True
+            if "ATKc" in opts:
+                config["autarky"]["by_country"] = True
+
+        attr_lookup = {
+            "p": "p_nom_max",
+            "e": "e_nom_max",
+            "c": "capital_cost",
+            "m": "marginal_cost",
+        }
+        for o in opts:
+            flags = ["+e", "+p", "+m", "+c"]
+            if all(flag not in o for flag in flags):
+                continue
+            carrier, attr_factor = o.split("+")
+            attr = attr_lookup[attr_factor[0]]
+            factor = float(attr_factor[1:])
+            if not isinstance(config["adjustments"]["electricity"], dict):
+                config["adjustments"]["electricity"] = dict()
+            update_config(
+                config["adjustments"]["electricity"], {attr: {carrier: factor}}
+            )
+
+    if w.get("sector_opts"):
+        opts = w.sector_opts.split("-")
+
+        if "T" in opts:
+            config["sector"]["transport"] = True
+
+        if "H" in opts:
+            config["sector"]["heating"] = True
+
+        if "B" in opts:
+            config["sector"]["biomass"] = True
+
+        if "I" in opts:
+            config["sector"]["industry"] = True
+
+        if "A" in opts:
+            config["sector"]["agriculture"] = True
+
+        if "CCL" in opts:
+            config["solving"]["constraints"]["CCL"] = True
+
+        eq_value = get_opt(opts, r"^EQ+\d*\.?\d+(c|)")
+        for o in opts:
+            if eq_value is not None:
+                config["solving"]["constraints"]["EQ"] = eq_value
+            elif "EQ" in o:
+                config["solving"]["constraints"]["EQ"] = True
+            break
+
+        if "BAU" in opts:
+            config["solving"]["constraints"]["BAU"] = True
+
+        if "SAFE" in opts:
+            config["solving"]["constraints"]["SAFE"] = True
+
+        if nhours := get_opt(opts, r"^\d+(h|sn|seg)$"):
+            config["clustering"]["temporal"]["resolution_sector"] = nhours
+
+        if "decentral" in opts:
+            config["sector"]["electricity_transmission_grid"] = False
+
+        if "noH2network" in opts:
+            config["sector"]["H2_network"] = False
+
+        if "nowasteheat" in opts:
+            config["sector"]["use_fischer_tropsch_waste_heat"] = False
+            config["sector"]["use_methanolisation_waste_heat"] = False
+            config["sector"]["use_haber_bosch_waste_heat"] = False
+            config["sector"]["use_methanation_waste_heat"] = False
+            config["sector"]["use_fuel_cell_waste_heat"] = False
+            config["sector"]["use_electrolysis_waste_heat"] = False
+
+        if "nodistrict" in opts:
+            config["sector"]["district_heating"]["progress"] = 0.0
+
+        dg_enable, dg_factor = find_opt(opts, "dist")
+        if dg_enable:
+            config["sector"]["electricity_distribution_grid"] = True
+            if dg_factor is not None:
+                config["sector"][
+                    "electricity_distribution_grid_cost_factor"
+                ] = dg_factor
+
+        if "biomasstransport" in opts:
+            config["sector"]["biomass_transport"] = True
+
+        _, maxext = find_opt(opts, "linemaxext")
+        if maxext is not None:
+            config["lines"]["max_extension"] = maxext * 1e3
+            config["links"]["max_extension"] = maxext * 1e3
+
+        _, co2l_value = find_opt(opts, "Co2L")
+        if co2l_value is not None:
+            config["co2_budget"] = float(co2l_value)
+
+        if co2_distribution := get_opt(opts, r"^(cb)\d+(\.\d+)?(ex|be)$"):
+            config["co2_budget"] = co2_distribution
+
+        if co2_budget := get_opt(opts, r"^(cb)\d+(\.\d+)?$"):
+            config["co2_budget"] = float(co2_budget[2:])
+
+        attr_lookup = {
+            "p": "p_nom_max",
+            "e": "e_nom_max",
+            "c": "capital_cost",
+            "m": "marginal_cost",
+        }
+        for o in opts:
+            flags = ["+e", "+p", "+m", "+c"]
+            if all(flag not in o for flag in flags):
+                continue
+            carrier, attr_factor = o.split("+")
+            attr = attr_lookup[attr_factor[0]]
+            factor = float(attr_factor[1:])
+            if not isinstance(config["adjustments"]["sector"], dict):
+                config["adjustments"]["sector"] = dict()
+            update_config(config["adjustments"]["sector"], {attr: {carrier: factor}})
+
+        _, sdr_value = find_opt(opts, "sdr")
+        if sdr_value is not None:
+            config["costs"]["social_discountrate"] = sdr_value / 100
+
+        _, seq_limit = find_opt(opts, "seq")
+        if seq_limit is not None:
+            config["sector"]["co2_sequestration_potential"] = seq_limit
+
+        # any config option can be represented in wildcard
+        for o in opts:
+            if o.startswith("CF+"):
+                infix = o.split("+")[1:]
+                update_config(config, parse(infix))
+
+    if not inplace:
+        return config
 
 
 @functools.lru_cache
@@ -965,7 +1325,7 @@ def read_remind_data(file_path, variable_name, rename_columns={}, error_on_empty
 
 def get_checksum_from_zenodo(file_url):
     parts = file_url.split("/")
-    record_id = parts[parts.index("record") + 1]
+    record_id = parts[parts.index("records") + 1]
     filename = parts[-1]
 
     response = requests.get(f"https://zenodo.org/api/records/{record_id}", timeout=30)
@@ -1004,7 +1364,7 @@ def validate_checksum(file_path, zenodo_url=None, checksum=None):
     >>> validate_checksum("/path/to/file", checksum="md5:abc123...")
     >>> validate_checksum(
     ...     "/path/to/file",
-    ...     zenodo_url="https://zenodo.org/record/12345/files/example.txt",
+    ...     zenodo_url="https://zenodo.org/records/12345/files/example.txt",
     ... )
 
     If the checksum is invalid, an AssertionError will be raised.
@@ -1021,3 +1381,15 @@ def validate_checksum(file_path, zenodo_url=None, checksum=None):
     assert (
         calculated_checksum == checksum
     ), "Checksum is invalid. This may be due to an incomplete download. Delete the file and re-execute the rule."
+
+
+def get_snapshots(snapshots, drop_leap_day=False, freq="h", **kwargs):
+    """
+    Returns pandas DateTimeIndex potentially without leap days.
+    """
+
+    time = pd.date_range(freq=freq, **snapshots, **kwargs)
+    if drop_leap_day and time.is_leap_year.any():
+        time = time[~((time.month == 2) & (time.day == 29))]
+
+    return time

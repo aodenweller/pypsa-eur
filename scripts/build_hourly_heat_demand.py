@@ -3,27 +3,54 @@
 #
 # SPDX-License-Identifier: MIT
 """
-Build hourly heat demand time series from daily ones.
+Build hourly heat demand time series from daily heat demand.
+
+Water and space heating demand profiles are generated using intraday profiles from BDEW. Different profiles are used for the residential and services sectors as well as weekdays and weekend.
+
+The daily heat demand is multiplied by the intraday profile to obtain the hourly heat demand time series. The rule is executed in ``build_sector.smk``.
+
+
+Relevant Settings
+-----------------
+
+.. code:: yaml
+
+    snapshots:
+    drop_leap_day:
+
+Inputs
+------
+
+- ``data/heat_load_profile_BDEW.csv``: Intraday heat profile for water and space heating demand for the residential and services sectors for weekends and weekdays.
+- ``resources/daily_heat_demand_total_elec_s<simpl>_<clusters>.nc``: Daily heat demand per cluster.
+
+Outputs
+-------
+
+- ``resources/hourly_heat_demand_total_elec_s<simpl>_<clusters>.nc``:
 """
 
 from itertools import product
 
 import pandas as pd
 import xarray as xr
-from _helpers import generate_periodic_profiles
+from _helpers import generate_periodic_profiles, get_snapshots, set_scenario_config
 
 if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
         snakemake = mock_snakemake(
-            "build_hourly_heat_demands",
+            "build_hourly_heat_demand",
             scope="total",
             simpl="",
-            clusters=48,
+            clusters=5,
         )
+    set_scenario_config(snakemake)
 
-    snapshots = pd.date_range(freq="h", **snakemake.params.snapshots)
+    snapshots = get_snapshots(
+        snakemake.params.snapshots, snakemake.params.drop_leap_day
+    )
 
     daily_space_heat_demand = (
         xr.open_dataarray(snakemake.input.heat_demand)
@@ -58,6 +85,6 @@ if __name__ == "__main__":
 
     heat_demand.index.name = "snapshots"
 
-    ds = heat_demand.stack().to_xarray()
+    ds = heat_demand.stack(future_stack=True).to_xarray()
 
     ds.to_netcdf(snakemake.output.heat_demand)

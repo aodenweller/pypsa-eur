@@ -13,6 +13,7 @@ import sys
 import numpy as np
 import pandas as pd
 import pypsa
+from _helpers import configure_logging, get_snapshots, set_scenario_config
 from prepare_sector_network import prepare_costs
 
 idx = pd.IndexSlice
@@ -412,6 +413,85 @@ def calculate_supply_energy(n, label, supply_energy):
     return supply_energy
 
 
+def calculate_nodal_supply_energy(n, label, nodal_supply_energy):
+    """
+    Calculate the total energy supply/consumption of each component at the
+    buses aggregated by carrier and node.
+    """
+
+    bus_carriers = n.buses.carrier.unique()
+
+    for i in bus_carriers:
+        bus_map = n.buses.carrier == i
+        bus_map.at[""] = False
+
+        for c in n.iterate_components(n.one_port_components):
+            items = c.df.index[c.df.bus.map(bus_map).fillna(False)]
+
+            if len(items) == 0:
+                continue
+
+            s = (
+                pd.concat(
+                    [
+                        (
+                            c.pnl.p[items]
+                            .multiply(n.snapshot_weightings.generators, axis=0)
+                            .sum()
+                            .multiply(c.df.loc[items, "sign"])
+                        ),
+                        c.df.loc[items][["bus", "carrier"]],
+                    ],
+                    axis=1,
+                )
+                .groupby(by=["bus", "carrier"])
+                .sum()[0]
+            )
+            s = pd.concat([s], keys=[c.list_name])
+            s = pd.concat([s], keys=[i])
+
+            nodal_supply_energy = nodal_supply_energy.reindex(
+                s.index.union(nodal_supply_energy.index)
+            )
+            nodal_supply_energy.loc[s.index, label] = s
+
+        for c in n.iterate_components(n.branch_components):
+            for end in [col[3:] for col in c.df.columns if col[:3] == "bus"]:
+                items = c.df.index[c.df["bus" + str(end)].map(bus_map).fillna(False)]
+
+                if (len(items) == 0) or c.pnl["p" + end].empty:
+                    continue
+
+                s = (
+                    pd.concat(
+                        [
+                            (
+                                (-1)
+                                * c.pnl["p" + end][items]
+                                .multiply(n.snapshot_weightings.generators, axis=0)
+                                .sum()
+                            ),
+                            c.df.loc[items][["bus0", "carrier"]],
+                        ],
+                        axis=1,
+                    )
+                    .groupby(by=["bus0", "carrier"])
+                    .sum()[0]
+                )
+
+                s.index = s.index.map(lambda x: (x[0], x[1] + end))
+                s = pd.concat([s], keys=[c.list_name])
+                s = pd.concat([s], keys=[i])
+
+                nodal_supply_energy = nodal_supply_energy.reindex(
+                    s.index.union(nodal_supply_energy.index)
+                )
+
+                nodal_supply_energy.loc[s.index, label] = s
+
+    return nodal_supply_energy
+
+
 def calculate_metrics(n, label, metrics):
     metrics_list = [
         "line_volume",
@@ -636,6 +716,7 @@ def make_summaries(networks_dict):
         "energy",
         "supply",
         "supply_energy",
+        "nodal_supply_energy",
         "prices",
         "weighted_prices",
         "price_statistics",
@@ -644,7 +725,8 @@ def make_summaries(networks_dict):
     ]
 
     columns = pd.MultiIndex.from_tuples(
-        networks_dict.keys(), names=["cluster", "ll", "opt", "planning_horizon"]
+        networks_dict.keys(),
+        names=["cluster", "ll", "opt", "planning_horizon"],
     )
 
     df = {output: pd.DataFrame(columns=columns, dtype=float) for output in outputs}
@@ -673,7 +755,8 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake("make_summary")
 
-    logging.basicConfig(level=snakemake.config["logging"]["level"])
+    configure_logging(snakemake)
+    set_scenario_config(snakemake)
 
     networks_dict = {
         (cluster, ll, opt + sector_opt, planning_horizon): "results/"
@@ -687,7 +770,8 @@ if __name__ == "__main__":
         for planning_horizon in snakemake.params.scenario["planning_horizons"]
     }
 
-    Nyears = len(pd.date_range(freq="h", **snakemake.params.snapshots)) / 8760
+    time = get_snapshots(snakemake.params.snapshots, snakemake.params.drop_leap_day)
+    Nyears = len(time) / 8760
 
     costs_db = prepare_costs(
         snakemake.input.costs,

@@ -12,6 +12,7 @@ other metrics.
 import numpy as np
 import pandas as pd
 import pypsa
+from _helpers import set_scenario_config
 from make_summary import calculate_cfs  # noqa: F401
 from make_summary import calculate_nodal_cfs  # noqa: F401
 from make_summary import calculate_nodal_costs  # noqa: F401
@@ -39,9 +40,9 @@ def calculate_costs(n, label, costs):
     investments = n.investment_periods
     cols = pd.MultiIndex.from_product(
         [
-            costs.columns.levels[0],
-            costs.columns.levels[1],
-            costs.columns.levels[2],
+            costs.columns.unique(0),
+            costs.columns.unique(1),
+            costs.columns.unique(2),
             investments,
         ],
         names=costs.columns.names[:3] + ["year"],
@@ -338,9 +339,9 @@ def calculate_supply_energy(n, label, supply_energy):
     investments = n.investment_periods
     cols = pd.MultiIndex.from_product(
         [
-            supply_energy.columns.levels[0],
-            supply_energy.columns.levels[1],
-            supply_energy.columns.levels[2],
+            supply_energy.columns.unique(0),
+            supply_energy.columns.unique(1),
+            supply_energy.columns.unique(2),
             investments,
         ],
         names=supply_energy.columns.names[:3] + ["year"],
@@ -630,7 +631,7 @@ def calculate_co2_emissions(n, label, df):
     weightings = n.snapshot_weightings.generators.mul(
         n.investment_period_weightings["years"]
         .reindex(n.snapshots)
-        .fillna(method="bfill")
+        .bfill()
         .fillna(1.0),
         axis=0,
     )
@@ -722,6 +723,7 @@ if __name__ == "__main__":
         from _helpers import mock_snakemake
 
         snakemake = mock_snakemake("make_summary_perfect")
+    set_scenario_config(snakemake)
 
     run = snakemake.config["run"]["name"]
     if run != "":

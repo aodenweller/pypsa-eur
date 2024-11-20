@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
+master
+
 .snakemake*
 .ipynb_checkpoints
 __pycache__
@@ -20,9 +22,17 @@ gurobi.log
 /notebooks
 /data
 /cutouts
+/tmp
 /workbench
 
 doc/_build
+
+/scripts/old
+/scripts/create_scenarios.py
+/config/create_scenarios.py
+
+config/config.yaml
+config/scenarios.yaml
 
 config.yaml
 config/config.yaml
@@ -31,18 +41,16 @@ dconf
 /data/links_p_nom.csv
 /data/*totals.csv
 /data/biomass*
-/data/bundle-sector/emobility/
-/data/bundle-sector/eea*
-/data/bundle-sector/jrc*
+/data/bundle/emobility/
+/data/bundle/eea*
+/data/bundle/jrc*
 /data/heating/
-/data/bundle-sector/eurostat*
+/data/bundle/eurostat*
 /data/odyssee/
 /data/transport_data.csv
-/data/bundle-sector/switzerland*
 /data/.nfs*
-/data/bundle-sector/Industrial_Database.csv
-/data/retro/tabula-calculator-calcsetbuilding.csv
-/data/bundle-sector/nuts*
+/data/retro/*
+/data/bundle/nuts*
 data/gas_network/scigrid-gas/
 data/costs_*.csv
 
@@ -55,26 +63,16 @@ d1gam3xoknrgr2.cloudfront.net/
 *.nc
 
 *~
-/scripts/old
 
 *.pyc
-/cutouts
-/tmp
-/pypsa
 
 *.xlsx
-
-config.yaml
-
-doc/_build
 
 *.xls
 
 *.geojson
 
 *.ipynb
-
-data/costs_*
 
 merger-todos.md
 

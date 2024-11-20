@@ -12,7 +12,12 @@ import numpy as np
 import pandas as pd
 import pypsa
 import xarray as xr
-from _helpers import update_config_with_sector_opts
+from _helpers import (
+    configure_logging,
+    get_snapshots,
+    set_scenario_config,
+    update_config_from_wildcards,
+)
 from add_existing_baseyear import add_build_year_to_new_assets
 from pypsa.clustering.spatial import normed_or_uniform
 
@@ -35,8 +40,8 @@ def add_brownfield(n, n_p, year):
         # CO2 or global EU values since these are already in n
         n_p.mremove(c.name, c.df.index[c.df.lifetime == np.inf])
 
-        # remove assets whose build_year + lifetime < year
-        n_p.mremove(c.name, c.df.index[c.df.build_year + c.df.lifetime < year])
+        # remove assets whose build_year + lifetime <= year
+        n_p.mremove(c.name, c.df.index[c.df.build_year + c.df.lifetime <= year])
 
         # remove assets if their optimized nominal capacity is lower than a threshold
         # since CHP heat Link is proportional to CHP electric Link, make sure threshold is compatible
@@ -81,68 +86,82 @@ def add_brownfield(n, n_p, year):
         for tattr in n.component_attrs[c.name].index[selection]:
             n.import_series_from_dataframe(c.pnl[tattr], c.name, tattr)
 
-        # deal with gas network
-        pipe_carrier = ["gas pipeline"]
-        if snakemake.params.H2_retrofit:
-            # drop capacities of previous year to avoid duplicating
-            to_drop = n.links.carrier.isin(pipe_carrier) & (n.links.build_year != year)
-            n.mremove("Link", n.links.loc[to_drop].index)
-
-            # subtract the already retrofitted from today's gas grid capacity
-            h2_retrofitted_fixed_i = n.links[
-                (n.links.carrier == "H2 pipeline retrofitted")
-                & (n.links.build_year != year)
-            ].index
-            gas_pipes_i = n.links[n.links.carrier.isin(pipe_carrier)].index
-            CH4_per_H2 = 1 / snakemake.params.H2_retrofit_capacity_per_CH4
-            fr = "H2 pipeline retrofitted"
-            to = "gas pipeline"
-            # today's pipe capacity
-            pipe_capacity = n.links.loc[gas_pipes_i, "p_nom"]
-            # already retrofitted capacity from gas -> H2
-            already_retrofitted = (
-                n.links.loc[h2_retrofitted_fixed_i, "p_nom"]
-                .rename(lambda x: x.split("-2")[0].replace(fr, to))
-                .groupby(level=0)
-                .sum()
-            )
-            remaining_capacity = (
-                pipe_capacity
-                - CH4_per_H2
-                * already_retrofitted.reindex(index=pipe_capacity.index).fillna(0)
-            )
-            n.links.loc[gas_pipes_i, "p_nom"] = remaining_capacity
-        else:
-            new_pipes = n.links.carrier.isin(pipe_carrier) & (
-                n.links.build_year == year
-            )
-            n.links.loc[new_pipes, "p_nom"] = 0.0
-            n.links.loc[new_pipes, "p_nom_min"] = 0.0
+    # deal with gas network
+    pipe_carrier = ["gas pipeline"]
+    if snakemake.params.H2_retrofit:
+        # subtract the already retrofitted from today's gas grid capacity
+        h2_retrofitted_fixed_i = n.links[
+            (n.links.carrier == "H2 pipeline retrofitted")
+            & (n.links.build_year != year)
+        ].index
+        gas_pipes_i = n.links[n.links.carrier.isin(pipe_carrier)].index
+        CH4_per_H2 = 1 / snakemake.params.H2_retrofit_capacity_per_CH4
+        fr = "H2 pipeline retrofitted"
+        to = "gas pipeline"
+        # today's pipe capacity
+        pipe_capacity = n.links.loc[gas_pipes_i, "p_nom"]
+        # already retrofitted capacity from gas -> H2
+        already_retrofitted = (
+            n.links.loc[h2_retrofitted_fixed_i, "p_nom"]
+            .rename(lambda x: x.split("-2")[0].replace(fr, to) + f"-{year}")
+            .groupby(level=0)
+            .sum()
+        )
+        remaining_capacity = pipe_capacity - CH4_per_H2 * already_retrofitted.reindex(
+            index=pipe_capacity.index
+        ).fillna(0)
+        n.links.loc[gas_pipes_i, "p_nom"] = remaining_capacity
 
 
-def disable_grid_expansion_if_LV_limit_hit(n):
-    if "lv_limit" not in n.global_constraints.index:
-        return
+def disable_grid_expansion_if_limit_hit(n):
+    """
+    Check if transmission expansion limit is already reached; then turn off.
 
-    total_expansion = (
-        n.lines.eval("s_nom_min * length").sum()
-        + n.links.query("carrier == 'DC'").eval("p_nom_min * length").sum()
-    ).sum()
+    In particular, this function checks if the total transmission
+    capital cost or volume implied by s_nom_min and p_nom_min are
+    numerically close to the respective global limit set in
+    n.global_constraints. If so, the nominal capacities are set to the
+    minimum and extendable is turned off; the corresponding global
+    constraint is then dropped.
+    """
+    types = {"expansion_cost": "capital_cost", "volume_expansion": "length"}
+    for limit_type in types:
+        glcs = n.global_constraints.query(f"type == 'transmission_{limit_type}_limit'")
 
-    lv_limit = n.global_constraints.at["lv_limit", "constant"]
+        for name, glc in glcs.iterrows():
+            total_expansion = (
+                (
+                    n.lines.query("s_nom_extendable")
+                    .eval(f"s_nom_min * {types[limit_type]}")
+                    .sum()
+                )
+                + (
+                    n.links.query("carrier == 'DC' and p_nom_extendable")
+                    .eval(f"p_nom_min * {types[limit_type]}")
+                    .sum()
+                )
+            ).sum()
 
-    # allow small numerical differences
-    if lv_limit - total_expansion < 1:
-        logger.info("LV is already reached, disabling expansion and LV limit")
-        extendable_acs = n.lines.query("s_nom_extendable").index
-        n.lines.loc[extendable_acs, "s_nom_extendable"] = False
-        n.lines.loc[extendable_acs, "s_nom"] = n.lines.loc[extendable_acs, "s_nom_min"]
+            # Allow small numerical differences
+            if np.abs(glc.constant - total_expansion) / glc.constant < 1e-6:
+                logger.info(
+                    f"Transmission expansion {limit_type} is already reached, disabling expansion and limit"
+                )
+                extendable_acs = n.lines.query("s_nom_extendable").index
+                n.lines.loc[extendable_acs, "s_nom_extendable"] = False
+                n.lines.loc[extendable_acs, "s_nom"] = n.lines.loc[
+                    extendable_acs, "s_nom_min"
+                ]
 
-        extendable_dcs = n.links.query("carrier == 'DC' and p_nom_extendable").index
-        n.links.loc[extendable_dcs, "p_nom_extendable"] = False
-        n.links.loc[extendable_dcs, "p_nom"] = n.links.loc[extendable_dcs, "p_nom_min"]
+                extendable_dcs = n.links.query(
+                    "carrier == 'DC' and p_nom_extendable"
+                ).index
+                n.links.loc[extendable_dcs, "p_nom_extendable"] = False
+                n.links.loc[extendable_dcs, "p_nom"] = n.links.loc[
+                    extendable_dcs, "p_nom_min"
+                ]
 
-        n.global_constraints.drop("lv_limit", inplace=True)
+                n.global_constraints.drop(name, inplace=True)
 
 
 def adjust_renewable_profiles(n, input_profiles, params, year):
@@ -160,7 +179,7 @@ def adjust_renewable_profiles(n, input_profiles, params, year):
     clustermaps.index = clustermaps.index.astype(str)
 
     # temporal clustering
-    dr = pd.date_range(**params["snapshots"], freq="h")
+    dr = get_snapshots(params["snapshots"], params["drop_leap_day"])
     snapshotmaps = (
         pd.Series(dr, index=dr).where(lambda x: x.isin(n.snapshots), pd.NA).ffill()
     )
@@ -168,6 +187,7 @@ def adjust_renewable_profiles(n, input_profiles, params, year):
     for carrier in params["carriers"]:
         if carrier == "hydro":
             continue
+
         with xr.open_dataset(getattr(input_profiles, "profile_" + carrier)) as ds:
             if ds.indexes["bus"].empty or "year" not in ds.indexes:
                 continue
@@ -210,9 +230,10 @@ if __name__ == "__main__":
             planning_horizons=2030,
         )
 
-    logging.basicConfig(level=snakemake.config["logging"]["level"])
+    configure_logging(snakemake)
+    set_scenario_config(snakemake)
 
-    update_config_with_sector_opts(snakemake.config, snakemake.wildcards.sector_opts)
+    update_config_from_wildcards(snakemake.config, snakemake.wildcards)
 
     logger.info(f"Preparing brownfield from the file {snakemake.input.network_p}")
 
@@ -228,7 +249,7 @@ if __name__ == "__main__":
 
     add_brownfield(n, n_p, year)
 
-    disable_grid_expansion_if_LV_limit_hit(n)
+    disable_grid_expansion_if_limit_hit(n)
 
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
     n.export_to_netcdf(snakemake.output[0])
