@@ -59,7 +59,7 @@ offwind-dc-connection-submarine,efficiency,setting to reference value,1,p.u.,Pro
 offwind-dc-connection-underground,efficiency,setting to reference value,1,p.u.,Process without direct losses
 offwind-dc-station,efficiency,setting to reference value,1,p.u.,Process without direct losses
 oil,efficiency,mapping generation weighted to reference REMIND-EU technology,dot,,
-onwind,efficiency,mapping generation weighted to reference REMIND-EU technology,wind,,
+onwind,efficiency,mapping generation weighted to reference REMIND-EU technology,windon,,
 PHS,efficiency,mapping generation weighted to reference REMIND-EU technology,hydro,,
 ror,efficiency,mapping generation weighted to reference REMIND-EU technology,hydro,,
 solar,efficiency,mapping generation weighted to reference REMIND-EU technology,spv,,
@@ -92,7 +92,7 @@ offwind-dc-connection-submarine,FOM,setting to reference value,0,%/year,"No corr
 offwind-dc-connection-underground,FOM,setting to reference value,0,%/year,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
 offwind-dc-station,FOM,setting to reference value,0,%/year,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
 oil,FOM,mapping generation weighted to reference REMIND-EU technology,dot,,
-onwind,FOM,mapping generation weighted to reference REMIND-EU technology,wind,,
+onwind,FOM,mapping generation weighted to reference REMIND-EU technology,windon,,
 PHS,FOM,scaling original values based on reference PyPSA-EUR technology,hydro,,
 ror,FOM,scaling original values based on reference PyPSA-EUR technology,hydro,,
 solar,FOM,mapping generation weighted to reference REMIND-EU technology,spv,,
@@ -156,7 +156,7 @@ offwind-dc-connection-submarine,investment,setting to reference value,0,USD/MW/k
 offwind-dc-connection-underground,investment,setting to reference value,0,USD/MW/km,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
 offwind-dc-station,investment,setting to reference value,0,USD/MW,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
 oil,investment,mapping generation weighted to reference REMIND-EU technology,dot,,
-onwind,investment,mapping generation weighted to reference REMIND-EU technology,wind,,
+onwind,investment,mapping generation weighted to reference REMIND-EU technology,windon,,
 PHS,investment,scaling original values based on reference PyPSA-EUR technology,hydro,,
 ror,investment,scaling original values based on reference PyPSA-EUR technology,hydro,,
 solar,investment,mapping generation weighted to reference REMIND-EU technology,spv,,
@@ -189,7 +189,7 @@ offwind-dc-connection-submarine,lifetime,setting to reference value,1,years,"No 
 offwind-dc-connection-underground,lifetime,setting to reference value,1,years,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
 offwind-dc-station,lifetime,setting to reference value,1,years,"No corresponding technology in REMIND-EU, setting to an (hopefully) non-disruptive default value."
 oil,lifetime,mapping generation weighted to reference REMIND-EU technology,dot,,
-onwind,lifetime,mapping generation weighted to reference REMIND-EU technology,wind,,
+onwind,lifetime,mapping generation weighted to reference REMIND-EU technology,windon,,
 PHS,lifetime,scaling original values based on reference PyPSA-EUR technology,hydro,,
 ror,lifetime,scaling original values based on reference PyPSA-EUR technology,hydro,,
 solar,lifetime,mapping generation weighted to reference REMIND-EU technology,spv,,
