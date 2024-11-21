@@ -470,14 +470,14 @@ rule add_electricity:
         tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",
         regions=resources("regions_onshore.geojson"),
         powerplants=resources("powerplants.csv"),
-        hydro_capacities=ancient("data/bundle/hydro_capacities.csv"),
+        hydro_capacities=ancient("data/hydro_capacities.csv"),
         unit_commitment="data/unit_commitment.csv",
         fuel_price=lambda w: (
             resources("monthly_fuel_price.csv")
             if config_provider("conventional", "dynamic_fuel_price")(w)
             else []
         ),
-        load=RESOURCES + "electricity_demand.csv",
+        load=SCENARIO_RESOURCES + "i{iteration}/y{year}/electricity_demand.csv",
         nuts3_shapes=resources("nuts3_shapes.geojson"),
         region_mapping="config/regionmapping_21_EU11.csv",
         remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
@@ -512,10 +512,8 @@ rule simplify_network:
         p_max_pu=config_provider("links", "p_max_pu", default=1.0),
         costs=config_provider("costs"),
     input:
-        network=resources("networks/elec.nc"),
-        tech_costs=lambda w: resources(
-            f"costs_{config_provider('costs', 'year')(w)}.csv"
-        ),
+        network=SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec.nc",
+        tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",
         regions_onshore=resources("regions_onshore.geojson"),
         regions_offshore=resources("regions_offshore.geojson"),
     output:
@@ -566,13 +564,13 @@ rule cluster_network:
         costs=config_provider("costs"),
     input:
         unpack(input_cluster_network),
-        network=resources("networks/elec_s{simpl}.nc"),
-        regions_onshore=resources("regions_onshore_elec_s{simpl}.geojson"),
-        regions_offshore=resources("regions_offshore_elec_s{simpl}.geojson"),
-        busmap=ancient(resources("busmap_elec_s{simpl}.csv")),
-        tech_costs=lambda w: resources(
-            f"costs_{config_provider('costs', 'year')(w)}.csv"
-        ),
+        network=SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}.nc",
+        regions_onshore=SCENARIO_RESOURCES
+        + "i{iteration}/y{year}/regions_onshore_elec_s{simpl}.geojson",
+        regions_offshore=SCENARIO_RESOURCES
+        + "i{iteration}/y{year}/regions_offshore_elec_s{simpl}.geojson",
+        busmap=ancient(SCENARIO_RESOURCES + "i{iteration}/y{year}/busmap_elec_s{simpl}.csv"),
+        tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",
     output:
         network=SCENARIO_RESOURCES
         + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}.nc",
@@ -611,10 +609,9 @@ rule add_extra_components:
         preinvestment_capacities=config["remind_coupling"]["preinvestment_capacities"],
         h2_demand=config["remind_coupling"]["h2_demand"],
     input:
-        network=resources("networks/elec_s{simpl}_{clusters}.nc"),
-        tech_costs=lambda w: resources(
-            f"costs_{config_provider('costs', 'year')(w)}.csv"
-        ),
+        network=SCENARIO_RESOURCES
+        + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}.nc",
+        tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
         RCL_p_nom_limits=SCENARIO_RESOURCES
         + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
@@ -658,10 +655,8 @@ rule prepare_network:
         autarky=config_provider("electricity", "autarky", default={}),
         drop_leap_day=config_provider("enable", "drop_leap_day"),
     input:
-        resources("networks/elec_s{simpl}_{clusters}_ec.nc"),
-        tech_costs=lambda w: resources(
-            f"costs_{config_provider('costs', 'year')(w)}.csv"
-        ),
+        SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec.nc",
+        tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",
         co2_price=lambda w: resources("co2_price.csv") if "Ept" in w.opts else [],
     output:
         SCENARIO_RESOURCES

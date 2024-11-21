@@ -19,6 +19,7 @@ gurobi.log
 /networks
 /benchmarks
 /logs
+/logs_slurm
 /notebooks
 /data
 /cutouts

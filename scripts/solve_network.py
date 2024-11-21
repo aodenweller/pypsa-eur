@@ -45,6 +45,7 @@ from _helpers import (
     update_config_from_wildcards,
     get_region_mapping,
     get_technology_mapping,
+    setup_gurobi_tunnel_and_env
 )
 from prepare_sector_network import get
 from pypsa.descriptors import get_activity_mask
@@ -531,7 +532,6 @@ def prepare_network(
 
     return n
 
-
 def add_RCL_constraints(n, config):
     """
     Add RCL (region & carrier limit) constraint to the network for region and
@@ -589,7 +589,7 @@ def add_RCL_constraints(n, config):
     ## 1. Constraint: Maximum capacity for free/low-cost RCL generators
 
     # Get all RCL generators and their non-RCL counterparts; apply the constraint to their combined p_nom_opt
-    idx_rcl = n.generators.query("index.str.contains(r' \(RCL\)')").index
+    idx_rcl = n.generators.query(r"index.str.contains(r' \(RCL\)')").index
     generators_rcl = generators.loc[idx_rcl]
     grouper_rcl = [
         generators_rcl["region_REMIND"],
@@ -611,7 +611,7 @@ def add_RCL_constraints(n, config):
     # Add constraint
     if not indexes_rcl.empty:
         n.model.add_constraints(
-            p_nom_rcl.sel(group=indexes_rcl) <= p_nom_limits.loc[indexes_rcl],
+            p_nom_rcl.sel(group=indexes_rcl) <= p_nom_limits.loc[indexes_rcl].values,
             name="RCL_p_nom_max",
         )
     
@@ -628,7 +628,7 @@ def add_RCL_constraints(n, config):
     lhs = n.model["Generator-p_nom"].groupby(grouper).sum()
 
     # RHS: p_nom_max from non-RCL generator
-    idx_nonrcl = generators_ext.query("~index.str.contains(r' \(RCL\)')").index
+    idx_nonrcl = generators_ext.query(r"~index.str.contains(r' \(RCL\)')").index
     generators_ext_nonrcl = generators_ext.loc[idx_nonrcl].set_index(["bus", "carrier"])
     potential = generators_ext_nonrcl[["p_nom_max"]]
     # Drop cases with inf
@@ -640,7 +640,7 @@ def add_RCL_constraints(n, config):
     # Add constraint
     if not index.empty:
         n.model.add_constraints(
-            lhs.sel(group=index) <= potential.loc[index]["p_nom_max"],
+            lhs.sel(group=index) <= potential.loc[index]["p_nom_max"].values,
             name="RCL_p_nom_max_pot"
         )
 
@@ -1143,7 +1143,7 @@ def extra_functionality(n, snapshots):
         add_SAFE_constraints(n, config)
     if constraints["CCL"] and n.generators.p_nom_extendable.any():
         add_CCL_constraints(n, config)
-    if "RCL" in opts and n.generators.p_nom_extendable.any():
+    if constraints["RCL"] and n.generators.p_nom_extendable.any():
         add_RCL_constraints(n, config)
     reserve = config["electricity"].get("operational_reserve", {})
     if reserve.get("activate"):
@@ -1252,16 +1252,23 @@ if __name__ == "__main__":
             "solve_network",
             configfiles="config/config.remind.yaml",
             simpl="",
-            opts="1H-RCL-Ep55.0",
+            opts="3H-RCL-Ep27.3",
             clusters="4",
             ll="copt",
-            scenario="PyPSA_NPi_DEU_freeWindOff_PyPSAPotentials_2024-02-16_08.30.41",
-            iteration="10",
-            year="2100",
+            scenario="TEST",
+            iteration="5",
+            year="2050",
         )
     configure_logging(snakemake)
     set_scenario_config(snakemake)
     update_config_from_wildcards(snakemake.config, snakemake.wildcards)
+
+    # deal with the gurobi license activation, which requires a tunnel to the login nodes
+    solver_config = snakemake.config["solving"]["solver"]
+    gurobi_license_config = snakemake.config["solving"].get("gurobi_hpc_tunnel", None)
+    logger.info(f"Solver config {solver_config} and license cfg {gurobi_license_config}")
+    if (solver_config["name"] == "gurobi") & (gurobi_license_config is not None):
+        setup_gurobi_tunnel_and_env(gurobi_license_config, logger=logger)
 
     solve_opts = snakemake.params.solving["options"]
 

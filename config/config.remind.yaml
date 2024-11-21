@@ -290,6 +290,7 @@ renewable:
 conventional:
   unit_commitment: false
   dynamic_fuel_price: false
+  default_efficiencies: true # REMIND-specific: Remove efficiencies from existing powerplants s.t. it is filled with values from costs.csv which are REMIND-coupled
   nuclear:
     p_max_pu: 0.85 # REMIND-specific: Limit capacity factor to 85%
   OCGT:
@@ -950,10 +951,15 @@ solving:
     EQ: false
     BAU: false
     SAFE: false
+    RCL: true
 
   solver:
-    name: cplex
-    options: cplex-default
+    name: gurobi
+    options: gurobi-default
+
+  gurobi_hpc_tunnel:
+    use_tunnel: True
+    tunnel_port: 1080
 
   solver_options:
     highs-default:

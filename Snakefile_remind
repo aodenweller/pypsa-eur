@@ -1,27 +1,36 @@
-# SPDX-FileCopyrightText: : 2024 The PyPSA-Eur Authors
+# SPDX-FileCopyrightText: : 2017-2024 The PyPSA-Eur Authors
 # Changes by Adrian Odenweller <adrian.odenweller@pik-potsdam.de>, Johannes Hampp <johannes.hampp@pik-potsdam.de>
 #
 # SPDX-License-Identifier: MIT
 
+from pathlib import Path
+import yaml
 from os.path import normpath, exists
 from shutil import copyfile, move, rmtree
+from snakemake.utils import min_version
 import numpy as np
 import pandas as pd
-from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
-import http.client as http_client
 
-HTTP = HTTPRemoteProvider()
+min_version("8.11")
 
-from snakemake.utils import min_version
+from scripts._helpers import path_provider, copy_default_files, get_scenarios, get_rdir
 
-min_version("7.7")
-
+copy_default_files(workflow)
 
 configfile: "config/config.remind.yaml"
 
+run = config["run"]
+#scenarios = get_scenarios(run)
+#RDIR = get_rdir(run)
 
-ATLITE_NPROCESSES = config["atlite"].get("nprocesses", 4)
+shared_resources = run["shared_resources"]["policy"]
+exclude_from_shared = run["shared_resources"]["exclude"]
+logs = path_provider("logs/", "", shared_resources, exclude_from_shared)
+benchmarks = path_provider("benchmarks/", "", shared_resources, exclude_from_shared)
+resources = path_provider("resources/", "", shared_resources, exclude_from_shared)
 
+# REMIND coupling specific directories
+# Structure, e.g.: resources/{scenario}/i{iteration}/y{year}/
 RDIR = "{scenario}/"
 IDIR = "i{iteration}/"
 CDIR = RDIR if not config.get("run", {}).get("shared_cutouts") else ""
@@ -35,7 +44,7 @@ SCENARIO_BENCHMARKS = BENCHMARKS + RDIR
 ITERATION_BENCHMARKS = SCENARIO_BENCHMARKS + IDIR
 
 RESOURCES = "resources/" + (
-    "" if config.get("run", {}).get("shared_resources", True) else RDIR
+    "" if shared_resources else RDIR
 )
 SCENARIO_RESOURCES = "resources/" + RDIR
 ITERATION_RESOURCES = SCENARIO_RESOURCES + IDIR
@@ -57,8 +66,8 @@ localrules:
 wildcard_constraints:
     simpl="[a-zA-Z0-9]*",
     clusters="[0-9]+(m|c)?|all",
-    ll="(v|c)([0-9\.]+|opt)",
-    opts="[-+a-zA-Z0-9\.]*",
+    ll=r"(v|c)([0-9\.]+|opt)",
+    opts=r"[-+a-zA-Z0-9\.]*",
     year="2[01][0-9][05]",
     iteration="[0-9]+",
 
@@ -90,13 +99,13 @@ rule dag:
     message:
         "Creating DAG of workflow."
     output:
-        dot=RESOURCES + "dag.dot",
-        pdf=RESOURCES + "dag.pdf",
-        png=RESOURCES + "dag.png",
+        dot=resources("dag.dot"),
+        pdf=resources("dag.pdf"),
+        png=resources("dag.png"),
     conda:
         "envs/environment.yaml"
     shell:
-        """
+        r"""
         snakemake --rulegraph all | sed -n "/digraph/,\$p" > {output.dot}
         dot -Tpdf -o {output.pdf} {output.dot}
         dot -Tpng -o {output.png} {output.dot}
@@ -124,6 +133,17 @@ rule sync:
         """
 
 
+# Helper function to evaluate input functions in the config file.
+def evaluate_inputs(input_dict):
+    evaluated = {}
+    for k, v in input_dict.items():
+        if callable(v):
+            # Set dummy wild card so that update_config_from_wildcards runs without errors
+            evaluated[k] = v({"iteration": 1, "year": 2025, "scenario": "default"})
+        else:
+            evaluated[k] = v
+    return evaluated
+
 # Rule which downloads and prepares all files which will not change
 # during REMIND <-> PyPSA-EUR coupled iterations and repeating runs.
 # * Use for downloading on e.g. login node with internet connection
@@ -136,17 +156,24 @@ rule download_and_prepare:
         "Running this rule requires an internet connection for downloading "
         "datafiles for the model."
     input:
+        # Retrieve cost data
         expand(
-            "data/costs_{year}.csv",
+            "resources/costs_{year}.csv",
             year=[2020, 2025, 2030, 2035, 2040, 2045, 2050],
         ),
+        # Retrieve cutouts and create profiles
+        expand(
+            "resources/profile_{technology}.nc",
+            technology=["onwind", "offwind-ac", "offwind-dc", "solar", "hydro"],
+        ),
+        # Retrieve electricity demand data
         rules.build_electricity_demand.output[0],
+        # Retrieve databundle for rule add_electricity
         **{
             k: v
-            for k, v in rules.add_electricity.input.items()
+            for k, v in evaluate_inputs(rules.add_electricity.input).items()
             if "{scenario}" not in v
-        },
-
+        }
 
 # # This part contains all rules, which get data from REMIND between iterations.
 # # PyPSA-EUR networks are solved between iterations via snakemake calls
@@ -162,7 +189,7 @@ rule download_and_prepare:
 rule import_REMIND_costs:
     input:
         # no TD data for < 2020 and > 2050
-        original_costs=lambda w: f"data/costs_{np.clip(int(w['year']), a_min=2020, a_max=2050)}.csv",
+        original_costs=lambda w: f"resources/costs_{np.clip(int(w['year']), a_min=2020, a_max=2050)}.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
         remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
@@ -181,11 +208,11 @@ rule import_REMIND_costs:
 # Build load data time-series based on REMIND annual load per region and default PyPSA-EUR load profiles.
 rule import_REMIND_load:
     input:
-        load_timeseries=RESOURCES + "load.csv",
+        load_timeseries=RESOURCES + "electricity_demand.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
         remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
-        load_timeseries=SCENARIO_RESOURCES + "i{iteration}/y{year}/load.csv",
+        load_timeseries=SCENARIO_RESOURCES + "i{iteration}/y{year}/electricity_demand.csv",
     log:
         LOGS + "{scenario}/i{iteration}/y{year}/import_REMIND_load.log",
     benchmark:

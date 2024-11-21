@@ -1,27 +1,33 @@
 cluster: mkdir -p logs/slurm/{rule} && sbatch --partition={resources.partition} --qos={resources.qos} --mem={resources.mem_mb} --time={resources.walltime} --cpus-per-task={threads} --job-name=PyPSAEur-{rule}-{wildcards} --output=logs/slurm/{rule}/{rule}-{wildcards}-%j.out --parsable
 set-resources:
-  retrieve_databundle:
+  retrieve_cost_data:
     partition: "io"
     qos: "io"
   retrieve_cutout:
     partition: "io"
     qos: "io"
-  retrieve_cost_data:
+  retrieve_databundle:
     partition: "io"
     qos: "io"
-  retrieve_natura_raster:
+  retrieve_eez:
     partition: "io"
     qos: "io"
   retrieve_electricity_demand:
     partition: "io"
     qos: "io"
+  retrieve_naturalearth_countries:
+    partition: "io"
+    qos: "io"
+  retrieve_nuts_shapes:
+    partition: "io"
+    qos: "io"
+  retrieve_osm_prebuilt:
+    partition: "io"
+    qos: "io"
   retrieve_ship_raster:
     partition: "io"
     qos: "io"
-  retrieve_monthly_fuel_prices:
-    partition: "io"
-    qos: "io"
-  retrieve_monthly_co2_prices:
+  rertieve_synthetic_electricity_demand:
     partition: "io"
     qos: "io"
   build_powerplants:
@@ -57,15 +63,17 @@ default-resources:
 # rules requiring to run on "io" partiaion/qos, we achieve only 2 submitted jobs
 groups:
 - download_and_prepare=download_data
-- retrieve_databundle=download_data
 - retrieve_cost_data=download_data
-- retrieve_natura_raster=download_data
+- retrieve_cutout=download_data
+- retrieve_databundle=download_data
+- retrieve_eez=download_data
 - retrieve_electricity_demand=download_data
+- retrieve_naturalearth_countries=download_data
+- retrieve_nuts_shapes=download_data
+- retrieve_osm_prebuilt=download_data
 - retrieve_ship_raster=download_data
-- retrieve_monthly_fuel_prices=download_data
-- retrieve_monthly_co2_prices=download_data
+- rertieve_synthetic_electricity_demand=download_data
 - build_powerplants=download_data
-- retrieve_cutout=download_cutouts
 
 # Due to limits for qos=partition="priority" to 5 concurrent cluster jobs per user,
 # performance is limited and jobs have to wait for their turn.
