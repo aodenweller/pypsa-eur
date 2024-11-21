@@ -105,9 +105,15 @@ def attach_stores(n, costs, extendable_carriers):
     n.madd("Carrier", carriers)
 
     buses_i = n.buses.index
+    buses_i_country = n.buses["country"].values
 
     if "H2" in carriers:
-        h2_buses_i = n.madd("Bus", buses_i + " H2", carrier="H2", location=buses_i)
+        h2_buses_i = n.madd(
+            "Bus",
+            buses_i + " H2",
+            carrier = "H2",
+            country = buses_i_country,
+            location=buses_i)
 
         n.madd(
             "Store",
@@ -407,7 +413,7 @@ def attach_hydrogen_demand(
             carrier="H2 transfer to H2 demand REMIND",
         )
 
-
+#%%
 if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
@@ -415,9 +421,9 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "add_extra_components",
             simpl="",
-            clusters=6,
-            scenario="h2demand",
-            iteration=200,
+            clusters=4,
+            scenario="TEST",
+            iteration=5,
             year=2050,
         )
     configure_logging(snakemake)
@@ -437,18 +443,18 @@ if __name__ == "__main__":
     attach_hydrogen_pipelines(n, costs, extendable_carriers)
     attach_RCL_generators(
         n,
-        snakemake.params["preinvestment_capacities"],
-        snakemake.input["RCL_p_nom_limits"],
-        snakemake.input["region_mapping"],
-        snakemake.input["technology_cost_mapping"],
+        config = snakemake.params["preinvestment_capacities"],
+        fp_p_nom_limits = snakemake.input["RCL_p_nom_limits"],
+        fp_region_mapping = snakemake.input["region_mapping"],
+        fp_technology_cost_mapping = snakemake.input["technology_cost_mapping"],
     )
     if snakemake.params["h2_demand"]["enabled"]:
         attach_hydrogen_demand(
             n,
-            config=snakemake.params["h2_demand"],
-            year=snakemake.wildcards["year"],
-            fp_region_mapping=snakemake.input["region_mapping"],
-            fp_remind_data=snakemake.input["remind_data"],
+            config = snakemake.params["h2_demand"],
+            year = snakemake.wildcards["year"],
+            fp_region_mapping = snakemake.input["region_mapping"],
+            fp_remind_data = snakemake.input["remind_data"],
         )
     sanitize_carriers(n, snakemake.config)
     if "location" in n.buses:
