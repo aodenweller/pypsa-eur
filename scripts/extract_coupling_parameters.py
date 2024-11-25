@@ -17,7 +17,66 @@ from scipy.stats import zscore
 
 logger = logging.getLogger(__name__)
 
-#%%
+
+# Non-standard function, following standard implementation from PyPSA.statistics
+def calculate_availability_factor(
+    n,
+    comps=None,
+    aggregate_time="mean",
+    aggregate_groups="sum",
+    groupby=None,
+):
+    """
+    Calculate the availability factor of components in the network.
+
+    For information on the list of arguments, see the docs in
+    `Network.statistics` or `pypsa.statistics.StatisticsAccessor`.
+
+    Parameters
+    ----------
+    aggregate_time : str, bool, optional
+        Type of aggregation when aggregating time series.
+        Note that for {'mean', 'sum'} the time series are aggregated to
+        using snapshot weightings. With False the time series is given. Defaults to 'mean'.
+    """
+
+    def get_availability(n, c):
+        """
+        Get the availability time series of a component.
+
+        For generators with p_max_pu time-series (usually renewable
+        generators) this is p_max_pu * p_nom_opt, for conventional
+        generators it is just the dispatch p time-series like for the
+        capacity factor.
+        """
+        if c in n.branch_components:
+            return n.pnl(c).p0
+        elif c == "Store":
+            return n.pnl(c).e
+        else:
+            p = n.pnl(c).p.copy(deep=True)
+            p_max_pu = n.pnl(c).p_max_pu * n.generators.p_nom_opt
+            p.update(p_max_pu)
+            return p
+
+    def func(n, c):
+        p = get_availability(n, c).abs()
+        weights = pypsa.statistics.get_weightings(n, c)
+        return pypsa.statistics.aggregate_timeseries(p, weights, agg=aggregate_time)
+
+    df = pypsa.statistics.aggregate_components(
+        n, func, comps=comps, agg=aggregate_groups, groupby=groupby
+    )
+
+    capacity = n.statistics.optimal_capacity(
+        comps=comps, aggregate_groups=aggregate_groups, groupby=groupby
+    )
+    df = df.div(capacity, axis=0)
+    df.attrs["name"] = "Availability Factor"
+    df.attrs["unit"] = "p.u."
+    return df
+
+
 if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
@@ -25,13 +84,13 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="5",
-            scenario="TEST",
+            iteration="3",
+            scenario="PyPSA_NPi_multiregion_absQ_absP_anticipOff_max1_2024-02-14_17.44.38",
         )
 
         # mock_snakemake doesn't work with checkpoints
         input_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_3H-RCL-Ep{ep:.1f}.nc"
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_6_ec_lcopt_6H-RCL-Ep{ep:.1f}.nc"
             for (year, ep) in zip(
                 # pairs of years and ...
                 [
@@ -53,21 +112,21 @@ if __name__ == "__main__":
                 ],
                 # ... emission prices (ep)
                 [
-                    26.8,
-                    26.8,
-                    26.9,
-                    27.0,
-                    27.2,
-                    27.3,
-                    27.5,
-                    27.8,
-                    28.3,
-                    29.0,
-                    29.8,
-                    30.8,
-                    30.8,
-                    30.8,
-                    30.8,
+                    25.2,
+                    25.6,
+                    26.4,
+                    27.4,
+                    28.8,
+                    30.4,
+                    32.4,
+                    34.6,
+                    40.0,
+                    45.0,
+                    50.0,
+                    55.0,
+                    60.0,
+                    70.0,
+                    80.0,
                 ],
             )
         ]
@@ -242,6 +301,7 @@ if __name__ == "__main__":
         return p, price_import_avg, price_export_avg
 
     capacity_factors = []
+    availability_factors = []
     curtailments = []
     generation_shares = []
     generations = []
@@ -263,7 +323,6 @@ if __name__ == "__main__":
     electricity_loads = []
     optimal_capacities = []
 
-#%%
     for fp in input_networks:
         # Extract year from filename, format: elec_y<YYYY>_<morestuff>.nc
         m = re.findall(r"y(\d{4})", fp)
@@ -355,6 +414,18 @@ if __name__ == "__main__":
         )
         capacity_factor["year"] = year
         capacity_factors.append(capacity_factor)
+
+        # Calculate availability factors
+        availability_factor = calculate_availability_factor(
+            network, comps=["Generator"], groupby=["region", "general_carrier"]
+        )
+        availability_factor = (
+            availability_factor.to_frame("value")
+            .reset_index()
+            .drop(columns=["component"])
+        )
+        availability_factor["year"] = year
+        availability_factors.append(availability_factor)
 
         # Calculate curtailment
         curtailment = network.statistics.curtailment(
@@ -541,7 +612,7 @@ if __name__ == "__main__":
         network.storage_units["peak_residual_load"] = "No"
 
         residual_load = (
-            network.statistics.energy_balance(
+            network.statistics.dispatch(
                 comps=["Generator", "Store", "StorageUnit", "Load"],
                 groupby=["region", "peak_residual_load"],
                 aggregate_time=False,
@@ -565,8 +636,6 @@ if __name__ == "__main__":
                     ]
                     .iloc[0]
                     .item(),
-                    # relative means relative to the average load (which is the only load REMIND knows about)
-                    # TODO: Rethink if this is correct
                     "relative": (
                         x.xs("Yes", level="peak_residual_load")[max_prl_snapshot]
                         .iloc[0]
@@ -829,6 +898,7 @@ if __name__ == "__main__":
     # %%
     # Real combining happens here
     capacity_factors = postprocess_dataframe(capacity_factors)
+    availability_factors = postprocess_dataframe(availability_factors)
     curtailments = postprocess_dataframe(curtailments)
     generation_shares = postprocess_dataframe(generation_shares)
     peak_residual_loads = postprocess_dataframe(
@@ -918,6 +988,7 @@ if __name__ == "__main__":
     # Export as csv values (informative purposes only, coupling parameters below via GDX)
     for fn, df in {
         "capacity_factors": capacity_factors,
+        "availability_factors": availability_factors,
         "curtailments": curtailments,
         "generation_shares": generation_shares,
         "peak_residual_loads": peak_residual_loads,
@@ -1004,6 +1075,14 @@ if __name__ == "__main__":
         domain=[s_year, s_region, s_carrier],
         records=capacity_factors,
         description="Cacacity factors of technology per year and region in p.u.",
+    )
+
+    a = gt.Parameter(
+        gdx,
+        name="availability_factor",
+        domain=[s_year, s_region, s_carrier],
+        records=availability_factors,
+        description="Availability factors of technology per year and region in p.u.",
     )
 
     cu = gt.Parameter(
