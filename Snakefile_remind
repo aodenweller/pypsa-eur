@@ -283,6 +283,7 @@ rule solve_all_scenarios:
 
 
 # Extract coupling parameters from PyPSA-EUR runs for hand-over to next iteration of REMIND-EU
+# TODO: Replace RESULTS + {scvenario}/i{iteration}/ with ITERATION_RESULTS
 rule extract_coupling_parameters:
     input:
         networks=rules.solve_all_scenarios.input["networks"],
@@ -309,6 +310,7 @@ rule extract_coupling_parameters:
         hourly_prices=RESULTS + "{scenario}/i{iteration}/validation/hourly_prices.csv",
         load_prices=RESULTS
         + "{scenario}/i{iteration}/validation/load_prices.csv",
+        markups=RESULTS + "{scenario}/i{iteration}/validation/markups.csv",
         electricity_prices_electrolysis=RESULTS
         + "{scenario}/i{iteration}/validation/electricity_prices_electrolysis.csv",
         electricity_loads=RESULTS

@@ -88,13 +88,13 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="5",
-            scenario="TEST",
+            iteration="3",
+            scenario="PyPSA_NPi_DEU_markUpOnly_startIter3_minLoadon_2024-11-29_10.34.30",
         )
 
         # mock_snakemake doesn't work with checkpoints
         input_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_3H-RCL-Ep{ep:.1f}.nc"
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_6H-RCL-Ep{ep:.1f}.nc"
             for (year, ep) in zip(
                 # pairs of years and ...
                 [
@@ -316,6 +316,7 @@ if __name__ == "__main__":
     grid_investments = []
     market_values = []
     load_prices = []
+    markups = []
     electricity_prices_electrolysis = []
     hourly_prices = []
     crossborder_flows = []
@@ -779,6 +780,17 @@ if __name__ == "__main__":
         )
         market_value["year"] = year
         market_values.append(market_value)
+        
+        # Calculate markup = market value - load price (AC carrier)
+        markup = market_value.drop(columns=["year"]).merge(
+            load_price.query("general_carrier == 'AC'").drop(columns=["general_carrier", "year"]),
+            on=["region"])
+        markup["value"] = markup["value_x"] - markup["value_y"]
+        markup = markup.drop(columns=["value_x", "value_y"])
+        # Replace NaNs with 0.01 $/MWh
+        markup = markup.fillna(0)
+        markup["year"] = year
+        markups.append(markup)
 
     # %%
     ## Combine DataFrames to same format
@@ -916,6 +928,7 @@ if __name__ == "__main__":
     market_values = postprocess_dataframe(market_values)
     hourly_prices = postprocess_dataframe(hourly_prices)
     load_prices = postprocess_dataframe(load_prices)
+    markups = postprocess_dataframe(markups)
     electricity_prices_electrolysis = postprocess_dataframe(
         electricity_prices_electrolysis, map_to_remind=False
     )
@@ -963,9 +976,11 @@ if __name__ == "__main__":
         .reset_index()
     )
 
+    # TODO: Remove
     electricity_loads = electricity_loads.query("carrier == 'AC'").drop(
         columns=["carrier"]
     )
+    # TODO: Remove
     peak_residual_loads = peak_residual_loads.query("carrier == 'AC'").drop(
         columns=["carrier"]
     )
@@ -1005,6 +1020,7 @@ if __name__ == "__main__":
         "market_values": market_values,
         "hourly_prices": hourly_prices,
         "load_prices": load_prices,
+        "markups": markups,
         "electricity_prices_electrolysis": electricity_prices_electrolysis,
         "electricity_loads": electricity_loads,
         "generations": generations,
@@ -1188,6 +1204,14 @@ if __name__ == "__main__":
         domain=[s_year, s_region, s_carrier],
         records=load_prices,
         description="Prices for load types (electricity, hydrogen) per year and region in EUR/MWh (electricity, hydrogen LHV)",
+    )
+    
+    mu = gt.Parameter(
+        gdx,
+        name="markup",
+        domain=[s_year, s_region, s_carrier],
+        records=markups,
+        description="Markup = market value minus load price per year and region in EUR/MWh",
     )
 
     oc_st = gt.Parameter(
