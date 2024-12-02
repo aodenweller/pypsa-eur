@@ -13,6 +13,7 @@ cluster-generic-submit-cmd:
     --qos={resources.qos}
     --cpus-per-task={threads}
     --mem={resources.mem_mb}
+    --time='00:30:00'
     --job-name=smk-{rule}-{wildcards}
     --output=logs_slurm/{rule}/{rule}-{wildcards}-%j.out
     --parsable
@@ -23,7 +24,7 @@ cluster-generic-cancel-cmd: scancel
 keep-going: true
 latency-wait: 60
 #local-cores: 1
-max-jobs-per-second: 10
+max-jobs-per-second: 15
 max-status-checks-per-second: 1
 printshellcmds: true
 #reason: true
@@ -41,8 +42,8 @@ verbose: true
 
 # now define the resources
 default-resources:
-  partition: priority
-  qos: priority
+  partition: standard
+  qos: short
   mem_mb: 1000
   cores: 8
 
@@ -90,25 +91,18 @@ set-resources:
   # Due to group-components aggregating mem_mb resources,
   # the high default requests for mem_mb of these will exceed permitted memory requests in queue
   # but that much memory is currently not needed for small PyPSA-Eur models, so we overwrite the values here
-  add_electricity:
-    mem_mb: 10000
-    threads: 4
-  simplify_network:
-    mem_mb: 10000
-    threads: 4
-  cluster_network:
-    mem_mb: 10000
-    threads: 4
-  prepare_network:
-    mem_mb: 10000
-    threads: 4
-
-default-resources:
-- partition=priority
-- qos=priority
-- nodes=1
-- mem_mb=500
-- walltime="00:60:00"
+  # add_electricity:
+  #   mem_mb: 10000
+  #   threads: 4
+  # simplify_network:
+  #   mem_mb: 10000
+  #   threads: 4
+  # cluster_network:
+  #   mem_mb: 10000
+  #   threads: 4
+  # prepare_network:
+  #   mem_mb: 10000
+  #   threads: 4
 
 # Additional job grouping using snakemake --group for "io" partition/qos
 # permitting only 2 jobs submitted at a time per user; by grouping all
@@ -132,6 +126,6 @@ groups:
 # This statement causes rules which are connected via the group "iy" to be submitted in parallel
 # with 3 independent groups of rules submitted as one job.
 # 3 because of limit on cluster resources (CPUs) in qos/partition
-group-components:
-- iy=3   # 15 independent years / 3 = 5 jobs with 3 years solving per job
-cores: 12 # solve_network in solve_electricity.smk requires 4 cores per rule executions -> 2 simultaneous solves per Job
+#group-components:
+#- iy=1   # 15 independent years / 3 = 5 jobs with 3 years solving per job
+#cores: 12 # solve_network in solve_electricity.smk requires 4 cores per rule executions -> 2 simultaneous solves per Job

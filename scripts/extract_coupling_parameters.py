@@ -393,6 +393,7 @@ if __name__ == "__main__":
 
         # Hack: "hydro" representing hydro dams should be included in capacity and capacity factor calculations
         # By turning them into fake generators and setting the relevant attributes, they are included in the calculations by .statistics(..)
+        # TODO: Check compatibility with statistics.energy_balance(..) and other statistics functions
         network.generators = pd.concat(
             [
                 network.generators,

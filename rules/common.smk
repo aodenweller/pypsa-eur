@@ -103,7 +103,7 @@ def memory(w):
     elif w.clusters == "all":
         return int(factor * (18000 + 180 * 4000))
     else:
-        return int(factor * (5000 + 195 * int(w.clusters)))
+        return int(factor * (10000 + 195 * int(w.clusters)))
 
 
 def input_custom_extra_functionality(w):

@@ -21,9 +21,9 @@ remind_coupling:
   # first value (key) indicates the range of iterations as tuple (inclusive start, exclusive end),
   # the second string (value) represents the time resolution to use for these iterations as string "[0-9]+H"
   automatic_time_resolution:
-    (0,5): "6H"     # Initial iterations fast
+    (0,5): "3H"     # Initial iterations fast
     (5,10): "3H"    # Increase resolution
-    (10,9999): "1H" # All other, later iterations, highest resolution, assume close to convergence
+    (10,9999): "3H" # All other, later iterations, highest resolution, assume close to convergence
 
 logging:
   level: INFO
