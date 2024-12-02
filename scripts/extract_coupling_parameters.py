@@ -88,13 +88,13 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="3",
-            scenario="PyPSA_NPi_DEU_markUpOnly_startIter3_minLoadon_2024-11-29_10.34.30",
+            iteration="20",
+            scenario="PyPSA_NPi_DEU_noPreFac_vmMarkup_2024-12-01_18.01.00",
         )
 
         # mock_snakemake doesn't work with checkpoints
         input_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_6H-RCL-Ep{ep:.1f}.nc"
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_1H-RCL-Ep{ep:.1f}.nc"
             for (year, ep) in zip(
                 # pairs of years and ...
                 [
@@ -308,7 +308,7 @@ if __name__ == "__main__":
     availability_factors = []
     curtailments = []
     generation_shares = []
-    generations = []
+    energy_balances = []
     preinstalled_capacities = []
     potentials = []
     peak_residual_loads = []
@@ -443,13 +443,14 @@ if __name__ == "__main__":
         curtailment["year"] = year
         curtailments.append(curtailment)
 
-        # Calculate generation
-        generation = network.statistics.supply(
-            comps=["Generator"], groupby=["region", "general_carrier"]
+        # Calculate energy balance
+        energy_balance = network.statistics.energy_balance(
+            groupby=["region", "general_carrier"],
+            bus_carrier = "AC"
         )
-        generation = generation.to_frame("value").reset_index()
-        generation["year"] = year
-        generations.append(generation)
+        energy_balance = energy_balance.to_frame("value").reset_index()
+        energy_balance["year"] = year
+        energy_balances.append(energy_balance)
 
         # Calculate shares of technologies in annual generation
         generation_share = (
@@ -787,8 +788,8 @@ if __name__ == "__main__":
             on=["region"])
         markup["value"] = markup["value_x"] - markup["value_y"]
         markup = markup.drop(columns=["value_x", "value_y"])
-        # Replace NaNs with 0.01 $/MWh
-        markup = markup.fillna(0)
+        # Replace NaNs with 0.01 $/MWh (arbitrary small value), passing zero causes problems in GAMS
+        markup = markup.fillna(0.01)
         markup["year"] = year
         markups.append(markup)
 
@@ -938,7 +939,7 @@ if __name__ == "__main__":
     preinstalled_capacities = postprocess_dataframe(
         preinstalled_capacities, map_to_remind=False
     )
-    generations = postprocess_dataframe(generations, map_to_remind=False)
+    energy_balances = postprocess_dataframe(energy_balances, map_to_remind=False)
 
     optimal_capacities = (
         pd.concat(optimal_capacities)
@@ -1023,7 +1024,7 @@ if __name__ == "__main__":
         "markups": markups,
         "electricity_prices_electrolysis": electricity_prices_electrolysis,
         "electricity_loads": electricity_loads,
-        "generations": generations,
+        "energy_balances": energy_balances,
         "potentials": potentials,
         "optimal_capacities": optimal_capacities,
         "crossborder_flows": crossborder_flows,

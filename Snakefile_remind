@@ -315,7 +315,7 @@ rule extract_coupling_parameters:
         + "{scenario}/i{iteration}/validation/electricity_prices_electrolysis.csv",
         electricity_loads=RESULTS
         + "{scenario}/i{iteration}/validation/electricity_loads.csv",
-        generations=RESULTS + "{scenario}/i{iteration}/validation/generations.csv",
+        energy_balances=RESULTS + "{scenario}/i{iteration}/validation/energy_balances.csv",
         potentials=RESULTS + "{scenario}/i{iteration}/validation/potentials.csv",
         optimal_capacities=RESULTS
         + "{scenario}/i{iteration}/validation/optimal_capacities.csv",
