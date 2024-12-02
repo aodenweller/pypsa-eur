@@ -1,0 +1,137 @@
+# A cluster profile for the PIK HPC
+# Profile allows to activeate the gurobi license via an ssh tunnel and solve pypsa
+
+# define the executor
+executor: cluster-generic
+jobs: 500
+
+# define the cluster submission command (slurm wrapper)
+cluster-generic-submit-cmd:
+  mkdir -p logs_slurm/{rule} &&
+  sbatch
+    --partition={resources.partition}
+    --qos={resources.qos}
+    --cpus-per-task={threads}
+    --mem={resources.mem_mb}
+    --job-name=smk-{rule}-{wildcards}
+    --output=logs_slurm/{rule}/{rule}-{wildcards}-%j.out
+    --parsable
+    --export=PATH,LD_LIBRARY_PATH,GUROBI_HOME
+cluster-generic-cancel-cmd: scancel
+
+# Allow canceling of snakemake-submitted slurm jobs using Ctrl+c in combination with sbatch --parsable
+keep-going: true
+latency-wait: 60
+#local-cores: 1
+max-jobs-per-second: 10
+max-status-checks-per-second: 1
+printshellcmds: true
+#reason: true
+rerun-incomplete: true
+# Other rerun-triggers can lead to rules trying to access the internet (for retrieve_*) functions
+# which leads to errors due to lack of internet access from non-"io" partitions
+rerun-trigger:
+- code
+- input
+- mtime
+- params
+restart-times: 2
+scheduler: greedy
+verbose: true
+
+# now define the resources
+default-resources:
+  partition: priority
+  qos: priority
+  mem_mb: 1000
+  cores: 8
+
+#cluster: mkdir -p logs/slurm/{rule} && sbatch --partition={resources.partition} --qos={resources.qos} --mem={resources.mem_mb} --time={resources.walltime} --cpus-per-task={threads} --job-name=PyPSAEur-{rule}-{wildcards} --output=logs/slurm/{rule}/{rule}-{wildcards}-%j.out --parsable
+
+set-resources:
+  download_and_prepare:
+    partition: "io"
+    qos: "io"
+  retrieve_cost_data:
+    partition: "io"
+    qos: "io"
+  retrieve_cutout:
+    partition: "io"
+    qos: "io"
+  retrieve_databundle:
+    partition: "io"
+    qos: "io"
+  retrieve_eez:
+    partition: "io"
+    qos: "io"
+  retrieve_electricity_demand:
+    partition: "io"
+    qos: "io"
+  retrieve_naturalearth_countries:
+    partition: "io"
+    qos: "io"
+  retrieve_nuts_shapes:
+    partition: "io"
+    qos: "io"
+  retrieve_osm_prebuilt:
+    partition: "io"
+    qos: "io"
+  retrieve_ship_raster:
+    partition: "io"
+    qos: "io"
+  rertieve_synthetic_electricity_demand:
+    partition: "io"
+    qos: "io"
+  build_powerplants:
+    partition: "io"
+    qos: "io"
+  build_renewable_profiles:
+    walltime: "'00:60:00'"
+  # Due to group-components aggregating mem_mb resources,
+  # the high default requests for mem_mb of these will exceed permitted memory requests in queue
+  # but that much memory is currently not needed for small PyPSA-Eur models, so we overwrite the values here
+  add_electricity:
+    mem_mb: 10000
+    threads: 4
+  simplify_network:
+    mem_mb: 10000
+    threads: 4
+  cluster_network:
+    mem_mb: 10000
+    threads: 4
+  prepare_network:
+    mem_mb: 10000
+    threads: 4
+
+default-resources:
+- partition=priority
+- qos=priority
+- nodes=1
+- mem_mb=500
+- walltime="00:60:00"
+
+# Additional job grouping using snakemake --group for "io" partition/qos
+# permitting only 2 jobs submitted at a time per user; by grouping all
+# rules requiring to run on "io" partiaion/qos, we achieve only 2 submitted jobs
+groups:
+- download_and_prepare=download_data
+- retrieve_cost_data=download_data
+- retrieve_cutout=download_data
+- retrieve_databundle=download_data
+- retrieve_eez=download_data
+- retrieve_electricity_demand=download_data
+- retrieve_naturalearth_countries=download_data
+- retrieve_nuts_shapes=download_data
+- retrieve_osm_prebuilt=download_data
+- retrieve_ship_raster=download_data
+- rertieve_synthetic_electricity_demand=download_data
+- build_powerplants=download_data
+
+# Due to limits for qos=partition="priority" to 5 concurrent cluster jobs per user,
+# performance is limited and jobs have to wait for their turn.
+# This statement causes rules which are connected via the group "iy" to be submitted in parallel
+# with 3 independent groups of rules submitted as one job.
+# 3 because of limit on cluster resources (CPUs) in qos/partition
+group-components:
+- iy=3   # 15 independent years / 3 = 5 jobs with 3 years solving per job
+cores: 12 # solve_network in solve_electricity.smk requires 4 cores per rule executions -> 2 simultaneous solves per Job
