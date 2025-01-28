@@ -39,7 +39,7 @@ CCGT,efficiency,mapping generation weighted to reference REMIND-EU technology,"[
 coal,efficiency,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
 csp,efficiency,mapping generation weighted to reference REMIND-EU technology,csp,,
 electrolysis,efficiency,mapping generation weighted to reference REMIND-EU technology,elh2,,
-fuel cell,efficiency,mapping generation weighted to reference REMIND-EU technology,elh2,,No value originally in PyPSA-EUR databse therefore using “elh2” as proxy; which should be ok since electrolysis and fuel cell are just reverse technologies ;-)
+fuel cell,efficiency,mapping generation weighted to reference REMIND-EU technology,h2turb,,
 gas,efficiency,setting to reference value,1,p.u.,Dummy technology to avoid PyPSA-EUR throwing an error
 geothermal,efficiency,setting to reference value,-1,p.u.,"Currently not in REMIND-EU output, else could be mapped to technology “geohdr”"
 HVAC overhead,efficiency,setting to reference value,1,p.u.,Process without direct losses
@@ -72,7 +72,7 @@ CCGT,FOM,mapping generation weighted to reference REMIND-EU technology,"[ngcc, n
 coal,FOM,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
 csp,FOM,mapping generation weighted to reference REMIND-EU technology,csp,,
 electrolysis,FOM,mapping generation weighted to reference REMIND-EU technology,elh2,,
-fuel cell,FOM,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
+fuel cell,FOM,mapping generation weighted to reference REMIND-EU technology,h2turb,,
 gas,FOM,setting to reference value,0,%/year,Dummy technology to avoid PyPSA-EUR throwing an error
 geothermal,FOM,mapping generation weighted to reference REMIND-EU technology,geohdr,,
 HVAC overhead,FOM,scaling original values based on reference PyPSA-EUR technology,onwind,,
@@ -136,7 +136,7 @@ CCGT,investment,mapping generation weighted to reference REMIND-EU technology,"[
 coal,investment,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
 csp,investment,setting to reference value,-1,USD/MW,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
 electrolysis,investment,mapping generation weighted to reference REMIND-EU technology,elh2,,
-fuel cell,investment,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
+fuel cell,investment,mapping generation weighted to reference REMIND-EU technology,h2turb,,
 gas,investment,setting to reference value,0,USD/MW,Dummy technology to avoid PyPSA-EUR throwing an error
 geothermal,investment,setting to reference value,-1,USD/MW,"Currently not in REMIND-EU output, else could be mapped to technology “geohdr”"
 HVAC overhead,investment,scaling original values based on reference PyPSA-EUR technology,onwind,,
@@ -169,7 +169,7 @@ CCGT,lifetime,mapping generation weighted to reference REMIND-EU technology,"[ng
 coal,lifetime,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
 csp,lifetime,mapping generation weighted to reference REMIND-EU technology,csp,,
 electrolysis,lifetime,mapping generation weighted to reference REMIND-EU technology,elh2,,
-fuel cell,lifetime,scaling original values based on reference PyPSA-EUR technology,electrolysis,,
+fuel cell,lifetime,mapping generation weighted to reference REMIND-EU technology,h2turb,,
 gas,lifetime,setting to reference value,1,years,Dummy technology to avoid PyPSA-EUR throwing an error
 geothermal,lifetime,mapping generation weighted to reference REMIND-EU technology,geohdr,,
 HVAC overhead,lifetime,scaling original values based on reference PyPSA-EUR technology,onwind,,
@@ -202,7 +202,7 @@ CCGT,VOM,mapping generation weighted to reference REMIND-EU technology,"[ngcc, n
 coal,VOM,mapping generation weighted to reference REMIND-EU technology,"[igcc, igccc, pc, coalchp]",,
 csp,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “csp”"
 electrolysis,VOM,mapping generation weighted to reference REMIND-EU technology,elh2,,
-fuel cell,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
+fuel cell,VOM,mapping generation weighted to reference REMIND-EU technology,h2turb,,
 gas,VOM,setting to reference value,0,USD/MWh,Dummy technology to avoid PyPSA-EUR throwing an error
 geothermal,VOM,setting to reference value,0,USD/MWh,"Currently not in REMIND-EU output, else could be mapped to technology “geohdr”"
 HVAC overhead,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
