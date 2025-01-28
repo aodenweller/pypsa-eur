@@ -88,13 +88,13 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="20",
-            scenario="PyPSA_NPi_DEU_noPreFac_vmMarkup_2024-12-01_18.01.00",
+            iteration="4",
+            scenario="PyPSA_NPi_DEU_preFac_windOffFree_2024-12-10_23.46.03",
         )
 
         # mock_snakemake doesn't work with checkpoints
         input_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_1H-RCL-Ep{ep:.1f}.nc"
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_3H-RCL-Ep{ep:.1f}.nc"
             for (year, ep) in zip(
                 # pairs of years and ...
                 [
@@ -306,6 +306,7 @@ if __name__ == "__main__":
 
     capacity_factors = []
     availability_factors = []
+    capacity_factors_links = []
     curtailments = []
     generation_shares = []
     energy_balances = []
@@ -421,6 +422,18 @@ if __name__ == "__main__":
         )
         capacity_factor["year"] = year
         capacity_factors.append(capacity_factor)
+        
+        # Extract capacity factors of link components (H2 and batteries)
+        capacity_factor_link = network.statistics.capacity_factor(
+            comps=["Link", "Line", "Store", "StorageUnit"], groupby=["region", "general_carrier"]
+        )
+        capacity_factor_link = (
+            capacity_factor_link.to_frame("value").reset_index().drop(columns=["component"])
+        )
+        capacity_factor_link["year"] = year
+        # Remove PHS & hydro & ror
+        capacity_factor_link = capacity_factor_link.query("general_carrier != 'PHS & hydro & ror'")
+        capacity_factors_links.append(capacity_factor_link)
 
         # Calculate availability factors
         availability_factor = calculate_availability_factor(
@@ -919,6 +932,7 @@ if __name__ == "__main__":
     # %%
     # Real combining happens here
     capacity_factors = postprocess_dataframe(capacity_factors)
+    capacity_factors_links = postprocess_dataframe(capacity_factors_links, map_to_remind=False)
     availability_factors = postprocess_dataframe(availability_factors)
     curtailments = postprocess_dataframe(curtailments)
     generation_shares = postprocess_dataframe(generation_shares)
@@ -1012,6 +1026,7 @@ if __name__ == "__main__":
     # Export as csv values (informative purposes only, coupling parameters below via GDX)
     for fn, df in {
         "capacity_factors": capacity_factors,
+        "capacity_factors_links": capacity_factors_links,
         "availability_factors": availability_factors,
         "curtailments": curtailments,
         "generation_shares": generation_shares,
@@ -1100,6 +1115,14 @@ if __name__ == "__main__":
         domain=[s_year, s_region, s_carrier],
         records=capacity_factors,
         description="Cacacity factors of technology per year and region in p.u.",
+    )
+    
+    cl = gt.Parameter(
+        gdx,
+        name="storage_and_transmission_capacity_factors",
+        domain=[s_year, s_region, s_storage_and_transmission_technologies],
+        records=capacity_factors_links,
+        description="Capacity factors of storage and transmission technologies per year and region in p.u.",
     )
 
     a = gt.Parameter(

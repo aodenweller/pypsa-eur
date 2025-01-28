@@ -292,6 +292,7 @@ rule extract_coupling_parameters:
         remind_weights=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
         capacity_factors=ITERATION_RESULTS + "validation/capacity_factors.csv",
+        capacity_factors_links=ITERATION_RESULTS + "validation/capacity_factors_links.csv",
         availability_factors=ITERATION_RESULTS + "validation/availability_factors.csv",
         curtailments=ITERATION_RESULTS + "validation/curtailments.csv",
         generation_shares=ITERATION_RESULTS + "validation/generation_shares.csv",
