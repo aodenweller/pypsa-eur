@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 # %%
-# There are three steps for importing REMIND-EU costs followed in this script:
+# There are four steps for importing REMIND-EU costs followed in this script:
 # 1. Technologies which get their values from REMIND-EU, weighted by the electricity generation of the related REMIND-EU technology
-# 2. Technologies where values are scaled based on a proxy technology
-# 3. Technologies where values are set in the technology mapping config file
-# 4. Add discount rate for all technologies where not discount rate is set in the technology mapping config file
+# 2. Technologies where values are taken from PyPSA-EUR default values
+# 3. Technologies where original PyPSA-Eur 2025 values are scaled based on a REMIND proxy technology
+# 4. Technologies where values are set in the technology mapping config file
+# 5. Add discount rate for all technologies where not discount rate is set in the technology mapping config file
 
 import logging
 
@@ -20,7 +21,7 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_costs",
-            scenario="PyPSA_NPi_preFacAuto_Avg_2023-11-10_09.42.27",
+            scenario="PyPSA_NPi_DEU_freeWindOff_noPreFac_h2stor_2025-01-28_11.41.43",
             iteration="1",
             year="2025",
         )
@@ -53,11 +54,12 @@ technology_mapping = pd.read_csv(
 )
 
 # Convert list-like entries to real lists and explode for 1:1 mapping per row entry between PyPSA-EUR and REMIND-EU technologies
-technology_mapping["reference"] = (
-    technology_mapping["reference"].apply(yaml.safe_load).to_list()
-)
+technology_mapping["reference"] = technology_mapping["reference"].apply(
+    lambda x: yaml.safe_load(x) if isinstance(x, str) else x
+).to_list()
 technology_mapping = technology_mapping.explode("reference")
 
+#%%
 # +++ 1. Technologies which get their values from REMIND-EU, weighted by the electricity generation of the related REMIND-EU technology +++
 mapped_technologies = technology_mapping.query(
     "`couple to` == 'mapping generation weighted to reference REMIND-EU technology'"
@@ -302,55 +304,17 @@ mapped_technologies[
     "further description"
 ] = "Extracted from REMIND-EU model in 'import_REMIND_costs.py' script"
 
-
-# +++ 2. Technologies where values are scaled based on a proxy technology +++
-scaled_technologies = technology_mapping.query(
-    "`couple to` == 'scaling original values based on reference PyPSA-EUR technology'"
+#%%
+# +++ 2. Technologies where values are taken from PyPSA-EUR default values
+pypsa_technologies = technology_mapping.query(
+    "`couple to` == 'mapping to PyPSA-EUR default values'"
 ).drop(columns=["unit"])
-
-# Check if technologies can be scaled
-if not (
-    missing_technologies := scaled_technologies.loc[
-        ~scaled_technologies["reference"].isin(
-            mapped_technologies["technology"].unique()
-        )
-    ]
-).empty:
-    raise AssertionError(
-        f"Scaling only works if the technogloy used as reference is mapped from a REMIND-EU technology."
-        f"The following technologies do not use reference technology which was previously mapped to REMIND-EU technologies."
-        f"Check: {missing_technologies}"
-    )
 
 # Load original costs used by standard PyPSA-EUR model used as calculation basis
 original_cost = pd.read_csv(snakemake.input["original_costs"])
 
-# Get information on the reference technology (original cost in standard PyPSA-EUR) as well as the technologies REMIND-EU value
-df = scaled_technologies.merge(
-    mapped_technologies,
-    left_on=["reference", "parameter"],
-    right_on=["technology", "parameter"],
-    how="left",
-    validate="many_to_one",
-).rename(columns={"value": "reference_value_new", "unit": "reference_unit_new"})
-
-# Add original PyPSA-EUR technology assumptions which will then be scaled
-df = df.merge(
-    original_cost,
-    left_on=["technology", "parameter"],
-    right_on=["technology", "parameter"],
-    how="left",
-    validate="many_to_one",
-).rename(
-    columns={"value": "reference_value_original", "unit": "reference_unit_original"}
-)
-# Calculate the scaling factor
-df["scale_by"] = df["reference_value_new"] / df["reference_value_original"]
-# Technologies reported in PyPSA-EUR with kW or kWh have a scale_factor off by 1000 which needs correction
-df.loc[df["reference_unit_original"].str.contains("kW"), "scale_by"] /= 1000
-
-# Get the original value from standard PyPSA-EUR for the technology to scale
-df = df.merge(
+# Merge with original costs
+pypsa_technologies = pypsa_technologies.merge(
     original_cost,
     left_on=["PyPSA-EUR technology", "parameter"],
     right_on=["technology", "parameter"],
@@ -358,43 +322,97 @@ df = df.merge(
     validate="one_to_one",
 )
 
-# Scale original value
-df["new_value"] = df["value"] * df["scale_by"]
+pypsa_technologies["source"] = "PyPSA-EUR"
+pypsa_technologies[
+    "further description"
+] = "Default parameter from PyPSA-EUR model in 'import_REMIND_costs.py' script"
 
-df.loc[df["unit"].str.contains("kW"), "new_value"] *= 1000
-# Adjust unit: Unit has to be adjusted, because REMIND-EU uses MW and MWh, PyPSA-EUR sometimes kW and kWh as basis for scaling
-df["new_unit"] = df["unit"].str.replace("kW", "MW").str.replace("EUR", "USD")
-
-df["further description"] = (
-    "Original value from PyPSA-EUR scaled by cost development experienced in REMIND-EU experienced by the reference technology: "
-    + df["reference"]
-    + "\n"
-    "Original source: "
-    + df["source_x"]
-    + " with description: "
-    + df["further description_x"]
-)
-df["source"] = "REMIND-EU and PyPSA-EUR"
-
-scaled_technologies = df[
-    [
-        "PyPSA-EUR technology",
-        "parameter",
-        "new_value",
-        "new_unit",
-        "source",
-        "further description",
+# Only keep relevant columns
+pypsa_technologies = pypsa_technologies[
+    ["technology", "parameter", "value", "unit", "source", "further description"]
     ]
-].rename(
-    columns={
-        "PyPSA-EUR technology": "technology",
-        "new_value": "value",
-        "new_unit": "unit",
+
+#%%
+# +++ 3. Technologies where values are scaled based on a proxy technology +++
+# In 2025 the original cost assumptions from PyPSA-EUR are used
+# In later years the costs are scaled based on the cost developmentin REMIND-EU for a reference technology
+scaled_technologies = technology_mapping.query(
+    "`couple to` == 'scaling original values based on reference PyPSA-EUR technology'"
+).drop(columns=["unit"])
+
+# Assert that the parameter column is only investment, otherwise raise an error
+assert (
+    scaled_technologies["parameter"] == "investment"
+).all(), "Only investment costs can be scaled based on the reference technology"
+
+# Load original costs in 2025
+original_cost_2025 = pd.read_csv(snakemake.input["original_costs_2025"])
+
+# Get costs of the reference technology in REMIND-EU from remind_data
+reference_cost_improvement = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="p32_capCostwAdjCost",
+    rename_columns={
+        "ttot": "year",
+        "all_regi": "region",
+        "all_te": "technology",
     }
+# Only include year 2025 or wildcard year in order to calculate the cost decrease of the reference technology
+).query("year in ['{}', '2025']".format(snakemake.wildcards["year"]))
+
+# Calculate the cost decrease of the reference technology from 2025 to the year of interest
+reference_cost_improvement = reference_cost_improvement.pivot_table(
+    index="technology", columns="year", values="value", observed=False
+).reset_index()
+reference_cost_improvement["cost_decrease"] = (
+    reference_cost_improvement[snakemake.wildcards["year"]] / reference_cost_improvement["2025"]
 )
 
+# Drop the year columns which are not needed anymore
+reference_cost_improvement = reference_cost_improvement.drop(
+    columns=['2025', snakemake.wildcards["year"]]
+)
 
-# +++ 3. Technologies where values are set in the technology mapping config file +++
+# Use original costs from 2025, scale them by the cost decrease of the reference technology and use them as new costs
+df = scaled_technologies.merge(
+    original_cost_2025,
+    left_on=["PyPSA-EUR technology", "parameter"],
+    right_on=["technology", "parameter"],
+    how="left",
+    validate="one_to_one"
+).rename(
+    columns={"value": "original_value_2025", "unit": "original_unit"}
+)
+
+# Merge with the cost decrease of the reference technology
+df = df.merge(
+    reference_cost_improvement,
+    left_on="reference",
+    right_on="technology",
+    how="left",
+    validate="many_to_one"
+)
+
+# Calculate the new value
+df["value"] = df["original_value_2025"] * df["cost_decrease"]
+
+# Add further description
+df["source"] = "REMIND-EU and PyPSA-EUR"
+df["further description"] = (
+    "Original value from PyPSA-EUR in 2025 scaled by REMIND cost development until"
+    + snakemake.wildcards["year"]
+    + "for technology: " + df["reference"]
+)
+
+# Only keep relevant columns
+scaled_technologies = df[
+    ["PyPSA-EUR technology", "parameter", "value", "original_unit", "source", "further description"]
+].rename(
+    columns={"PyPSA-EUR technology": "technology", "original_unit": "unit"}
+)
+
+#%%
+# +++ 4. Technologies where values are set in the technology mapping config file +++
 set_technologies = technology_mapping.query(
     "`couple to` == 'setting to reference value'"
 ).rename(
@@ -413,12 +431,14 @@ set_technologies["further description"] = set_technologies[
     "further description"
 ].fillna("")
 
+#%%
 # Combine all technologies
-costs = pd.concat([mapped_technologies, scaled_technologies, set_technologies])
+costs = pd.concat([mapped_technologies, pypsa_technologies, scaled_technologies, set_technologies])
 
-# +++ 4. Add discount rate +++
+#%%
+# +++ 5. Add discount rate +++
 # Discount rate is calculated on REMIND-EU side and just needs to be added for all technologies
-# By adding the discount rate after the 3. step, we allow the discount rate to be overwritten in the technology mapping config file
+# By adding the discount rate after the 4. step, we allow the discount rate to be overwritten in the technology mapping config file
 
 # Get technologies with and without "discount rate"
 discount_rate_technologies = costs.loc[
@@ -456,7 +476,6 @@ discount_rate = (
     .T
 )
 
-# %%
 discount_rate = discount_rate.merge(
     technologies_without_discount_rate[["technology"]].drop_duplicates(), how="cross"
 )
@@ -464,7 +483,10 @@ discount_rate = discount_rate.merge(
 # Add discount rate to costs
 costs = pd.concat([costs, discount_rate])
 
-# Special case: electrolysis investment costs in PyPSA-Eur are in kW (input), instead of MW (output) in REMIND-EU
+#%%
+# Special case: Convert electrolysis capex from USD/MW_H2 (output, in REMIND) to USD/MW_e (input, in PyPSA)
+# Note: For hydrogen turbines, the correction from USD/MW_el (output, in REMIND) to USD/MW_e (input, in PyPSA)
+# is done in add_extra_components
 tech = "electrolysis"
 costs.loc[
     (costs["technology"] == tech) & (costs["parameter"] == "investment"), "value"
