@@ -532,7 +532,7 @@ def prepare_network(
 
     return n
 
-def add_RCL_constraints(n, config):
+def add_RCL_generator_constraints(n):
     """
     Add RCL (region & carrier limit) constraint to the network for region and
     carrier groups.
@@ -548,7 +548,6 @@ def add_RCL_constraints(n, config):
     Parameters
     ----------
     n : pypsa.Network
-    config : dict
 
     Example config.remind.yaml
     --------------------------
@@ -588,7 +587,7 @@ def add_RCL_constraints(n, config):
 
     ## 1. Constraint: Maximum capacity for free/low-cost RCL generators
 
-    # Get all RCL generators and their non-RCL counterparts; apply the constraint to their combined p_nom_opt
+    # Get all RCL generators; apply the constraint to their combined p_nom_opt
     idx_rcl = n.generators.query(r"index.str.contains(r' \(RCL\)')").index
     generators_rcl = generators.loc[idx_rcl]
     grouper_rcl = [
@@ -642,6 +641,65 @@ def add_RCL_constraints(n, config):
         n.model.add_constraints(
             lhs.sel(group=index) <= potential.loc[index]["p_nom_max"].values,
             name="RCL_p_nom_max_pot"
+        )
+
+def add_RCL_link_constraints(n):
+    """
+    Add RCL (region & carrier limit) constraint to the network for region and
+    carrier groups.
+
+    The RCL link constraint is a single constraint:
+    1. Add a maximum level for link nominal capacity per group of countries (=region) and group of carriers (=technology_group) which affects the "RCL" links, i.e. copies of links attach to each bus specifically for this constraint which have no capital_cost; this constraint limits their maximum expansion.
+
+    The RCL_p_nom_limits.csv file thus provides the minimum capacity that can be installed for free.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    
+    Example config.remind.yaml
+    --------------------------
+    scenario:
+        opts: [1H-RCL]
+    """
+    logger.info(
+        "Adding link capacity constraints (RCL) per carrier groups (technology group) and country groups (REMIND regions)."
+    )
+    
+    links = n.links.copy().rename_axis(index="Link-ext")
+
+    # RHS: p_nom_min from REMIND-EU
+    # Could also get p_nom_min from n.links
+    p_nom_limits = pd.read_csv(
+        snakemake.input["RCL_p_nom_limits"],
+    ).set_index(
+        ["region_REMIND", "technology_group"]
+    )["p_nom_min"]
+    
+    # Get all RCL links, apply the constraint to their combined p_nom_opt
+    idx_rcl = n.links.query(r"index.str.contains(r' \(RCL\)')").index
+    links_rcl = links.loc[idx_rcl]
+    grouper_rcl = [
+        links_rcl["region_REMIND"],
+        links_rcl["technology_group"],
+    ]
+
+    # LHS: sum of generator nominal capacity per region / technology group
+    grouper_rcl = xr.DataArray(
+        pd.MultiIndex.from_arrays(grouper_rcl), dims=["Link-ext"]
+    )
+    p_nom_rcl = (
+        n.model["Link-p_nom"].loc[links_rcl.index].groupby(grouper_rcl).sum()
+    )
+
+    # Determine overlapping indices to only create constraints for generator technologies which are actually constrained by the REMIND-EU
+    indexes_rcl = p_nom_rcl.indexes["group"].intersection(p_nom_limits.index)
+
+    # Add constraint
+    if not indexes_rcl.empty:
+        n.model.add_constraints(
+            p_nom_rcl.sel(group=indexes_rcl) <= p_nom_limits.loc[indexes_rcl].values,
+            name="RCL_links_p_nom_max",
         )
 
 # %%
@@ -1144,7 +1202,9 @@ def extra_functionality(n, snapshots):
     if constraints["CCL"] and n.generators.p_nom_extendable.any():
         add_CCL_constraints(n, config)
     if constraints["RCL"] and n.generators.p_nom_extendable.any():
-        add_RCL_constraints(n, config)
+        add_RCL_generator_constraints(n)
+    if constraints["RCL"] and n.links.p_nom_extendable.any():
+        add_RCL_link_constraints(n)
     reserve = config["electricity"].get("operational_reserve", {})
     if reserve.get("activate"):
         add_operational_reserve_margin(n, snapshots, config)
@@ -1255,8 +1315,8 @@ if __name__ == "__main__":
             opts="3H-RCL-Ep27.3",
             clusters="4",
             ll="copt",
-            scenario="TEST",
-            iteration="5",
+            scenario="PyPSA_NPi_DEU_freeWindOff_noPreFac_h2stor_2025-01-30_18.00.58",
+            iteration="1",
             year="2050",
         )
     configure_logging(snakemake)

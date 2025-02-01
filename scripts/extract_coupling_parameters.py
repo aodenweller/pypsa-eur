@@ -88,8 +88,8 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="4",
-            scenario="PyPSA_NPi_DEU_preFac_windOffFree_2024-12-10_23.46.03",
+            iteration="1",
+            scenario="PyPSA_NPi_DEU_freeWindOff_noPreFac_h2stor_2025-01-30_18.00.58",
         )
 
         # mock_snakemake doesn't work with checkpoints
@@ -391,6 +391,11 @@ if __name__ == "__main__":
         network.generators.loc[
             network.generators.index.str.contains("RCL"), "RCL"
         ] = True
+        
+        network.links["RCL"] = False
+        network.links.loc[
+            network.links.index.str.contains("RCL"), "RCL"
+        ] = True
 
         # Hack: "hydro" representing hydro dams should be included in capacity and capacity factor calculations
         # By turning them into fake generators and setting the relevant attributes, they are included in the calculations by .statistics(..)
@@ -487,7 +492,7 @@ if __name__ == "__main__":
         # RCL-capacities are <= pre-installed capacities provided from REMIND, choose RCL capacities here
         # as starter; these are first expanded before the same carriers but non-RCL are installed (due to 0 costs)
         preinstalled_capacity = network.statistics.optimal_capacity(
-            comps=["Generator"], groupby=["RCL", "region", "general_carrier"]
+            comps=["Generator", "Link"], groupby=["RCL", "region", "general_carrier"]
         )
         preinstalled_capacity = preinstalled_capacity.to_frame("value").reset_index()
         preinstalled_capacity["year"] = year
@@ -629,7 +634,11 @@ if __name__ == "__main__":
             list(dispatchable_technologies), "peak_residual_load"
         ] = "Yes"
         network.loads["peak_residual_load"] = "Load"
+        # Don't include batteries into peak residual load calculation
         network.stores["peak_residual_load"] = "No"
+        # Include hydrogen storage into peak residual load calculation
+        #network.stores.loc[network.stores["carrier"] == "H2", "peak_residual_load"] = "Yes"
+        # Don't include hydro and pumped hydro into peak residual load calculation (no PHS in REMIND)
         network.storage_units["peak_residual_load"] = "No"
 
         residual_load = (

@@ -608,6 +608,7 @@ rule add_extra_components:
         costs=config_provider("costs"),
         preinvestment_capacities=config["remind_coupling"]["preinvestment_capacities"],
         h2_demand=config["remind_coupling"]["h2_demand"],
+        constraints=config["solving"]["constraints"]
     input:
         network=SCENARIO_RESOURCES
         + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}.nc",

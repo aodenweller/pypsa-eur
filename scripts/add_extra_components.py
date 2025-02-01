@@ -315,6 +315,75 @@ def attach_RCL_generators(
         right_index=True,
     )
 
+def attach_RCL_links(
+    n,
+    config,
+    fp_p_nom_limits,
+    fp_region_mapping,
+    fp_technology_cost_mapping,
+):
+    """
+    Add additional links (for storage technologies)
+    to network for the RCL constraint used in the
+    REMIND-EU <-> PyPSA-EUR coupling.
+    """
+    p_nom_limits = pd.read_csv(fp_p_nom_limits)
+    region_mapping = get_region_mapping(
+        fp_region_mapping, source="REMIND-EU", target="PyPSA-EUR"
+    )
+
+    # Apply mapping from REMIND/general to PyPSA-EUR countries
+    p_nom_limits["country"] = p_nom_limits["region_REMIND"].map(region_mapping)
+
+    # Determine "carrier" which are related to the technology groups
+    technology_mapping = (
+        get_technology_mapping(fp_technology_cost_mapping, group_technologies=True)
+        .set_index("technology_group")
+        .rename(columns={"PyPSA-Eur": "carrier"})["carrier"]
+        .drop_duplicates()
+    )
+    p_nom_limits = p_nom_limits.merge(
+        technology_mapping, on="technology_group", how="left"
+    )
+    
+    # Only select carrier electrolysis and fuel cell
+    p_nom_limits = p_nom_limits[p_nom_limits["carrier"].isin(["electrolysis", "fuel cell"])]
+    
+    # Add prefix "H2" to carrier
+    p_nom_limits["carrier"] = "H2 " + p_nom_limits["carrier"]
+
+    # Flatten country column entries such that all lists are converted into individual rows
+    p_nom_limits = p_nom_limits.explode("country").explode("carrier")
+    
+    # Add country-reference to links for mapping
+    n.links["country"] = n.links["bus0"].map(n.buses["country"])
+
+    # Select all links from n.links where the combination of country and carrier can be found in p_nom_limits,
+    # i.e. later a RCL constraint should be applied for
+    rcl_links = n.links.join(
+        p_nom_limits.set_index(["country", "carrier"]),
+        on=["country", "carrier"],
+        how="right",
+        rsuffix="_rcl",
+        validate="m:1",
+    )
+    rcl_links = rcl_links.dropna(
+        subset="p_nom_min_rcl"
+    )  # Drop all links which are not subject to RCL constraint
+
+    # Only consider RCL constraint for links which are extendable
+    rcl_links = rcl_links[rcl_links["p_nom_extendable"] == True]
+
+    # Modify properties of to-be-added RCL links which differ from the original links
+    old_links = rcl_links.index
+    rcl_links.index = old_links + " (RCL)"
+    rcl_links["capital_cost"] = config["capital_cost"]
+    rcl_links["p_nom_min"] = 0.0
+    rcl_links["p_nom"] = 0.0
+    rcl_links["p_nom_max"] = np.inf
+    
+    # Finally add RCL links to network
+    n.madd("Link", rcl_links.index, **rcl_links)
 
 def attach_hydrogen_demand(
     n,
@@ -422,8 +491,8 @@ if __name__ == "__main__":
             "add_extra_components",
             simpl="",
             clusters=4,
-            scenario="TEST",
-            iteration=5,
+            scenario="PyPSA_NPi_DEU_freeWindOff_noPreFac_h2stor_2025-01-30_18.00.58",
+            iteration=1,
             year=2050,
         )
     configure_logging(snakemake)
@@ -441,13 +510,22 @@ if __name__ == "__main__":
     attach_storageunits(n, costs, extendable_carriers, max_hours)
     attach_stores(n, costs, extendable_carriers)
     attach_hydrogen_pipelines(n, costs, extendable_carriers)
-    attach_RCL_generators(
-        n,
-        config = snakemake.params["preinvestment_capacities"],
-        fp_p_nom_limits = snakemake.input["RCL_p_nom_limits"],
-        fp_region_mapping = snakemake.input["region_mapping"],
-        fp_technology_cost_mapping = snakemake.input["technology_cost_mapping"],
-    )
+    if snakemake.params["constraints"]["RCL"]:
+        attach_RCL_generators(
+            n,
+            config = snakemake.params["preinvestment_capacities"],
+            fp_p_nom_limits = snakemake.input["RCL_p_nom_limits"],
+            fp_region_mapping = snakemake.input["region_mapping"],
+            fp_technology_cost_mapping = snakemake.input["technology_cost_mapping"],
+        )
+        attach_RCL_links(
+            n,
+            config = snakemake.params["preinvestment_capacities"],
+            fp_p_nom_limits = snakemake.input["RCL_p_nom_limits"],
+            fp_region_mapping = snakemake.input["region_mapping"],
+            fp_technology_cost_mapping = snakemake.input["technology_cost_mapping"]
+        )
+    
     if snakemake.params["h2_demand"]["enabled"]:
         attach_hydrogen_demand(
             n,
