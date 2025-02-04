@@ -37,6 +37,8 @@ rerun-trigger:
 - mtime
 - params
 restart-times: 2
+# Disable snakemake lock
+nolock: true
 scheduler: greedy
 verbose: true
 
