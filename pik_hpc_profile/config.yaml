@@ -6,14 +6,16 @@ executor: cluster-generic
 jobs: 500
 
 # define the cluster submission command (slurm wrapper)
+# Use partition standard and qos short if not set
 cluster-generic-submit-cmd:
+  export PARTITION=${{PARTITION:-standard}} QOS=${{QOS:-short}} &&
   mkdir -p logs_slurm/{rule} &&
   sbatch
-    --partition={resources.partition}
-    --qos={resources.qos}
+    --partition=$PARTITION
+    --qos=$QOS
     --cpus-per-task={threads}
     --mem={resources.mem_mb}
-    --time='00:30:00'
+    --time='00:10:00'
     --job-name=smk-{rule}-{wildcards}
     --output=logs_slurm/{rule}/{rule}-{wildcards}-%j.out
     --parsable
@@ -48,8 +50,6 @@ default-resources:
   qos: short
   mem_mb: 1000
   cores: 8
-
-#cluster: mkdir -p logs/slurm/{rule} && sbatch --partition={resources.partition} --qos={resources.qos} --mem={resources.mem_mb} --time={resources.walltime} --cpus-per-task={threads} --job-name=PyPSAEur-{rule}-{wildcards} --output=logs/slurm/{rule}/{rule}-{wildcards}-%j.out --parsable
 
 set-resources:
   download_and_prepare:
