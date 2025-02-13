@@ -21,9 +21,9 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_costs",
-            scenario="PyPSA_NPi_DEU_freeWindOff_noPreFac_h2stor_2025-01-28_11.41.43",
+            scenario="PyPSA_PkBudg1000_DEU_2025-02-07_17.28.08",
             iteration="1",
-            year="2025",
+            year="2050",
         )
 
     configure_logging(snakemake)
@@ -345,8 +345,31 @@ assert (
     scaled_technologies["parameter"] == "investment"
 ).all(), "Only investment costs can be scaled based on the reference technology"
 
-# Load original costs in 2025
-original_cost_2025 = pd.read_csv(snakemake.input["original_costs_2025"])
+# Get costs of the reference technology in REMIND-EU from remind_data
+reference_cost_improvement = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="p32_capCostwAdjCost",
+    rename_columns={
+        "ttot": "year",
+        "all_regi": "region",
+        "all_te": "technology",
+    }
+# Only include the first_year or wildcard year in order to calculate the cost decrease of the reference technology
+)
+
+# Get first year of REMIND coupling data
+years_coupled = reference_cost_improvement.year.unique().tolist()
+first_year = int(min(years_coupled))
+
+reference_cost_improvement = reference_cost_improvement.query("year in ['{}', '{}']".format(first_year, snakemake.wildcards["year"]))
+
+# Load original costs in first year
+if first_year == 2025:
+    original_cost = pd.read_csv(snakemake.input["original_costs_2025"])
+elif first_year == 2030:
+    original_cost = pd.read_csv(snakemake.input["original_costs_2030"])
+else:
+    raise ValueError(f"Year {first_year} not supported for original costs")
 
 # Get costs of the reference technology in REMIND-EU from remind_data
 reference_cost_improvement = read_remind_data(
@@ -357,31 +380,29 @@ reference_cost_improvement = read_remind_data(
         "all_regi": "region",
         "all_te": "technology",
     }
-# Only include year 2025 or wildcard year in order to calculate the cost decrease of the reference technology
-).query("year in ['{}', '2025']".format(snakemake.wildcards["year"]))
+# Only include the first_year or wildcard year in order to calculate the cost decrease of the reference technology
+).query("year in ['{}', '{}']".format(first_year, snakemake.wildcards["year"]))
 
 # Calculate the cost decrease of the reference technology from 2025 to the year of interest
 reference_cost_improvement = reference_cost_improvement.pivot_table(
     index="technology", columns="year", values="value", observed=False
 ).reset_index()
 reference_cost_improvement["cost_decrease"] = (
-    reference_cost_improvement[snakemake.wildcards["year"]] / reference_cost_improvement["2025"]
+    reference_cost_improvement[snakemake.wildcards["year"]] / reference_cost_improvement[str(first_year)]
 )
 
 # Drop the year columns which are not needed anymore
-reference_cost_improvement = reference_cost_improvement.drop(
-    columns=['2025', snakemake.wildcards["year"]]
-)
+reference_cost_improvement = reference_cost_improvement.set_index("technology")[["cost_decrease"]]
 
-# Use original costs from 2025, scale them by the cost decrease of the reference technology and use them as new costs
+# Use original costs, scale them by the cost decrease of the reference technology and use them as new costs
 df = scaled_technologies.merge(
-    original_cost_2025,
+    original_cost,
     left_on=["PyPSA-EUR technology", "parameter"],
     right_on=["technology", "parameter"],
     how="left",
     validate="one_to_one"
 ).rename(
-    columns={"value": "original_value_2025", "unit": "original_unit"}
+    columns={"value": "original_value", "unit": "original_unit"}
 )
 
 # Merge with the cost decrease of the reference technology
@@ -394,14 +415,16 @@ df = df.merge(
 )
 
 # Calculate the new value
-df["value"] = df["original_value_2025"] * df["cost_decrease"]
+df["value"] = df["original_value"] * df["cost_decrease"]
 
 # Add further description
 df["source"] = "REMIND-EU and PyPSA-EUR"
 df["further description"] = (
-    "Original value from PyPSA-EUR in 2025 scaled by REMIND cost development until"
+    "Original value from PyPSA-EUR in " 
+    + str(first_year)
+    + " scaled by REMIND cost development until "
     + snakemake.wildcards["year"]
-    + "for technology: " + df["reference"]
+    + " for technology: " + df["reference"]
 )
 
 # Only keep relevant columns

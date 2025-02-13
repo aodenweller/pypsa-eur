@@ -16,7 +16,7 @@ if "snakemake" not in globals():
     # mock_snakemake doesn't work with checkpoints
     snakemake = SimpleNamespace()
     snakemake.wildcards = {
-        "scenario": "PyPSA_c50_preFacManual_AvgBothWays_2023-09-25_17.48.05",
+        "scenario": "PyPSA_PkBudg1000_DEU_2025-02-07_17.28.08",
         "iteration": "1",
     }
 
@@ -71,6 +71,13 @@ df = read_remind_data(
 # unit conversion from USD/tC to USD/tCO2
 df["value"] *= 12 / (12 + 2 * 16)
 
+# Get coupled years from REMIND data
+years_coupled = read_remind_data(
+    file_path=snakemake.input["remind_data"],
+    variable_name="tPy32",
+    rename_columns={"ttot": "year"},
+).year.unique().tolist()
+
 # %%
 # Calculate mean co2 price across all regions overlapping between REMIND and PyPSA-EUR countries for each year
 df = (
@@ -83,11 +90,13 @@ df = (
 df.index = df.index.astype(
     int
 )  # ensure same dtypes for index are int, else df.reindex will produce wrong results
+
+
 df = (
     df.reindex(
         list(
             # ensure reindex gets int values passed to avoid wrong results
-            map(int, snakemake.config["scenario"]["year"])
+            map(int, years_coupled)
         ),
         fill_value=0,
     )
