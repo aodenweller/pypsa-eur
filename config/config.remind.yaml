@@ -13,10 +13,10 @@ remind_coupling:
     # a small positive cost could be helpful, but content-wise zero costs should be correct for the coupling
     capital_cost: 0.0
   h2_demand:
-    enabled: false
+    enabled: true
     buffer_max_hours: 168 # in hours, set to 0 to deactivate, full buffer = 8760
   extract_coupling_parameters:
-    cutoff_market_values: 5 # false (to deactivate) or value, e.g.: 5 indicating zscore above which market_prices are excluded from the market_value calculation
+    cutoff_market_values: 4 # false (to deactivate) or value, e.g.: 5 indicating zscore above which market_prices are excluded from the market_value calculation
   # Automatically adjust time resolution if the time resolution wildcard is set to "0H",
   # first value (key) indicates the range of iterations as tuple (inclusive start, exclusive end),
   # the second string (value) represents the time resolution to use for these iterations as string "[0-9]+H"
@@ -915,7 +915,7 @@ solving:
     clip_p_max_pu: 1.e-2
     load_shedding: 1 # in EUR/kWh; REMIND coupling specific
     curtailment_mode: false
-    noisy_costs: true
+    noisy_costs: false
     skip_iterations: true
     rolling_horizon: false
     seed: 123

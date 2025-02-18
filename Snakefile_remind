@@ -306,7 +306,7 @@ rule extract_coupling_parameters:
         load_prices=ITERATION_RESULTS + "validation/load_prices.csv",
         markups=ITERATION_RESULTS + "validation/markups.csv",
         electricity_prices_electrolysis=ITERATION_RESULTS + "validation/electricity_prices_electrolysis.csv",
-        electricity_loads=ITERATION_RESULTS + "validation/electricity_loads.csv",
+        loads=ITERATION_RESULTS + "validation/loads.csv",
         energy_balances=ITERATION_RESULTS + "validation/energy_balances.csv",
         potentials=ITERATION_RESULTS + "validation/potentials.csv",
         optimal_capacities=ITERATION_RESULTS + "validation/optimal_capacities.csv",
