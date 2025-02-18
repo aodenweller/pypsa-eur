@@ -32,6 +32,7 @@ import logging
 import os
 import re
 import sys
+import time
 
 import numpy as np
 import pandas as pd
@@ -1300,6 +1301,9 @@ def solve_network(n, config, params, solving, **kwargs):
         n.model.print_infeasibilities()
         raise RuntimeError("Solving status 'infeasible'")
 
+    # Add sleep for one second to avoid skew time issues
+    time.sleep(1)
+    
     return n
 
 
