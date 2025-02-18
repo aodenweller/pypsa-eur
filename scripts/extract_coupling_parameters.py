@@ -88,8 +88,8 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="1",
-            scenario="PyPSA_NPi_DEU_freeWindOff_noPreFac_h2stor_2025-01-30_18.00.58",
+            iteration="8",
+            scenario="PyPSA_PkBudg1000_DEU_newLoad_h2stor_2025-02-17_20.41.40",
         )
 
         # mock_snakemake doesn't work with checkpoints
@@ -117,15 +117,15 @@ if __name__ == "__main__":
                 # ... emission prices (ep)
                 [
                     26.8,
-                    26.8,
+                    131.8,
                     26.9,
                     27.0,
                     27.2,
-                    27.3,
+                    174.2,
                     27.5,
                     27.8,
                     28.3,
-                    29.0,
+                    145.1,
                     29.8,
                     30.8,
                     30.8,
@@ -326,7 +326,7 @@ if __name__ == "__main__":
     generation_region_shares = []
 
     # Values used for reporting but not for coupling
-    electricity_loads = []
+    loads = []
     optimal_capacities = []
 
 #%%
@@ -430,14 +430,15 @@ if __name__ == "__main__":
         
         # Extract capacity factors of link components (H2 and batteries)
         capacity_factor_link = network.statistics.capacity_factor(
-            comps=["Link", "Line", "Store", "StorageUnit"], groupby=["region", "general_carrier"]
+            comps=["Link"], groupby=["region", "general_carrier"]
         )
         capacity_factor_link = (
             capacity_factor_link.to_frame("value").reset_index().drop(columns=["component"])
         )
         capacity_factor_link["year"] = year
-        # Remove PHS & hydro & ror
-        capacity_factor_link = capacity_factor_link.query("general_carrier != 'PHS & hydro & ror'")
+        # Remove H2 transfer to H2 demand REMIND (if additional H2 demand is on) and DC
+        capacity_factor_link = capacity_factor_link.query("general_carrier != 'H2 transfer to H2 demand REMIND'")
+        capacity_factor_link = capacity_factor_link.query("general_carrier != 'DC'")
         capacity_factors_links.append(capacity_factor_link)
 
         # Calculate availability factors
@@ -546,32 +547,33 @@ if __name__ == "__main__":
         load_price["year"] = year
         load_prices.append(load_price)
 
-        ## Calculate load-weighted electricity prices that H2 electrolysis sees for meeting
-        # H2 demand from REMIND (implicit assumption: H2 is directly fed to regional H2 demand and not stored
-        # in H2 cavern storage used by standard PyPSAEur for long-term electricity storage)
-
-        # Weighting for electricity prices: when electrolysis (proxied by the transfer link) is active to meet
-        # REMIND H2 demand. Renaming of column names to match electricity bus names
+        # Calculate load-weighted electricity price that all electrolysis sees
+        # This uses the load of the electrolysis links as weightings
+        # The previous implementaton that used the load of the "transfer to H2 demand REMIND"
+        # did not make sense as the link p0 was arbitrary
+        # (probably due to the standard H2 store at the buses)
         weightings = (
             network.links_t["p0"]
-            .filter(regex="transfer to [A-Z]{3} H2 demand REMIND")
+            .filter(regex="Electrolysis")
             .mul(network.snapshot_weightings["objective"], axis="rows")
         )
         weightings = weightings.rename(
-            columns=lambda x: re.search(
-                r"(.*) H2 transfer to [A-Z]{3} H2 demand REMIND", x
-            ).group(1)
+            columns=network.links["bus0"]
         )
-        # aggregation by country, but we want REMIND regions, so first need to map countries to regions before we aggregate
+        # Add values if columns have the same name
+        weightings = weightings.T.groupby(level=0).sum().T
+
+       # Calculate electricity price paid by electrolysis
         electricity_price_electrolysis = (
             network.buses_t["marginal_price"][weightings.columns] * weightings
         ).rename(columns=network.buses["region"]).sum().groupby(
             level=0
-        ).sum() / weightings.rename(
+        ).sum() / (weightings.rename(
             columns=network.buses["region"]
         ).sum().groupby(
             level=0
-        ).sum()
+        ).sum())
+        # Format data and append
         electricity_price_electrolysis = (
             electricity_price_electrolysis.to_frame("value")
             .reset_index()
@@ -582,14 +584,22 @@ if __name__ == "__main__":
         ] = "electricity price electrolysis"
         electricity_price_electrolysis["year"] = year
         electricity_prices_electrolysis.append(electricity_price_electrolysis)
-    
+        
+        # TODO: Simpler way
+        # gen = network.links_t.p0.loc[:, network.links.carrier == "H2 electrolysis"]
+        # gen.columns = gen.columns.map(network.links.bus0)
+        # gen = gen.T.groupby(level=0).sum().T
+        # lmp = network.buses_t.marginal_price.loc[:,gen.columns]
+        
+        # mv = (gen * lmp).sum().sum() / gen.sum().sum()
+        
         # Calculate electricity loads per region
-        electricity_load = network.statistics.withdrawal(
+        load = network.statistics.withdrawal(
             comps=["Load"], groupby=["region", "general_carrier"]
         )
-        electricity_load = electricity_load.to_frame("value").reset_index()
-        electricity_load["year"] = year
-        electricity_loads.append(electricity_load)
+        load = load.to_frame("value").reset_index()
+        load["year"] = year
+        loads.append(load)
 
         # Calculate crossborder flows and prices
         crossborder_flow, crossborder_price_import, crossborder_price_export = determine_crossborder_flow_and_price(
@@ -957,7 +967,7 @@ if __name__ == "__main__":
     electricity_prices_electrolysis = postprocess_dataframe(
         electricity_prices_electrolysis, map_to_remind=False
     )
-    electricity_loads = postprocess_dataframe(electricity_loads)
+    loads = postprocess_dataframe(loads)
     potentials = postprocess_dataframe(potentials, map_to_remind=True)
     # Only reporting for plotting, not coupled, therefore other treatment
     preinstalled_capacities = postprocess_dataframe(
@@ -1002,10 +1012,6 @@ if __name__ == "__main__":
     )
 
     # TODO: Remove
-    electricity_loads = electricity_loads.query("carrier == 'AC'").drop(
-        columns=["carrier"]
-    )
-    # TODO: Remove
     peak_residual_loads = peak_residual_loads.query("carrier == 'AC'").drop(
         columns=["carrier"]
     )
@@ -1048,7 +1054,7 @@ if __name__ == "__main__":
         "load_prices": load_prices,
         "markups": markups,
         "electricity_prices_electrolysis": electricity_prices_electrolysis,
-        "electricity_loads": electricity_loads,
+        "loads": loads,
         "energy_balances": energy_balances,
         "potentials": potentials,
         "optimal_capacities": optimal_capacities,

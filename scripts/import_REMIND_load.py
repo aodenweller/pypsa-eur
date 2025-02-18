@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+
+#%%
+
 import logging
 
 import pandas as pd
@@ -17,33 +20,28 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_load",
-            configfiles="config.remind.yaml",
-            simpl="",
-            clusters="4",
-            ll="copt",
-            opts="1H-RCL-Ep7.0",
-            year="2070",
-            iteration="1",
+            scenario="PyPSA_PkBudg1000_DEU_newLoad_h2stor_2025-02-17_13.10.23",
+            iteration="2",
+            year="2030"
         )
 
     configure_logging(snakemake)
 
+#%%
     # Load original load timeseries from PyPSA-EUR
     load = pd.read_csv(snakemake.input["load_timeseries"], index_col=0)
 
     # Load REMIND-EU demand data
     demand = read_remind_data(
         snakemake.input["remind_data"],
-        "v32_usableSeDispNet",
+        "p32_load",
         rename_columns={
-            "all_enty": "sector",
             "ttot": "year",
             "all_regi": "region",
-            "level": "value",
         },
     )
     demand = demand.loc[
-        (demand["sector"] == "seel") & (demand["year"] == snakemake.wildcards["year"])
+        demand["year"] == snakemake.wildcards["year"], 
     ]
     demand["value"] *= 1e6 * 8760  # Convert from TWa to MWh
     demand = demand.set_index(["region"])["value"]
@@ -104,3 +102,5 @@ if __name__ == "__main__":
         )
 
     scaled_load.to_csv(snakemake.output["load_timeseries"])
+
+# %%
