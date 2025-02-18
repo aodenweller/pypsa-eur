@@ -14,18 +14,19 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_RCL_p_nom_limits",
-            configfiles="config.remind.yaml",
-            scenario="no_scenario",
-            iteration="1",
+            configfiles="config/config.remind.yaml",
+            scenario="PyPSA_PkBudg1000_DEU_newLoad_h2stor_2025-02-17_20.41.40",
+            iteration="8",
             simpl="",
-            opts="1H-RCL-Ep205",
+            opts="3H-RCL-Ep174.2",
             clusters="4",
             ll="copt",
-            year="2070",
+            year="2050",
         )
     configure_logging(snakemake)
-
-    logger.info("Loading REMIND data ...")
+    
+#%%
+    logger.info("Loading REMIND pre-investment capacities...")
     min_capacities = read_remind_data(
         snakemake.input["remind_data"],
         "p32_preInvCapAvg",
@@ -39,7 +40,36 @@ if __name__ == "__main__":
     min_capacities = min_capacities.loc[
         min_capacities["year"] == snakemake.wildcards["year"]
     ]
-
+    # Special treatment for technologies that are links in PyPSA-Eur
+    # In REMIND capacities are w.r.t output capacity, in PyPSA-Eur to input capacity
+    # Need to adjust capacities by the efficiency for these technologies
+    logger.info(
+        "Adjusting REMIND pre-investment capacities to input capacity for link technologies ..."
+    )
+    efficiencies = read_remind_data(
+        snakemake.input["remind_data"],
+        "pm_eta_conv",
+        rename_columns={
+            "tall": "year",
+            "all_regi": "region_REMIND",
+            "all_te": "remind_technology",
+        },
+    )
+    efficiencies = efficiencies.loc[
+        efficiencies["year"] == snakemake.wildcards["year"],
+    ]
+    # Only include regions that are in the min_capacities data
+    efficiencies = efficiencies.loc[
+        efficiencies["region_REMIND"].isin(min_capacities["region_REMIND"].unique())
+    ]
+    # For remind_technology elh2 and h2turb in min_capacities, divide by efficiency
+    # to get input capacities
+    remind_technologies = ["elh2", "h2turb"]
+    mask = min_capacities["remind_technology"].isin(remind_technologies)
+    min_capacities.loc[mask, "value"] /= efficiencies.loc[
+        efficiencies["remind_technology"].isin(remind_technologies), "value"
+    ].values
+    
     # Capacity limits apply to general technology groups, not REMIND technologies
     logger.info(
         "Aggregating min capacities (p_nom_min) by general technology groups and REMIND regions ..."
@@ -73,3 +103,5 @@ if __name__ == "__main__":
     # Export
     logger.info(f"Exporting data to {snakemake.output['RCL_p_nom_limits']}")
     min_capacities.to_csv(snakemake.output["RCL_p_nom_limits"], index=False)
+
+# %%
