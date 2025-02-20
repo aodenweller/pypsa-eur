@@ -324,6 +324,7 @@ if __name__ == "__main__":
     crossborder_prices_import = []
     crossborder_prices_export = []
     generation_region_shares = []
+    h2turb_storages = []
 
     # Values used for reporting but not for coupling
     loads = []
@@ -547,7 +548,7 @@ if __name__ == "__main__":
         load_price["year"] = year
         load_prices.append(load_price)
 
-        # Calculate load-weighted electricity price that all electrolysis sees
+        ## Calculate load-weighted electricity price that all electrolysis sees
         # This uses the load of the electrolysis links as weightings
         # The previous implementaton that used the load of the "transfer to H2 demand REMIND"
         # did not make sense as the link p0 was arbitrary
@@ -593,7 +594,7 @@ if __name__ == "__main__":
         
         # mv = (gen * lmp).sum().sum() / gen.sum().sum()
         
-        # Calculate electricity loads per region
+        # Calculate loads (electricity and additional hydrogen demand) per region
         load = network.statistics.withdrawal(
             comps=["Load"], groupby=["region", "general_carrier"]
         )
@@ -643,17 +644,18 @@ if __name__ == "__main__":
         network.generators.loc[
             list(dispatchable_technologies), "peak_residual_load"
         ] = "Yes"
+        # Don't include load shedding as dispatchable technology
+        network.generators.loc[network.generators.index.str.contains("load"), "peak_residual_load"] = "No"
         network.loads["peak_residual_load"] = "Load"
-        # Don't include batteries into peak residual load calculation
+        # Don't include hydrogen turbines and batteries into peak residual load calculation
         network.stores["peak_residual_load"] = "No"
-        # Include hydrogen storage into peak residual load calculation
-        #network.stores.loc[network.stores["carrier"] == "H2", "peak_residual_load"] = "Yes"
         # Don't include hydro and pumped hydro into peak residual load calculation (no PHS in REMIND)
         network.storage_units["peak_residual_load"] = "No"
 
         residual_load = (
             network.statistics.energy_balance(
                 comps=["Generator", "Store", "StorageUnit", "Load"],
+                bus_carrier="AC",
                 groupby=["region", "peak_residual_load"],
                 aggregate_time=False,
             )
@@ -676,8 +678,7 @@ if __name__ == "__main__":
                     ]
                     .iloc[0]
                     .item(),
-                    # relative means relative to the average load (which is the only load REMIND knows about)
-                    # TODO: Rethink if this is correct
+                    # relative means relative to the average load (given by v32_load)
                     "relative": (
                         x.xs("Yes", level="peak_residual_load")[max_prl_snapshot]
                         .iloc[0]
@@ -698,6 +699,18 @@ if __name__ == "__main__":
         peak_residual_load["carrier"] = "AC"
         peak_residual_loads.append(peak_residual_load)
 
+        ## Calculate hydrogen turbine (fuel cell) storage requirements
+        absolute_supply = network.statistics.supply(comps=["Link"], groupby=["region", "carrier"]).xs("H2 fuel cell", level="carrier")
+        relative_supply = absolute_supply / network.statistics.withdrawal(comps="Load", bus_carrier="AC", groupby="region")
+
+        h2turb_storage = pd.DataFrame({
+            "absolute": absolute_supply,
+            "relative": relative_supply
+        }).reset_index()
+        h2turb_storage["year"] = year
+        h2turb_storage["carrier"] = "H2 fuel cell"
+        h2turb_storages.append(h2turb_storage)
+        
         ## Determime grid sizes and investments per region
         # The full grid: Combine DC and AC lines into one dataframe
         grid = pd.concat(
@@ -969,6 +982,7 @@ if __name__ == "__main__":
     )
     loads = postprocess_dataframe(loads)
     potentials = postprocess_dataframe(potentials, map_to_remind=True)
+    h2turb_storages = postprocess_dataframe(h2turb_storages, map_to_remind=False)
     # Only reporting for plotting, not coupled, therefore other treatment
     preinstalled_capacities = postprocess_dataframe(
         preinstalled_capacities, map_to_remind=False
@@ -1058,6 +1072,7 @@ if __name__ == "__main__":
         "energy_balances": energy_balances,
         "potentials": potentials,
         "optimal_capacities": optimal_capacities,
+        "h2turb_storages": h2turb_storages,
         "crossborder_flows": crossborder_flows,
         "crossborder_prices_import": crossborder_prices_import,
         "crossborder_prices_export": crossborder_prices_export,
@@ -1116,12 +1131,12 @@ if __name__ == "__main__":
         records=sets["grid_technologies"],
         description="Grid technologies exported from PyPSAEur",
     )
-    s_epe_carrier = gt.Set(
-        gdx,
-        "electrolysis",
-        records=sets["electrolysis"],
-        description="Electricity price for electrolysis exported from PyPSAEur.",
-    )
+    # s_epe_carrier = gt.Set(
+    #     gdx,
+    #     "electrolysis",
+    #     records=sets["electrolysis"],
+    #     description="Electricity price for electrolysis exported from PyPSAEur.",
+    # )
 
     # Now we can add data to the container
     c = gt.Parameter(
@@ -1178,6 +1193,14 @@ if __name__ == "__main__":
         domain=[s_year, s_region],
         records=peak_residual_loads[["year", "region", "relative"]],
         description="Peak residual load per year and region relative to mean load in p.u.",
+    )
+    
+    h2sr = gt.Parameter(
+        gdx,
+        name="h2turb_storage_relative",
+        domain=[s_year, s_region],
+        records=h2turb_storages[["year", "region", "relative"]],
+        description="Hydrogen turbine supply per year and region relative to total load in p.u.",
     )
 
     xbf = gt.Parameter(
@@ -1270,9 +1293,9 @@ if __name__ == "__main__":
     epe = gt.Parameter(
         gdx,
         name="electricity_price_electrolysis",
-        domain=[s_year, s_region, s_epe_carrier],
-        records=electricity_prices_electrolysis,
-        description="Electricity price for electrolysis per year and region in [EUR/MWh electricity] (weighted, based on the electricity drawn to meet the H2 demand from REMIND).",
+        domain=[s_year, s_region],
+        records=electricity_prices_electrolysis[["year", "region", "value"]],
+        description="Electricity price paid by electrolysis per year and region in [EUR/MWh].",
     )
 
     pot = gt.Parameter(

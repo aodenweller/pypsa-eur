@@ -310,6 +310,7 @@ rule extract_coupling_parameters:
         energy_balances=ITERATION_RESULTS + "validation/energy_balances.csv",
         potentials=ITERATION_RESULTS + "validation/potentials.csv",
         optimal_capacities=ITERATION_RESULTS + "validation/optimal_capacities.csv",
+        h2turb_storages=ITERATION_RESULTS + "validation/h2turb_storages.csv",
         crossborder_flows=ITERATION_RESULTS + "validation/crossborder_flows.csv",
         crossborder_prices_import=ITERATION_RESULTS + "validation/crossborder_prices_import.csv",
         crossborder_prices_export=ITERATION_RESULTS + "validation/crossborder_prices_export.csv",
