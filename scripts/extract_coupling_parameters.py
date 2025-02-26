@@ -88,8 +88,8 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="8",
-            scenario="PyPSA_PkBudg1000_DEU_newLoad_h2stor_2025-02-17_20.41.40",
+            iteration="1",
+            scenario="PyPSA_PkBudg1000_DEU_h2storRCL_2025-02-24_16.37.59",
         )
 
         # mock_snakemake doesn't work with checkpoints
@@ -121,11 +121,11 @@ if __name__ == "__main__":
                     26.9,
                     27.0,
                     27.2,
-                    174.2,
+                    137.1,
                     27.5,
                     27.8,
                     28.3,
-                    145.1,
+                    305.7,
                     29.8,
                     30.8,
                     30.8,
@@ -315,6 +315,7 @@ if __name__ == "__main__":
     peak_residual_loads = []
     grid_capacities = []
     grid_investments = []
+    grid_losses = []
     market_values = []
     load_prices = []
     markups = []
@@ -393,9 +394,16 @@ if __name__ == "__main__":
             network.generators.index.str.contains("RCL"), "RCL"
         ] = True
         
+        # For separating stores which are RCL and those which are not (capacities reported separately)
         network.links["RCL"] = False
         network.links.loc[
             network.links.index.str.contains("RCL"), "RCL"
+        ] = True
+        
+        # For separating stores which are RCL and those which are not (capacities reported separately)
+        network.stores["RCL"] = False
+        network.stores.loc[
+            network.stores.index.str.contains("RCL"), "RCL"
         ] = True
 
         # Hack: "hydro" representing hydro dams should be included in capacity and capacity factor calculations
@@ -494,7 +502,7 @@ if __name__ == "__main__":
         # RCL-capacities are <= pre-installed capacities provided from REMIND, choose RCL capacities here
         # as starter; these are first expanded before the same carriers but non-RCL are installed (due to 0 costs)
         preinstalled_capacity = network.statistics.optimal_capacity(
-            comps=["Generator", "Link"], groupby=["RCL", "region", "general_carrier"]
+            comps=["Generator", "Link", "Store"], groupby=["RCL", "region", "general_carrier"]
         )
         preinstalled_capacity = preinstalled_capacity.to_frame("value").reset_index()
         preinstalled_capacity["year"] = year
@@ -711,6 +719,18 @@ if __name__ == "__main__":
         h2turb_storage["carrier"] = "H2 fuel cell"
         h2turb_storages.append(h2turb_storage)
         
+        ## Determine grid losses in absolute and relative terms
+        grid_loss_abs = network.statistics.energy_balance(comps = "Line", groupby="region").abs()
+        grid_loss_rel = grid_loss_abs / network.statistics.withdrawal(comps="Load", bus_carrier="AC", groupby="region")
+        
+        grid_loss = pd.DataFrame({
+            "absolute": grid_loss_abs,
+            "relative": grid_loss_rel
+        }).reset_index()
+        grid_loss["year"] = year
+        grid_loss["carrier"] = "AC"
+        grid_losses.append(grid_loss)
+
         ## Determime grid sizes and investments per region
         # The full grid: Combine DC and AC lines into one dataframe
         grid = pd.concat(
@@ -971,6 +991,7 @@ if __name__ == "__main__":
     peak_residual_loads = postprocess_dataframe(
         peak_residual_loads, map_to_remind=False
     )
+    grid_losses = postprocess_dataframe(grid_losses, map_to_remind=False)
     grid_capacities = postprocess_dataframe(grid_capacities, map_to_remind=False)
     grid_investments = postprocess_dataframe(grid_investments, map_to_remind=False)
     market_values = postprocess_dataframe(market_values)
@@ -1060,6 +1081,7 @@ if __name__ == "__main__":
         "curtailments": curtailments,
         "generation_shares": generation_shares,
         "peak_residual_loads": peak_residual_loads,
+        "grid_losses": grid_losses,
         "grid_capacities": grid_capacities,
         "grid_investments": grid_investments,
         "preinstalled_capacities": preinstalled_capacities,
@@ -1131,12 +1153,6 @@ if __name__ == "__main__":
         records=sets["grid_technologies"],
         description="Grid technologies exported from PyPSAEur",
     )
-    # s_epe_carrier = gt.Set(
-    #     gdx,
-    #     "electrolysis",
-    #     records=sets["electrolysis"],
-    #     description="Electricity price for electrolysis exported from PyPSAEur.",
-    # )
 
     # Now we can add data to the container
     c = gt.Parameter(
@@ -1233,6 +1249,14 @@ if __name__ == "__main__":
         domain=[s_year, s_region],
         records=generation_region_shares,
         description="Share of generation of region in total generation per year in p.u.",
+    )
+    
+    glr = gt.Parameter(
+        gdx,
+        name="grid_loss_relative",
+        domain=[s_year, s_region],
+        records=grid_losses[["year", "region", "relative"]],
+        description="Grid losses per year and region relative to total load in p.u.",
     )
 
     gc = gt.Parameter(

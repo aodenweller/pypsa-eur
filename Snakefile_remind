@@ -60,6 +60,7 @@ localrules:
     sync,
     download_and_prepare,
     solve_all_scenarios,
+    extract_coupling_parameters
 
 
 wildcard_constraints:
@@ -284,7 +285,6 @@ rule solve_all_scenarios:
 
 
 # Extract coupling parameters from PyPSA-EUR runs for hand-over to next iteration of REMIND-EU
-# TODO: Replace RESULTS + {scvenario}/i{iteration}/ with ITERATION_RESULTS
 rule extract_coupling_parameters:
     input:
         networks=rules.solve_all_scenarios.input["networks"],
@@ -301,6 +301,7 @@ rule extract_coupling_parameters:
         peak_residual_loads=ITERATION_RESULTS + "validation/peak_residual_loads.csv",
         grid_capacities=ITERATION_RESULTS + "validation/grid_capacities.csv",
         grid_investments=ITERATION_RESULTS + "validation/grid_investments.csv",
+        grid_losses=ITERATION_RESULTS + "validation/grid_losses.csv",
         market_values=ITERATION_RESULTS + "validation/market_values.csv",
         hourly_prices=ITERATION_RESULTS + "validation/hourly_prices.csv",
         load_prices=ITERATION_RESULTS + "validation/load_prices.csv",

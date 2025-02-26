@@ -539,12 +539,20 @@ def add_RCL_generator_constraints(n):
     carrier groups.
 
     The RCL constraint consists of three individual constraints:
-    1. Add a maximum level for generator nominal capacity per group of countries (=region) and group of carriers (=technology_group) which affects the "RCL" generators, i.e. copies of generators attach to each bus specifically for this constraint which have no capital_cost; this constraint limits their maximum expansion.
-    2. (Currently deactivated to not force RCL capacities) Add a minimum level for generator nominal capacity per group of countries (=region) and group of carriers (=technology_group), which affects the "RCL" generators and their original counterparts with capital_cost > 0, this constraint ensures the minimum expansion of RCL generators and allows the other generators to be extended beyond if necessary.
-    3. Add a maximum level for generator nominal capacity for each bus containing a RCL generator, which affects the original generators and the RCL counterpart which ensures their combined capacity not to be extended beyond p_nom_max of the original generator.
-
+    1. Add a maximum level for generator nominal capacity per group of countries (=region) 
+    and group of carriers (=technology_group) which affects the "RCL" generators, 
+    i.e. copies of generators attached to each bus specifically for this constraint 
+    which have no capital_cost; this constraint limits their maximum expansion.
+    2. Add a maximum level for generator nominal capacity for each bus containing a
+    RCL generator, which affects the original generators and the RCL counterpart which
+    ensures their combined capacity not to be extended beyond p_nom_max of the original generator.
+    
     The RCL_p_nom_limits.csv file thus provides the minimum capacity that will be installed.
-    For cases of non-extendable generators with fixed capacity, their capacities are taken into account and subtracted from the RCL constraints values, such that the RCL generators are extended to exactly the RCL_p_nom_limits.csv values minus existing capacities.
+    
+    TODO: Check
+    For cases of non-extendable generators with fixed capacity, their capacities are taken into account and
+    subtracted from the RCL constraints values, such that the RCL generators are extended to
+    exactly the RCL_p_nom_limits.csv values minus existing capacities.
 
     Parameters
     ----------
@@ -612,10 +620,10 @@ def add_RCL_generator_constraints(n):
     if not indexes_rcl.empty:
         n.model.add_constraints(
             p_nom_rcl.sel(group=indexes_rcl) <= p_nom_limits.loc[indexes_rcl].values,
-            name="RCL_p_nom_max",
+            name="RCL_generators_p_nom_max",
         )
     
-    # 3. Constraint: Maximum capacity for original generators and RCL counterparts
+    # 2. Constraint: Maximum capacity for original generators and RCL counterparts
     # Similar to n.model.constraints["Generator-ext-p_nom-upper"]
     
     # LHS: sum of generator nominal capacity per carrier and bus    
@@ -641,7 +649,7 @@ def add_RCL_generator_constraints(n):
     if not index.empty:
         n.model.add_constraints(
             lhs.sel(group=index) <= potential.loc[index]["p_nom_max"].values,
-            name="RCL_p_nom_max_pot"
+            name="RCL_generators_p_nom_max_potential",
         )
 
 def add_RCL_link_constraints(n):
@@ -650,9 +658,12 @@ def add_RCL_link_constraints(n):
     carrier groups.
 
     The RCL link constraint is a single constraint:
-    1. Add a maximum level for link nominal capacity per group of countries (=region) and group of carriers (=technology_group) which affects the "RCL" links, i.e. copies of links attach to each bus specifically for this constraint which have no capital_cost; this constraint limits their maximum expansion.
+    1. Add a maximum level for link nominal capacity per group of countries (=region) 
+       and group of carriers (=technology_group) which affects the "RCL" links, 
+       i.e. copies of links attach to each bus specifically for this constraint 
+       which have no capital_cost; this constraint limits their maximum expansion.
 
-    The RCL_p_nom_limits.csv file thus provides the minimum capacity that can be installed for free.
+    The RCL_p_nom_limits.csv file thus provides the capacity that can be installed for free.
 
     Parameters
     ----------
@@ -701,6 +712,68 @@ def add_RCL_link_constraints(n):
         n.model.add_constraints(
             p_nom_rcl.sel(group=indexes_rcl) <= p_nom_limits.loc[indexes_rcl].values,
             name="RCL_links_p_nom_max",
+        )
+
+def add_RCL_store_constraints(n):
+    """
+    Add RCL (region & carrier limit) constraint to the network for region and
+    carrier groups.
+
+    The RCL link constraint is a single constraint:
+    1. Add a maximum level for store nominal capacity per group of countries (=region) 
+       and group of carriers (=technology_group) which affects the "RCL" stores, 
+       i.e. copies of links attach to each bus specifically for this constraint 
+       which have no capital_cost; this constraint limits their maximum expansion.
+
+    The RCL_p_nom_limits.csv file thus provides the capacity that can be installed for free.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    
+    Example config.remind.yaml
+    --------------------------
+    scenario:
+        opts: [1H-RCL]
+    """
+    logger.info(
+        "Adding store capacity constraints (RCL) per carrier groups (technology group) and country groups (REMIND regions)."
+    )
+    
+    stores = n.stores.copy().rename_axis(index="Store-ext")
+    
+    # RHS: e_nom_min from REMIND
+    # Could also get e_nom_min from n.stores
+    e_nom_limits = pd.read_csv(
+        snakemake.input["RCL_p_nom_limits"],
+    ).set_index(
+        ["region_REMIND", "technology_group"]
+    )["p_nom_min"]
+    
+    # Get all RCL links, apply the constraint to their combined e_nom_opt
+    idx_rcl = n.stores.query(r"index.str.contains(r' \(RCL\)')").index
+    stores_rcl = stores.loc[idx_rcl]
+    grouper_rcl = [
+        stores_rcl["region_REMIND"],
+        stores_rcl["technology_group"],
+    ]
+
+    # LHS: sum of generator nominal capacity per region / technology group
+    grouper_rcl = xr.DataArray(
+        pd.MultiIndex.from_arrays(grouper_rcl), dims=["Store-ext"]
+    )
+    e_nom_rcl = (
+        n.model["Store-e_nom"].loc[stores_rcl.index].groupby(grouper_rcl).sum()
+    )
+
+    # Determine overlapping indices to only create constraints for generator technologies which are actually constrained by the REMIND-EU
+    indexes_rcl = e_nom_rcl.indexes["group"].intersection(e_nom_limits.index)
+
+    # Add constraint
+    if not indexes_rcl.empty:
+        n.model.add_constraints(
+            e_nom_rcl.sel(group=indexes_rcl) <= e_nom_limits.loc[indexes_rcl].values,
+            name="RCL_stores_p_nom_max",
         )
 
 # %%
@@ -1202,10 +1275,15 @@ def extra_functionality(n, snapshots):
         add_SAFE_constraints(n, config)
     if constraints["CCL"] and n.generators.p_nom_extendable.any():
         add_CCL_constraints(n, config)
+    # Add RCL constraint for generators
     if constraints["RCL"] and n.generators.p_nom_extendable.any():
         add_RCL_generator_constraints(n)
+    # Add RCL constraint for links (currently electrolysers and hydrogen turbines)
     if constraints["RCL"] and n.links.p_nom_extendable.any():
         add_RCL_link_constraints(n)
+    # Add RCL constraint for stores (currently hydrogen storage underground)
+    if constraints["RCL"] and n.stores.e_nom_extendable.any():
+        add_RCL_store_constraints(n)
     reserve = config["electricity"].get("operational_reserve", {})
     if reserve.get("activate"):
         add_operational_reserve_margin(n, snapshots, config)
@@ -1316,10 +1394,10 @@ if __name__ == "__main__":
             "solve_network",
             configfiles="config/config.remind.yaml",
             simpl="",
-            opts="3H-RCL-Ep27.3",
+            opts="3H-RCL-Ep137.1",
             clusters="4",
             ll="copt",
-            scenario="PyPSA_NPi_DEU_freeWindOff_noPreFac_h2stor_2025-01-30_18.00.58",
+            scenario="PyPSA_PkBudg1000_DEU_elh2Tax_gridLosses_newLoad_h2storage_2025-02-24_10.45.50",
             iteration="1",
             year="2050",
         )

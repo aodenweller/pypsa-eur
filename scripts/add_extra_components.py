@@ -385,6 +385,77 @@ def attach_RCL_links(
     # Finally add RCL links to network
     n.madd("Link", rcl_links.index, **rcl_links)
 
+def attach_RCL_stores(
+    n,
+    config,
+    fp_p_nom_limits,
+    fp_region_mapping,
+    fp_technology_cost_mapping,
+):
+    """
+    Add additional stores (for storage technologies)
+    to network for the RCL constraint used in the
+    REMIND-EU <-> PyPSA-EUR coupling.
+    """
+    e_nom_limits = pd.read_csv(fp_p_nom_limits).rename(columns={"p_nom_min": "e_nom_min"})
+    region_mapping = get_region_mapping(
+        fp_region_mapping, source="REMIND-EU", target="PyPSA-EUR"
+    )
+
+    # Apply mapping from REMIND/general to PyPSA-EUR countries
+    e_nom_limits["country"] = e_nom_limits["region_REMIND"].map(region_mapping)
+    
+    # Determine "carrier" which are related to the technology groups
+    technology_mapping = (
+        get_technology_mapping(fp_technology_cost_mapping, group_technologies=True)
+        .set_index("technology_group")
+        .rename(columns={"PyPSA-Eur": "carrier"})["carrier"]
+        .drop_duplicates()
+    )
+    e_nom_limits = e_nom_limits.merge(
+        technology_mapping, on="technology_group", how="left"
+    )
+    
+    # Only select carrier "hydrogen storage underground"
+    e_nom_limits = e_nom_limits[e_nom_limits["carrier"] == "hydrogen storage underground"]
+    
+    # Flatten country column entries such that all lists are converted into individual rows
+    e_nom_limits = e_nom_limits.explode("country").explode("carrier")
+    
+    # Rename carrier from hydrogen storage underground to H2
+    e_nom_limits["carrier"] = e_nom_limits["carrier"].map({"hydrogen storage underground": "H2"})
+    
+    # Add country-reference to stores for mapping
+    # TODO: Add country to n.buses for batteries
+    n.stores["country"] = n.stores["bus"].map(n.buses["country"])
+    
+    # Select all stores from n.stores where the combination of country and carrier can be found in p_nom_limits,
+    # i.e. later a RCL constraint should be applied for
+    rcl_stores = n.stores.join(
+        e_nom_limits.set_index(["country", "carrier"]),
+        on=["country", "carrier"],
+        how="right",
+        rsuffix="_rcl",
+        validate="m:1",
+    )
+    rcl_stores = rcl_stores.dropna(
+        subset="e_nom_min_rcl"
+    )  # Drop all links which are not subject to RCL constraint
+    
+    # Only consider RCL constraint for stores which are extendable
+    rcl_stores = rcl_stores[rcl_stores["e_nom_extendable"] == True]
+
+    # Modify properties of to-be-added RCL links which differ from the original links
+    old_stores = rcl_stores.index
+    rcl_stores.index = old_stores + " (RCL)"
+    rcl_stores["capital_cost"] = config["capital_cost"]
+    rcl_stores["e_nom_min"] = 0.0
+    rcl_stores["e_nom"] = 0.0
+    rcl_stores["e_nom_max"] = np.inf
+
+    # Finally add RCL stores to network
+    n.madd("Store", rcl_stores.index, **rcl_stores)
+
 def attach_hydrogen_demand(
     n,
     year,
@@ -491,7 +562,7 @@ if __name__ == "__main__":
             "add_extra_components",
             simpl="",
             clusters=4,
-            scenario="PyPSA_NPi_DEU_freeWindOff_noPreFac_h2stor_2025-01-30_18.00.58",
+            scenario="PyPSA_PkBudg1000_DEU_elh2Tax_gridLosses_newLoad_h2storage_2025-02-24_10.45.50",
             iteration=1,
             year=2050,
         )
@@ -519,6 +590,13 @@ if __name__ == "__main__":
             fp_technology_cost_mapping = snakemake.input["technology_cost_mapping"],
         )
         attach_RCL_links(
+            n,
+            config = snakemake.params["preinvestment_capacities"],
+            fp_p_nom_limits = snakemake.input["RCL_p_nom_limits"],
+            fp_region_mapping = snakemake.input["region_mapping"],
+            fp_technology_cost_mapping = snakemake.input["technology_cost_mapping"]
+        )
+        attach_RCL_stores(
             n,
             config = snakemake.params["preinvestment_capacities"],
             fp_p_nom_limits = snakemake.input["RCL_p_nom_limits"],

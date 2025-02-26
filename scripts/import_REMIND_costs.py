@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # %%
-# There are four steps for importing REMIND-EU costs followed in this script:
-# 1. Technologies which get their values from REMIND-EU, weighted by the electricity generation of the related REMIND-EU technology
+# There are four steps for importing REMIND costs followed in this script:
+# 1. Technologies which get their values from REMIND, weighted by the electricity generation of the related REMIND technology
 # 2. Technologies where values are taken from PyPSA-EUR default values
-# 3. Technologies where original PyPSA-Eur 2025 values are scaled based on a REMIND proxy technology
+# 3. Technologies where original PyPSA-Eur values are scaled based on a REMIND proxy technology
 # 4. Technologies where values are set in the technology mapping config file
 # 5. Add discount rate for all technologies where not discount rate is set in the technology mapping config file
 
@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_costs",
-            scenario="PyPSA_PkBudg1000_DEU_2025-02-07_17.28.08",
+            scenario="PyPSA_PkBudg1000_DEU_elh2Tax_gridLosses_newLoad_h2storage_2025-02-24_10.45.50",
             iteration="1",
             year="2050",
         )
@@ -80,6 +80,8 @@ costs = read_remind_data(
 costs["value"] *= 1e6  # Unit conversion from TUSD/TW to USD/MW
 costs["parameter"] = "investment"
 costs["unit"] = "USD/MW"
+# Storage technologies in USD/MWh
+costs.loc[costs["technology"] == "h2stor", "unit"] = "USD/MWh"
 
 # lifetime
 logger.info("... extracting lifetime")
@@ -122,7 +124,7 @@ vom["value"] *= 1e6 / 8760  # Unit conversion from TUSD/TWa to USD/MWh
 vom["parameter"] = "VOM"
 vom[
     "unit"
-] = "USD/MWh"  # TODO check whether per unit input or unit output ( should be per unit MWh_e output)
+] = "USD/MWh"
 
 # CO2 intensities
 logger.info("... extracting CO2 intensities")
@@ -177,7 +179,6 @@ efficiency["unit"] = "p.u."  # TODO check correct unit
 # Special treatment for nuclear: Efficiencies are in TWa/Mt=8760 TWh/Tg_U -> convert to MWh/g_U to match with fuel costs in USD/g_U
 efficiency.loc[efficiency["technology"].isin(["fnrs", "tnrs"]), "value"] *= 8760 / 1e6
 efficiency.loc[efficiency["technology"].isin(["fnrs", "tnrs"]), "unit"] = "MWh/g_U"
-
 
 # Fuel costs
 logger.info("... extracting fuel costs")
@@ -272,6 +273,7 @@ mapped_technologies["weight"] = mapped_technologies["weight"].fillna(0.0)
 # Generation is reported in TWa and reported as 0 for technologies which are not built;
 # by adding a small value, we can avoid NaN values in the weighted aggregation
 # Value added is 1 MWh = 1e-6/8760 TWa
+# This step also ensures that weights are available for all technologies
 mapped_technologies["weight"] += 1e-6 / 8760
 
 

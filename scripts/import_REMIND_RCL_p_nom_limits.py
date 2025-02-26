@@ -36,7 +36,8 @@ if __name__ == "__main__":
             "all_te": "remind_technology",
         },
     )
-    min_capacities["value"] *= 1e6  # unit conversion: TW to MW
+    # Unit conversion: TW to MW (for generators and links), TWh to MWh (for stores)
+    min_capacities["value"] *= 1e6
     min_capacities = min_capacities.loc[
         min_capacities["year"] == snakemake.wildcards["year"]
     ]
