@@ -1,17 +1,17 @@
 PyPSA-EUR technology,parameter,couple to,reference,unit,comment
 battery inverter,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
-battery inverter,efficiency,setting to reference value,0.96,p.u.,PyPSA-EUR assumption for lack of value from REMIND
-battery inverter,FOM,mapping to PyPSA-EUR default values,,,
+battery inverter,efficiency,mapping generation weighted to reference REMIND-EU technology,btin,,
+battery inverter,FOM,mapping generation weighted to reference REMIND-EU technology,btin,,
 battery inverter,fuel,setting to reference value,0,USD/MWh,Dummy value to avoid PyPSA-EUR throwing an error
-battery inverter,investment,scaling original values based on reference PyPSA-EUR technology,spv,,
-battery inverter,lifetime,mapping to PyPSA-EUR default values,,,
+battery inverter,investment,mapping generation weighted to reference REMIND-EU technology,btin,,
+battery inverter,lifetime,mapping generation weighted to reference REMIND-EU technology,btin,,
 battery inverter,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
 battery storage,CO2 intensity,setting to reference value,0,tCO2/MWh_th,
 battery storage,efficiency,setting to reference value,1,p.u.,Storage without losses
-battery storage,FOM,setting to reference value,0,%/year,"No value originally in PyPSA-EUR databse, using default fill value"
+battery storage,FOM,mapping generation weighted to reference REMIND-EU technology,btstor,,
 battery storage,fuel,setting to reference value,0,USD/MWh,Dummy value to avoid PyPSA-EUR throwing an error
-battery storage,investment,scaling original values based on reference PyPSA-EUR technology,spv,,
-battery storage,lifetime,mapping to PyPSA-EUR default values,,,
+battery storage,investment,mapping generation weighted to reference REMIND-EU technology,btstor,,
+battery storage,lifetime,mapping generation weighted to reference REMIND-EU technology,btstor,,
 battery storage,VOM,setting to reference value,0,USD/MWh,"No value originally in PyPSA-EUR databse, using default fill value"
 biomass,CO2 intensity,setting to reference value,0,tCO2/MWh_th,"TODO coupling with REMIND-EU difficult, as biomass has not CO2 intensity there, assuming carbon-neutral for now as well"
 biomass,efficiency,mapping generation weighted to reference REMIND-EU technology,"[biochp, bioigcc, bioigccc]",,

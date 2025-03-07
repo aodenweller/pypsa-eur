@@ -88,8 +88,8 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="1",
-            scenario="PyPSA_PkBudg1000_DEU_h2storRCL_2025-02-24_16.37.59",
+            iteration="10",
+            scenario="PyPSA_PkBudg1000_DEU_adjCost_btCFup_2025-03-06_11.03.56",
         )
 
         # mock_snakemake doesn't work with checkpoints
@@ -122,8 +122,8 @@ if __name__ == "__main__":
                     27.0,
                     27.2,
                     137.1,
-                    27.5,
-                    27.8,
+                    202.4,
+                    224.0,
                     28.3,
                     305.7,
                     29.8,
@@ -326,6 +326,7 @@ if __name__ == "__main__":
     crossborder_prices_export = []
     generation_region_shares = []
     h2turb_storages = []
+    battery_storages = []
 
     # Values used for reporting but not for coupling
     loads = []
@@ -719,6 +720,18 @@ if __name__ == "__main__":
         h2turb_storage["carrier"] = "H2 fuel cell"
         h2turb_storages.append(h2turb_storage)
         
+        ## Calculate battery storage requirements
+        absolute_supply = network.statistics.supply(comps=["Link"], groupby=["region", "carrier"]).xs("battery discharger", level="carrier")
+        relative_supply = absolute_supply / network.statistics.withdrawal(comps="Load", bus_carrier="AC", groupby="region")
+        
+        battery_storage = pd.DataFrame({
+            "absolute": absolute_supply,
+            "relative": relative_supply
+        }).reset_index()
+        battery_storage["year"] = year
+        battery_storage["carrier"] = "battery discharger"
+        battery_storages.append(battery_storage)
+        
         ## Determine grid losses in absolute and relative terms
         grid_loss_abs = network.statistics.energy_balance(comps = "Line", groupby="region").abs()
         grid_loss_rel = grid_loss_abs / network.statistics.withdrawal(comps="Load", bus_carrier="AC", groupby="region")
@@ -781,7 +794,7 @@ if __name__ == "__main__":
         # calculate total grid capacity in (MW*km) per region
         grid_capacity = (
             grid.groupby(["region"])
-            .apply(lambda x: (x["p_nom_opt"] * x["length"]).sum())
+            .apply(lambda x: (x["p_nom_opt"] * x["length"]).sum(), include_groups=False)
             .to_frame("value")
             .reset_index()
         )
@@ -791,7 +804,7 @@ if __name__ == "__main__":
 
         grid_investment = (
             grid.groupby(["region"])
-            .apply(lambda x: (x["p_nom_opt"] * x["capital_cost"]).sum())
+            .apply(lambda x: (x["p_nom_opt"] * x["capital_cost"]).sum(), include_groups=False)
             .to_frame("value")
             .reset_index()
         )
@@ -1004,6 +1017,7 @@ if __name__ == "__main__":
     loads = postprocess_dataframe(loads)
     potentials = postprocess_dataframe(potentials, map_to_remind=True)
     h2turb_storages = postprocess_dataframe(h2turb_storages, map_to_remind=False)
+    battery_storages = postprocess_dataframe(battery_storages, map_to_remind=False)
     # Only reporting for plotting, not coupled, therefore other treatment
     preinstalled_capacities = postprocess_dataframe(
         preinstalled_capacities, map_to_remind=False
@@ -1095,6 +1109,7 @@ if __name__ == "__main__":
         "potentials": potentials,
         "optimal_capacities": optimal_capacities,
         "h2turb_storages": h2turb_storages,
+        "battery_storages": battery_storages,
         "crossborder_flows": crossborder_flows,
         "crossborder_prices_import": crossborder_prices_import,
         "crossborder_prices_export": crossborder_prices_export,
@@ -1217,6 +1232,14 @@ if __name__ == "__main__":
         domain=[s_year, s_region],
         records=h2turb_storages[["year", "region", "relative"]],
         description="Hydrogen turbine supply per year and region relative to total load in p.u.",
+    )
+    
+    btsr = gt.Parameter(
+        gdx,
+        name="battery_storage_relative",
+        domain=[s_year, s_region],
+        records=battery_storages[["year", "region", "relative"]],
+        description="Battery discharging per year and region relative to total load in p.u.",
     )
 
     xbf = gt.Parameter(

@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_costs",
-            scenario="PyPSA_PkBudg1000_DEU_elh2Tax_gridLosses_newLoad_h2storage_2025-02-24_10.45.50",
+            scenario="PyPSA_PkBudg1000_DEU_adjCost_battery_2025-03-04_13.03.55",
             iteration="1",
             year="2050",
         )
@@ -77,11 +77,12 @@ costs = read_remind_data(
         "all_te": "technology",
     },
 ).query("year == '{}'".format(snakemake.wildcards["year"]))
-costs["value"] *= 1e6  # Unit conversion from TUSD/TW to USD/MW
+costs["value"] *= 1e6  # Unit conversion from TUSD/TW to USD/MW (or TUSD/TWh to USD/MWh)
 costs["parameter"] = "investment"
 costs["unit"] = "USD/MW"
 # Storage technologies in USD/MWh
 costs.loc[costs["technology"] == "h2stor", "unit"] = "USD/MWh"
+costs.loc[costs["technology"] == "btstor", "unit"] = "USD/MWh"
 
 # lifetime
 logger.info("... extracting lifetime")
@@ -179,6 +180,8 @@ efficiency["unit"] = "p.u."  # TODO check correct unit
 # Special treatment for nuclear: Efficiencies are in TWa/Mt=8760 TWh/Tg_U -> convert to MWh/g_U to match with fuel costs in USD/g_U
 efficiency.loc[efficiency["technology"].isin(["fnrs", "tnrs"]), "value"] *= 8760 / 1e6
 efficiency.loc[efficiency["technology"].isin(["fnrs", "tnrs"]), "unit"] = "MWh/g_U"
+# Special treatment for battery: Efficiencies in costs.csv should be roundtrip
+efficiency.loc[efficiency["technology"] == "btin", "value"] **= 2
 
 # Fuel costs
 logger.info("... extracting fuel costs")
@@ -519,6 +522,15 @@ costs.loc[
     (costs["technology"] == tech) & (costs["parameter"] == "efficiency"), "value"
 ].values
 logger.info(f"Corrected investment costs for {tech} from MW_H2 output to MW_e input.")
+
+# Special case: Convert battery inverter capex from USD/MW_e (output, in REMIND) to USD/MW_e (input, in PyPSA)
+tech = "battery inverter"
+costs.loc[
+    (costs["technology"] == tech) & (costs["parameter"] == "investment"), "value"
+] *= costs.loc[
+    (costs["technology"] == tech) & (costs["parameter"] == "efficiency"), "value"
+].values
+logger.info(f"Corrected investment costs for {tech} from MW_e output to MW_e input.")
 
 # Output to file
 costs.to_csv(snakemake.output["costs"], index=False)

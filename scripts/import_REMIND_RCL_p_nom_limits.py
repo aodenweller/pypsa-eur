@@ -15,10 +15,10 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "import_REMIND_RCL_p_nom_limits",
             configfiles="config/config.remind.yaml",
-            scenario="PyPSA_PkBudg1000_DEU_newLoad_h2stor_2025-02-17_20.41.40",
-            iteration="8",
+            scenario="PyPSA_PkBudg1000_DEU_adjCost_btCFup_2025-03-06_11.03.56",
+            iteration="10",
             simpl="",
-            opts="3H-RCL-Ep174.2",
+            opts="3H-RCL-Ep181.5",
             clusters="4",
             ll="copt",
             year="2050",
@@ -63,9 +63,9 @@ if __name__ == "__main__":
     efficiencies = efficiencies.loc[
         efficiencies["region_REMIND"].isin(min_capacities["region_REMIND"].unique())
     ]
-    # For remind_technology elh2 and h2turb in min_capacities, divide by efficiency
+    # For remind_technology elh2, h2turb and btin in min_capacities, divide by efficiency
     # to get input capacities
-    remind_technologies = ["elh2", "h2turb"]
+    remind_technologies = ["elh2", "h2turb", "btin"]
     mask = min_capacities["remind_technology"].isin(remind_technologies)
     min_capacities.loc[mask, "value"] /= efficiencies.loc[
         efficiencies["remind_technology"].isin(remind_technologies), "value"

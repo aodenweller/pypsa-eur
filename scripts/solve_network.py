@@ -1092,14 +1092,18 @@ def add_battery_constraints(n):
         return
 
     discharger_bool = n.links.index.str.contains("battery discharger")
-    charger_bool = n.links.index.str.contains("battery charger")
+    # Also include RCL chargger capacities (for REMIND coupling)
+    #charger_bool = n.links.index.str.contains("battery charger")
+    charger_bool = n.links.index.str.contains(r"battery charger(?!.*RCL)", case=False, na=False)
+    charger_bool_rcl = n.links.index.str.contains(r"battery charger.*RCL", case=False, na=False)
 
     dischargers_ext = n.links[discharger_bool].query("p_nom_extendable").index
     chargers_ext = n.links[charger_bool].query("p_nom_extendable").index
+    chargers_ext_rcl = n.links[charger_bool_rcl].query("p_nom_extendable").index
 
     eff = n.links.efficiency[dischargers_ext].values
     lhs = (
-        n.model["Link-p_nom"].loc[chargers_ext]
+        n.model["Link-p_nom"].loc[chargers_ext] + n.model["Link-p_nom"].loc[chargers_ext_rcl]
         - n.model["Link-p_nom"].loc[dischargers_ext] * eff
     )
 
@@ -1394,11 +1398,11 @@ if __name__ == "__main__":
             "solve_network",
             configfiles="config/config.remind.yaml",
             simpl="",
-            opts="3H-RCL-Ep137.1",
+            opts="3H-RCL-Ep181.5",
             clusters="4",
             ll="copt",
-            scenario="PyPSA_PkBudg1000_DEU_elh2Tax_gridLosses_newLoad_h2storage_2025-02-24_10.45.50",
-            iteration="1",
+            scenario="PyPSA_PkBudg1000_DEU_adjCost_btCFup_2025-03-06_11.03.56",
+            iteration="10",
             year="2050",
         )
     configure_logging(snakemake)

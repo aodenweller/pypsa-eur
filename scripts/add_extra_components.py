@@ -153,8 +153,11 @@ def attach_stores(n, costs, extendable_carriers):
 
     if "battery" in carriers:
         b_buses_i = n.madd(
-            "Bus", buses_i + " battery", carrier="battery", location=buses_i
-        )
+            "Bus",
+            buses_i + " battery",
+            carrier="battery",
+            country=buses_i_country,
+            location=buses_i)
 
         n.madd(
             "Store",
@@ -346,12 +349,15 @@ def attach_RCL_links(
         technology_mapping, on="technology_group", how="left"
     )
     
-    # Only select carrier electrolysis and fuel cell
-    p_nom_limits = p_nom_limits[p_nom_limits["carrier"].isin(["electrolysis", "fuel cell"])]
+    # Only select electrolysis, fuel cell and battery inverter
+    p_nom_limits = p_nom_limits[p_nom_limits["carrier"].isin(["electrolysis", "fuel cell", "battery inverter"])]
     
-    # Add prefix "H2" to carrier
-    p_nom_limits["carrier"] = "H2 " + p_nom_limits["carrier"]
-
+    # Map carrier names to those of existing PyPSA links
+    p_nom_limits["carrier"] = p_nom_limits["carrier"].map(
+        {"electrolysis": "H2 electrolysis",
+         "fuel cell": "H2 fuel cell",
+         "battery inverter": "battery charger"})
+    
     # Flatten country column entries such that all lists are converted into individual rows
     p_nom_limits = p_nom_limits.explode("country").explode("carrier")
     
@@ -416,17 +422,18 @@ def attach_RCL_stores(
         technology_mapping, on="technology_group", how="left"
     )
     
-    # Only select carrier "hydrogen storage underground"
-    e_nom_limits = e_nom_limits[e_nom_limits["carrier"] == "hydrogen storage underground"]
-    
+    # Only select carrier "hydrogen storage underground" and carrier "battery storage"
+    e_nom_limits = e_nom_limits[e_nom_limits["carrier"].isin(["hydrogen storage underground", "battery storage"])]
+        
     # Flatten country column entries such that all lists are converted into individual rows
     e_nom_limits = e_nom_limits.explode("country").explode("carrier")
     
     # Rename carrier from hydrogen storage underground to H2
-    e_nom_limits["carrier"] = e_nom_limits["carrier"].map({"hydrogen storage underground": "H2"})
+    e_nom_limits["carrier"] = e_nom_limits["carrier"].map(
+        {"hydrogen storage underground": "H2",
+         "battery storage": "battery"})
     
     # Add country-reference to stores for mapping
-    # TODO: Add country to n.buses for batteries
     n.stores["country"] = n.stores["bus"].map(n.buses["country"])
     
     # Select all stores from n.stores where the combination of country and carrier can be found in p_nom_limits,
@@ -562,8 +569,8 @@ if __name__ == "__main__":
             "add_extra_components",
             simpl="",
             clusters=4,
-            scenario="PyPSA_PkBudg1000_DEU_elh2Tax_gridLosses_newLoad_h2storage_2025-02-24_10.45.50",
-            iteration=1,
+            scenario="PyPSA_PkBudg1000_DEU_adjCost_btCFup_2025-03-06_11.03.56",
+            iteration=10,
             year=2050,
         )
     configure_logging(snakemake)
