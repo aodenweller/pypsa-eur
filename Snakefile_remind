@@ -60,8 +60,6 @@ localrules:
     sync,
     download_and_prepare,
     solve_all_scenarios,
-    extract_coupling_parameters
-
 
 wildcard_constraints:
     simpl="[a-zA-Z0-9]*",
@@ -182,6 +180,24 @@ rule download_and_prepare:
 # # * {year}: Indicating the REMIND year for which the model is built
 # # * {iteration}: Indicating the REMIND iteration for which the model is built
 
+# Copy standard remind.config yaml and make changes depending on the REMIND scenario
+# For now this should just copy-paste the config to the resources directory
+# TODO: Merge with checkpoint determine_co2_price_scenarios
+rule import_REMIND_config:
+    input:
+        config_default="config/config.remind.yaml",
+        remind_data= RESOURCES + "{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
+    output:
+        config=RESOURCES + "{scenario}/i{iteration}/config.remind_scenario.yaml",
+    log:
+        ITERATION_LOGS + "import_REMIND_config.log",
+    benchmark:
+        ITERATION_BENCHMARKS + "import_REMIND_config"
+    localrule: True  # Checkpoints cannot be declared "local" with "localrules" statement on top, needs individual declaration as local
+    script:
+        "scripts/import_REMIND_config.py"
+
+
 # Build cost data compatible with the original PyPSA-EUR cost data structure from technology-data
 # as part of the coupling with REMIND.
 # Since the cost data is used in multiple rules, the cost data is provided as a dedicated file
@@ -256,6 +272,7 @@ checkpoint determine_co2_price_scenarios:
     input:
         region_mapping="config/regionmapping_21_EU11.csv",
         remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
+        config=RESOURCES + "{scenario}/i{iteration}/config.remind_scenario.yaml",
     output:
         co2_price_scenarios=RESULTS + "{scenario}/i{iteration}/co2_price_scenarios.csv",
     log:

@@ -606,9 +606,9 @@ rule add_extra_components:
         extendable_carriers=config_provider("electricity", "extendable_carriers"),
         max_hours=config_provider("electricity", "max_hours"),
         costs=config_provider("costs"),
-        preinvestment_capacities=config["remind_coupling"]["preinvestment_capacities"],
-        h2_demand=config["remind_coupling"]["h2_demand"],
-        constraints=config["solving"]["constraints"]
+        preinvestment_capacities=config_provider("remind_coupling","preinvestment_capacities"),
+        h2_demand=config_provider("remind_coupling","h2_demand"),
+        constraints=config_provider("solving","constraints")
     input:
         network=SCENARIO_RESOURCES
         + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}.nc",

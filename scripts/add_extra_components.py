@@ -358,6 +358,9 @@ def attach_RCL_links(
          "fuel cell": "H2 fuel cell",
          "battery inverter": "battery charger"})
     
+    # Only include p_nom limits included in the config snakemake.params["preinvestment_capacities"]["links"]
+    p_nom_limits = p_nom_limits[p_nom_limits["carrier"].isin(config["links"])]
+    
     # Flatten country column entries such that all lists are converted into individual rows
     p_nom_limits = p_nom_limits.explode("country").explode("carrier")
     
@@ -432,6 +435,9 @@ def attach_RCL_stores(
     e_nom_limits["carrier"] = e_nom_limits["carrier"].map(
         {"hydrogen storage underground": "H2",
          "battery storage": "battery"})
+    
+    # Only include e_nom limits included in the config snakemake.params["preinvestment_capacities"]["stores"]
+    e_nom_limits = e_nom_limits[e_nom_limits["carrier"].isin(config["stores"])]
     
     # Add country-reference to stores for mapping
     n.stores["country"] = n.stores["bus"].map(n.buses["country"])
@@ -588,7 +594,7 @@ if __name__ == "__main__":
     attach_storageunits(n, costs, extendable_carriers, max_hours)
     attach_stores(n, costs, extendable_carriers)
     attach_hydrogen_pipelines(n, costs, extendable_carriers)
-    if snakemake.params["constraints"]["RCL"]:
+    if snakemake.params["preinvestment_capacities"]["generators"]:
         attach_RCL_generators(
             n,
             config = snakemake.params["preinvestment_capacities"],
@@ -596,6 +602,8 @@ if __name__ == "__main__":
             fp_region_mapping = snakemake.input["region_mapping"],
             fp_technology_cost_mapping = snakemake.input["technology_cost_mapping"],
         )
+    # Execute is snakemake.params["preinvestment_capacities"]["links"] is not empty. its not a boolean
+    if snakemake.params["preinvestment_capacities"]["links"]:
         attach_RCL_links(
             n,
             config = snakemake.params["preinvestment_capacities"],
@@ -603,6 +611,7 @@ if __name__ == "__main__":
             fp_region_mapping = snakemake.input["region_mapping"],
             fp_technology_cost_mapping = snakemake.input["technology_cost_mapping"]
         )
+    if snakemake.params["preinvestment_capacities"]["stores"]:
         attach_RCL_stores(
             n,
             config = snakemake.params["preinvestment_capacities"],
@@ -610,7 +619,6 @@ if __name__ == "__main__":
             fp_region_mapping = snakemake.input["region_mapping"],
             fp_technology_cost_mapping = snakemake.input["technology_cost_mapping"]
         )
-    
     if snakemake.params["h2_demand"]["enabled"]:
         attach_hydrogen_demand(
             n,

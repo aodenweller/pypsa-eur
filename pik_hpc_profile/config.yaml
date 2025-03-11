@@ -8,16 +8,16 @@ jobs: 500
 # define the cluster submission command (slurm wrapper)
 # Use partition standard and qos short if not set
 cluster-generic-submit-cmd:
-  export HPC_PARTITION=${{HPC_PARTITION:-standard}} HPC_QOS=${{HPC_QOS:-short}} &&
-  mkdir -p logs_slurm/{rule} &&
+  export HPC_PARTITION=${{HPC_PARTITION:-priority}} HPC_QOS=${{HPC_QOS:-standby}} &&
+  mkdir -p logs_slurm/{wildcards.scenario}/{rule} &&
   sbatch
     --partition=$HPC_PARTITION
     --qos=$HPC_QOS
     --cpus-per-task={threads}
     --mem={resources.mem_mb}
-    --time='00:10:00'
+    --time='00:20:00'
     --job-name=smk-{rule}-{wildcards}
-    --output=logs_slurm/{rule}/{rule}-{wildcards}-%j.out
+    --output=logs_slurm/{wildcards.scenario}/{rule}/{rule}-{wildcards}-%j.out
     --parsable
     --export=PATH,LD_LIBRARY_PATH,GUROBI_HOME
 cluster-generic-cancel-cmd: scancel
@@ -90,6 +90,9 @@ set-resources:
     qos: "io"
   build_renewable_profiles:
     walltime: "'00:60:00'"
+  extract_coupling_parameters:
+    parition: "priority"
+    qos: "standby"
   # Due to group-components aggregating mem_mb resources,
   # the high default requests for mem_mb of these will exceed permitted memory requests in queue
   # but that much memory is currently not needed for small PyPSA-Eur models, so we overwrite the values here

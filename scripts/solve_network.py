@@ -1273,6 +1273,7 @@ def extra_functionality(n, snapshots):
     """
     config = n.config
     constraints = config["solving"].get("constraints", {})
+    rcl_config = config["remind_coupling"]["preinvestment_capacities"]
     if constraints["BAU"] and n.generators.p_nom_extendable.any():
         add_BAU_constraints(n, config)
     if constraints["SAFE"] and n.generators.p_nom_extendable.any():
@@ -1280,13 +1281,13 @@ def extra_functionality(n, snapshots):
     if constraints["CCL"] and n.generators.p_nom_extendable.any():
         add_CCL_constraints(n, config)
     # Add RCL constraint for generators
-    if constraints["RCL"] and n.generators.p_nom_extendable.any():
+    if rcl_config["generators"] and n.generators.p_nom_extendable.any():
         add_RCL_generator_constraints(n)
-    # Add RCL constraint for links (currently electrolysers and hydrogen turbines)
-    if constraints["RCL"] and n.links.p_nom_extendable.any():
+    # Add RCL constraint for links
+    if rcl_config["links"] and n.links.p_nom_extendable.any():
         add_RCL_link_constraints(n)
-    # Add RCL constraint for stores (currently hydrogen storage underground)
-    if constraints["RCL"] and n.stores.e_nom_extendable.any():
+    # Add RCL constraint for stores
+    if rcl_config["stores"] and n.stores.e_nom_extendable.any():
         add_RCL_store_constraints(n)
     reserve = config["electricity"].get("operational_reserve", {})
     if reserve.get("activate"):
