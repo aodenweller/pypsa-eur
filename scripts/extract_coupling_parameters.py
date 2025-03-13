@@ -88,13 +88,13 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="10",
-            scenario="PyPSA_PkBudg1000_DEU_adjCost_btCFup_2025-03-06_11.03.56",
+            iteration="11",
+            scenario="TEST",
         )
 
         # mock_snakemake doesn't work with checkpoints
         input_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_4_ec_lcopt_3H-RCL-Ep{ep:.1f}.nc"
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_1_ec_lcopt_3H-RCL-Ep{ep:.1f}.nc"
             for (year, ep) in zip(
                 # pairs of years and ...
                 [
@@ -121,7 +121,7 @@ if __name__ == "__main__":
                     26.9,
                     27.0,
                     27.2,
-                    137.1,
+                    180.8,
                     202.4,
                     224.0,
                     28.3,
@@ -734,6 +734,9 @@ if __name__ == "__main__":
         
         ## Determine grid losses in absolute and relative terms
         grid_loss_abs = network.statistics.energy_balance(comps = "Line", groupby="region").abs()
+        if len(grid_loss_abs) == 0:
+            grid_loss_abs = pd.Series([0], index=["DEU"])
+            grid_loss_abs.index.name = "region"
         grid_loss_rel = grid_loss_abs / network.statistics.withdrawal(comps="Load", bus_carrier="AC", groupby="region")
         
         grid_loss = pd.DataFrame({
@@ -790,7 +793,16 @@ if __name__ == "__main__":
 
         # Recombine national and international grid
         grid = pd.concat([national_grid, international_grid])
-
+        
+        # If there are no grid connections, create data frame with only zeros
+        if len(grid) == 0:
+            grid = pd.DataFrame({
+                "region": ["DEU"],
+                "p_nom_opt": [0],
+                "length": [0],
+                "carrier": ["AC-DC"],
+                "capital_cost": [0]
+            })
         # calculate total grid capacity in (MW*km) per region
         grid_capacity = (
             grid.groupby(["region"])
