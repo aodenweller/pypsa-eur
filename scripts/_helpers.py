@@ -25,11 +25,14 @@ from tqdm import tqdm
 
 import subprocess
 import sys
+import time
 
 logger = logging.getLogger(__name__)
 
 REGION_COLS = ["geometry", "name", "x", "y", "country"]
 
+DEFAULT_TUNNEL_PORT = 1080
+LOGIN_NODE = "01"
 
 def copy_default_files(workflow):
     default_files = {
@@ -1397,30 +1400,46 @@ def get_snapshots(snapshots, drop_leap_day=False, freq="h", **kwargs):
 
     return time
 
-def setup_gurobi_tunnel_and_env(tunnel_config: dict, logger: logging.Logger = None):
-    """A utility function to set up the Gurobi environment variables and establish an SSH tunnel
-    Otherwise the license check will fail
+def setup_gurobi_tunnel_and_env(
+    tunnel_config: dict, logger: logging.Logger = None, attempts=4
+) -> subprocess.Popen:
+    """A utility function to set up the Gurobi environment variables and establish an
+    SSH tunnel on HPCs. Otherwise the license check will fail if the compute nodes do
+     not have internet access or a token server isn't set up
 
     Args:
         config (dict): the snakemake pypsa-china configuration
         logger (logging.Logger, optional): Logger. Defaults to None.
+        attempts (int, optional): ssh connection attemps. Defaults to 4.
     """
-    if tunnel_config.get("use_tunnel", False) is False:
+    if not tunnel_config.get("use_tunnel", False):
         return
     logger.info("setting up tunnel")
     user = os.getenv("USER")  # User is pulled from the environment
-    DEFAULT_TUNNEL_PORT = 1080
-    port = tunnel_config.get("port", DEFAULT_TUNNEL_PORT)
-    ssh_command = f"ssh -fN -D {port} {user}@login01"
+    port = tunnel_config.get("tunnel_port", DEFAULT_TUNNEL_PORT)
 
+    # bash commands for tunnel: reduce pipe err severity (too high from snakemake)
+    pipe_err = "set -o pipefail; "
+    # ssh_command = f"ssh -vvv -fN -D {port} {user}@login{LOGIN_NODE}"
+    ssh_command = f"ssh -vvv -fN -D {port} {user}@login{LOGIN_NODE}"
+    logger.info(f"Attempting ssh tunnel to login node {LOGIN_NODE}")
+    # Run SSH in the background to establish the tunnel
+    socks_proc = subprocess.Popen(
+        pipe_err + ssh_command, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE
+    )
     try:
-        # Run SSH in the background to establish the tunnel
-        subprocess.Popen(ssh_command, shell=True)
-        logger.info(f"SSH tunnel established on port {port}")
-    # TODO don't handle unless neeeded
-    except Exception as e:
-        logger.error(f"Error starting SSH tunnel: {e}")
-        sys.exit(1)
+        time.sleep(0.2)
+        # [-1] because ssh is last command
+        err = socks_proc.communicate(timeout=2)[-1].decode()
+        logger.info(f"ssh err returns {str(err)}")
+        if err.find("Permission") != -1 or err.find("Could not resolve hostname") != -1:
+            socks_proc.kill()
+        else:
+            logger.info("Gurobi Environment variables & tunnel set up successfully at attempt {i}.")
+    except subprocess.TimeoutExpired:
+        logger.info(
+            f"SSH tunnel established on port {port} with possible errors (err check timedout)."
+        )
 
     os.environ["https_proxy"] = f"socks5://127.0.0.1:{port}"
     os.environ["SSL_CERT_FILE"] = "/p/projects/rd3mod/ssl/ca-bundle.pem_2022-02-08"
@@ -1432,5 +1451,6 @@ def setup_gurobi_tunnel_and_env(tunnel_config: dict, logger: logging.Logger = No
     os.environ["LD_LIBRARY_PATH"] += f":{os.environ['GUROBI_HOME']}/lib"
     os.environ["GRB_LICENSE_FILE"] = "/p/projects/rd3mod/gurobi_rc/gurobi.lic"
     os.environ["GRB_CURLVERBOSE"] = "1"
+    os.environ["GRB_SERVER_TIMEOUT"] = "10"
 
-    logger.info("Gurobi Environment variables & tunnel set up successfully.")
+    return socks_proc
