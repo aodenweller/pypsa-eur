@@ -63,31 +63,6 @@ def dynamic_getter(wildcards, keys, default):
     )
     return get_config(config_with_wildcards, keys, default)
 
-# REMIND specific
-@lru_cache(maxsize=None)
-def read_yaml(config_path):
-    """Read a YAML file and cache the result."""
-    with open(config_path, "r") as file:
-        return yaml.safe_load(file)
-
-def remind_config_getter(wildcards, keys, default):
-    """REMIND getter function for dynamic config values based on scenario."""
-
-    config_fallback = "config/config.remind.yaml"
-    config_path = f"resources/{wildcards.get('scenario')}/i{wildcards.get('iteration')}/config.remind_scenario.yaml"
-
-    # If config path exists, we are in execution mode
-    if os.path.exists(config_path):
-        # During execution, wildcards are available, so we can use the scenario-specific config
-        config_remind = read_yaml(config_path)
-    else:
-        # During parsing, wildcards are not available, so fall back to the default config file
-        config_remind = read_yaml(config_fallback)
-    config_with_wildcards = update_config_from_wildcards(
-        config_remind, wildcards, inplace=False)
-    return get_config(config_with_wildcards, keys, default)
-
-
 def config_provider(*keys, default=None):
     """Dynamically provide config values based on 'run' -> 'name'.
 
@@ -95,9 +70,6 @@ def config_provider(*keys, default=None):
     params:
         my_param=config_provider("key1", "key2", default="some_default_value")
     """
-    # REMIND specific
-    if config.get("remind_coupling", False):
-        return partial(remind_config_getter, keys=keys, default=default)
     # Using functools.partial to freeze certain arguments in our getter functions.
     if config["run"].get("scenarios", {}).get("enable", False):
         return partial(dynamic_getter, keys=keys, default=default)

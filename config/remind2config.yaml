@@ -1,0 +1,27 @@
+# This file maps REMIND switches to corresponding settings in the config.yaml
+# The file is parsed by import_REMIND_config.py
+
+# Note: The time resolution (c32_pypsa_nodes) and spatial resolution (c32_pypsa_hourlyRes)
+# are integrated via the wildcards that are set to co2_price_scenarios.csv in import_REMIND_config.py
+
+c32_pypsa_rcl_generators:
+  target: remind_coupling.preinvestment_capacities.generators
+  values:
+    0: false
+    1: true
+
+c32_pypsa_rcl_links:
+  target: remind_coupling.preinvestment_capacities.links
+  values:
+    0: []
+    1: [H2 electrolysis, H2 fuel cell]
+    2: [battery charger]
+    3: [H2 electrolysis, H2 fuel cell, battery charger]
+
+c32_pypsa_rcl_stores:
+  target: remind_coupling.preinvestment_capacities.stores
+  values:
+    0: []
+    1: [H2]
+    2: [battery]
+    3: [H2, battery]

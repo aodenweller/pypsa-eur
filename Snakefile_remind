@@ -180,15 +180,31 @@ rule download_and_prepare:
 # # * {year}: Indicating the REMIND year for which the model is built
 # # * {iteration}: Indicating the REMIND iteration for which the model is built
 
-# Copy standard remind.config yaml and make changes depending on the REMIND scenario
-# For now this should just copy-paste the config to the resources directory
-# TODO: Merge with checkpoint determine_co2_price_scenarios
-rule import_REMIND_config:
+# Checkpoint to:
+# 1) Import REMIND config and change config.remind_scenario.yaml accordingly
+#    This enables changes to the config.yaml file, depending on REMIND switches
+# 2) Import CO2 prices from REMIND and create co2_price_scenarios.csv
+#    This is used to give CO2 prices to PyPSA-Eur via wildcards and 
+#    also to determine in which years PyPSA-Eur should run
+# IMPORTANT: When calling the snakemake command, you need to provide the right
+# config file using the --config option, otherwise snakemake will use the default.
+# Using the config_provider function is insufficient and unreliable as calling
+# snakemake.config (which is used in many scripts) will return the default config.
+# Therefore, this rule needs to be called in a separate snakemake call BEFORE
+# the main snakemake call for the PyPSA-Eur runs. So for example:
+# > snakemake -s Snakefile_remind resources/default/i1/config.remind_scenario.yaml
+# > snakemake -s Snakefile_remind results/default/i1/PyPSAEUR2REMIND.gdx
+# >            --configfile resources/default/i1/config.remind_scenario.yaml
+# This will reliably overwrite any default with the config.remind_scenario.yaml
+checkpoint import_REMIND_config:
     input:
         config_default="config/config.remind.yaml",
-        remind_data= RESOURCES + "{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
+        remind2config="config/remind2config.yaml",
+        remind_data=RESOURCES + "{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
+        region_mapping="config/regionmapping_21_EU11.csv",
     output:
         config=RESOURCES + "{scenario}/i{iteration}/config.remind_scenario.yaml",
+        co2_price_scenarios=RESOURCES + "{scenario}/i{iteration}/co2_price_scenarios.csv",
     log:
         ITERATION_LOGS + "import_REMIND_config.log",
     benchmark:
@@ -260,30 +276,6 @@ rule import_REMIND_RCL_p_nom_limits:
     script:
         "scripts/import_REMIND_RCL_p_nom_limits.py"
 
-
-# CO2 price is integrated into model either via config.yaml or via a wildcard
-# we do not want to modify the config.yaml, so we use an approach to pass the CO2 price via a wildcard.
-# For this we make use of the conditional execution from snakemake via checkpoints (see https://snakemake.readthedocs.io/en/stable/snakefiles/rules.html#data-dependent-conditional-execution), were first the checkpoint is executed
-# and then we construct based on the checkpoint results the actual rule call and its input which will then solve the networks
-# with their respective CO2 prices:
-# 1. checkpoint determine_co2_price_scenarios: extract CO2 prices from REMIND + combine with scenario from config.yaml
-# 2. rule solve_all_scenarios: Use the output of the checkpoint to solve all scenarios with specific CO2 prices
-checkpoint determine_co2_price_scenarios:
-    input:
-        region_mapping="config/regionmapping_21_EU11.csv",
-        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
-        config=RESOURCES + "{scenario}/i{iteration}/config.remind_scenario.yaml",
-    output:
-        co2_price_scenarios=RESULTS + "{scenario}/i{iteration}/co2_price_scenarios.csv",
-    log:
-        LOGS + "{scenario}/i{iteration}/determine_co2_price_scenarios.log",
-    benchmark:
-        BENCHMARKS + "{scenario}/i{iteration}/determine_co2_price_scenarios"
-    localrule: True  # Checkpoints cannot be declared "local" with "localrules" statement on top, needs individual declaration as local
-    script:
-        "scripts/determine_CO2_price_scenarios.py"
-
-
 # snakemake -n -call -s Snakefile_remind solve_all_scenarios --config remind_scenario=no_scenario iteration=
 rule solve_all_scenarios:
     input:
@@ -292,7 +284,7 @@ rule solve_all_scenarios:
             + "{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
             zip,
             **pd.read_csv(
-                checkpoints.determine_co2_price_scenarios.get(
+                checkpoints.import_REMIND_config.get(
                     scenario=wildcards["scenario"],
                     iteration=wildcards["iteration"],
                 ).output["co2_price_scenarios"],

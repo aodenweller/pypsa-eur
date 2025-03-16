@@ -92,7 +92,7 @@ import numpy as np
 import pandas as pd
 import powerplantmatching as pm
 import pypsa
-from _helpers import configure_logging, set_scenario_config
+from _helpers import configure_logging, set_scenario_config, get_region_mapping
 from powerplantmatching.export import map_country_bus
 
 logger = logging.getLogger(__name__)
@@ -169,15 +169,21 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
-        snakemake = mock_snakemake("build_powerplants")
+        snakemake = mock_snakemake("build_powerplants",
+                                   scenario = "PyPSA_PkBudg1000_DEU_oneNode_RCLgenOnly_noAdjCost_2025-03-13_16.21.26",
+                                   iteration = 3,
+                                   year = 2150)
     configure_logging(snakemake)
     set_scenario_config(snakemake)
 
     n = pypsa.Network(snakemake.input.base_network)
     countries = snakemake.params.countries
 
+    # Read powerplants from snakemake.input["powerplants"]
+    ppl = pd.read_csv(snakemake.input.powerplants, index_col=0)
+    
     ppl = (
-        pm.powerplants(from_url=True)
+        ppl
         .powerplant.fill_missing_decommissioning_years()
         .powerplant.convert_country_to_alpha2()
         .query('Fueltype not in ["Solar", "Wind"] and Country in @countries')
@@ -206,6 +212,94 @@ if __name__ == "__main__":
     if countries_wo_ppl := set(countries) - set(ppl.Country.unique()):
         logging.warning(f"No powerplants known in: {', '.join(countries_wo_ppl)}")
 
+    # REMIND coupling specific: Filter powerplants for the year, including those with no DateOut date
+    year = int(snakemake.wildcards.year)
+    # Don't filter hydro (dealt with separately in attach_hydro)
+    ppl = ppl.query(
+        "(Fueltype == 'Hydro') or "
+        "(DateIn <= @year and "
+        "(DateOut >= @year or DateOut.isna()))"
+    )
+
+    # Read p_nom_limits 
+    p_nom_limits = pd.read_csv(snakemake.input.RCL_p_nom_limits, index_col=0).reset_index()
+    
+    # Map fuel type and technology to p_nom_limits
+    map_fueltype_p_nom = {
+        "Lignite": "coal & lignite",
+        "Hard Coal": "coal & lignite",
+        "Bioenergy": "biomass",
+        "Nuclear": "nuclear",
+        "Oil": "oil",
+    }
+    
+    # Map technology to p_nom_limits
+    map_tech_p_nom = {
+        "CCGT": "CCGT",
+        "OCGT": "OCGT"
+    }
+    
+    # Apply mappings to new column
+    ppl["technology_group"] = ppl.Fueltype.map(map_fueltype_p_nom)
+    # If type is NaN, map technology and fill in the missing values
+    ppl["technology_group"] = ppl["technology_group"].fillna(ppl.Technology.map(map_tech_p_nom))
+    
+    # Map Country to REMIND region
+    region_mapping = get_region_mapping(
+        snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU", flatten = True
+    )
+    ppl["region_REMIND"] = ppl["Country"].map(region_mapping)
+    
+    diff = (ppl[["region_REMIND", "technology_group", "Capacity"]]
+            .groupby(["region_REMIND", "technology_group"])
+            .sum()
+            .reset_index())
+    
+    # Merge with p_nom_limits and determine difference
+    diff = diff.merge(p_nom_limits)
+    diff["diff_abs"] = diff["Capacity"] - diff["p_nom_min"]
+    diff["diff_factor"] = diff["Capacity"] / diff["p_nom_min"]
+        
+    # Adjust powerplant database
+    ppl = ppl.merge(
+        diff[["technology_group", "diff_factor"]],
+        left_on="technology_group",
+        right_on="technology_group",
+        how="left")
+    
+    # If diff_factor is less than one, no need to change anything
+    # If diff_factor is greater than one, adjust capacity of each powerplant
+    ppl.loc[ppl["diff_factor"] > 1, "Capacity"] = ppl["Capacity"] / ppl["diff_factor"]
+    
+    # Remove columns
+    ppl = ppl.drop(columns = ["technology_group", "region_REMIND", "diff_factor"])
+    
+    # Logging
+    logging.info(f"Capacity of powerplants adjusted to RCL constraints:")
+    # Show log for each technology_group, posting the absolute difference
+    for tech_group in diff["technology_group"].unique():
+        diff_tech = diff.loc[diff["technology_group"] == tech_group]
+        before = round(diff_tech["Capacity"].values[0]/1E3, 2)
+        after = round(diff_tech["p_nom_min"].values[0]/1E3, 2)
+        if (after < before):
+            logging.info(f"Adjusting powerplants database for {tech_group} from {before} GW to {after} GW")
+        else:
+            logging.info(f"No adjustment to powerplants database for {tech_group} with {before} GW")
+    
+    # Update p_nom_limits
+    p_nom_limits_updated = p_nom_limits.merge(diff, how = "left")
+    # If diff_factor is > 1, all capacities are set through existing powerplants
+    p_nom_limits_updated.loc[
+        p_nom_limits_updated["diff_factor"] > 1, "p_nom_min"
+        ] = 0
+    # If diff_factor is < 1, capacities are set through updated RCL constraint
+    p_nom_limits_updated.loc[
+        p_nom_limits_updated["diff_factor"] < 1, "p_nom_min"
+        ] = p_nom_limits_updated["p_nom_min"] - p_nom_limits_updated["Capacity"]
+    p_nom_limits_updated = p_nom_limits_updated[["region_REMIND", "technology_group", "p_nom_min"]]
+    
+    p_nom_limits_updated.to_csv(snakemake.output.RCL_p_nom_limits_updated, index = False)
+    
     # Add "everywhere powerplants" to all bus locations
     ppl = add_everywhere_powerplants(
         ppl, n.buses, snakemake.params.everywhere_powerplants
@@ -227,3 +321,5 @@ if __name__ == "__main__":
     ppl.Name = ppl.Name.where(cumcount == 1, ppl.Name + " " + cumcount.astype(str))
 
     ppl.reset_index(drop=True).to_csv(snakemake.output[0])
+
+# %%

@@ -37,11 +37,17 @@ rule build_powerplants:
     input:
         base_network=resources("networks/base.nc"),
         custom_powerplants="data/custom_powerplants.csv",
+        powerplants="data/powerplants.csv",
+        RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
+        region_mapping="config/regionmapping_21_EU11.csv",
     output:
-        resources("powerplants.csv"),
+        SCENARIO_RESOURCES + "i{iteration}/y{year}/powerplants.csv",
+        RCL_p_nom_limits_updated=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits_updated.csv",
     log:
-        logs("build_powerplants.log"),
+        LOGS + "{scenario}/i{iteration}/y{year}/build_powerplants.log",
     threads: 1
+    group:
+        "iy"
     resources:
         mem_mb=7000,
     conda:
@@ -469,7 +475,7 @@ rule add_electricity:
         ),
         tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",
         regions=resources("regions_onshore.geojson"),
-        powerplants=resources("powerplants.csv"),
+        powerplants=SCENARIO_RESOURCES + "i{iteration}/y{year}/powerplants.csv",
         hydro_capacities=ancient("data/hydro_capacities.csv"),
         unit_commitment="data/unit_commitment.csv",
         fuel_price=lambda w: (
@@ -614,8 +620,7 @@ rule add_extra_components:
         + "i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}.nc",
         tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
-        RCL_p_nom_limits=SCENARIO_RESOURCES
-        + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
+        RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits_updated.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
         remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:

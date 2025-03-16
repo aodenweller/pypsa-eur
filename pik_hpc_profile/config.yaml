@@ -15,7 +15,7 @@ cluster-generic-submit-cmd:
     --qos=$HPC_QOS
     --cpus-per-task={threads}
     --mem={resources.mem_mb}
-    --time='00:20:00'
+    --time='00:10:00'
     --job-name=smk-{rule}-{wildcards}
     --output=logs_slurm/{wildcards.scenario}/{rule}/{rule}-{wildcards}-%j.out
     --parsable
@@ -38,7 +38,7 @@ rerun-trigger:
 - input
 - mtime
 - params
-restart-times: 2
+restart-times: 3
 # Disable snakemake lock
 nolock: true
 scheduler: greedy
@@ -85,7 +85,7 @@ set-resources:
   rertieve_synthetic_electricity_demand:
     partition: "io"
     qos: "io"
-  build_powerplants:
+  retrieve_powerplants:
     partition: "io"
     qos: "io"
   build_renewable_profiles:
@@ -124,7 +124,6 @@ groups:
 - retrieve_osm_prebuilt=download_data
 - retrieve_ship_raster=download_data
 - rertieve_synthetic_electricity_demand=download_data
-- build_powerplants=download_data
 
 # Due to limits for qos=partition="priority" to 5 concurrent cluster jobs per user,
 # performance is limited and jobs have to wait for their turn.

@@ -11,25 +11,18 @@ remind_coupling:
   preinvestment_capacities:
     # Cost at which preinvestment capacities are built (annualised in $/MW or $/MWh)
     capital_cost: 0.0
-    # Attach RCL generators (all generation technologies)
-    generators: true
+    # Attach RCL generators
+    generators: true  # Boolean for all generation technologies
     # Attach free RCL links for these components
-    links: [H2 electrolysis, H2 fuel cell]  # Any of [H2 electrolysis, H2 fuel cell, battery charger]
+    links: []  # Any of [H2 electrolysis, H2 fuel cell, battery charger]
     # Attach free RCL stores for these components
-    stores: [H2]  # Any of [H2, battery]
+    stores: []  # Any of [H2, battery]
   # Additional demand for electrolytic hydrogen from REMIND
   h2_demand:
     enabled: true
     buffer_max_hours: 168 # in hours, set to 0 to deactivate, full buffer = 8760
   extract_coupling_parameters:
     cutoff_market_values: 4 # false (to deactivate) or value, e.g.: 5 indicating zscore above which market_prices are excluded from the market_value calculation
-  # Automatically adjust time resolution if the time resolution wildcard is set to "0H",
-  # first value (key) indicates the range of iterations as tuple (inclusive start, exclusive end),
-  # the second string (value) represents the time resolution to use for these iterations as string "[0-9]+H"
-  automatic_time_resolution:
-    (0,5): "3H"     # Initial iterations fast
-    (5,10): "3H"    # Increase resolution
-    (10,9999): "3H" # All other, later iterations, highest resolution, assume close to convergence
 
 logging:
   level: INFO
@@ -67,9 +60,9 @@ scenario:
   ll:
   - copt  # REMIND coupling specific
   clusters:
-  - 4  # REMIND coupling specific
+  - 1  # REMIND coupling specific
   opts:  # REMIND coupling specific
-  - '0H-RCL-EpREMIND' #"-EpREMIND" is placeholder for setting the emissions prices through REMIND
+  - '3H-EpREMIND' #"-EpREMIND" is placeholder for setting the emissions prices through REMIND
   year: [2025, 2030, 2035, 2040, 2045, 2050, 2055, 2060, 2070, 2080, 2090, 2100, 2110, 2130, 2150]
   sector_opts:
   - ''
@@ -92,6 +85,7 @@ enable:
   retrieve: auto
   retrieve_databundle: true
   retrieve_cost_data: true
+  retrieve_powerplants: true
   build_cutout: false
   retrieve_cutout: true
   custom_busmap: false
@@ -135,11 +129,12 @@ electricity:
     Store: [battery, H2]
     Link: [] # H2 pipeline
 
-  powerplants_filter: (DateOut >= 2022 or DateOut.isna())
+  powerplants_filter: false
   custom_powerplants: false
   everywhere_powerplants: [OCGT, nuclear, oil, CCGT, coal, lignite, biomass] # REMIND coupling specific required for RCL constraint to work properly; ignores existing powerplant locations
 
-  conventional_carriers: []  # REMIND coupling specific: Set starting capacities of existing conventional powerplants to zero
+  # If conventional_carriers is empty, there are now existing powerplants, but only RCL generators
+  conventional_carriers: [OCGT, nuclear, oil, CCGT, coal, lignite, biomass]
   renewable_carriers: [solar, onwind, offwind-ac, offwind-dc, hydro]
 
   estimate_renewable_capacities:
@@ -929,8 +924,8 @@ solving:
     # io_api: "direct"  # Increases performance but only supported for the highs and gurobi solvers
     # options that go into the optimize function
     track_iterations: false
-    min_iterations: 4
-    max_iterations: 6
+    min_iterations: 2
+    max_iterations: 3
     transmission_losses: 2
     linearized_unit_commitment: true
     horizon: 365
@@ -957,7 +952,7 @@ solving:
     EQ: false
     BAU: false
     SAFE: false
-    RCL: true
+    RCL: true  # TODO: Remove here
 
   solver:
     name: gurobi

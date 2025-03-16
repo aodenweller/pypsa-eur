@@ -46,7 +46,9 @@ from _helpers import (
     update_config_from_wildcards,
     get_region_mapping,
     get_technology_mapping,
-    setup_gurobi_tunnel_and_env
+    setup_gurobi_tunnel_and_env,
+    is_tunnel_alive,
+    check_gurobi_license,
 )
 from prepare_sector_network import get
 from pypsa.descriptors import get_activity_mask
@@ -1433,6 +1435,18 @@ if __name__ == "__main__":
     )
 
     # %%
+    # Check that tunnel is running (once again)
+    if not is_tunnel_alive(gurobi_license_config):
+        logger.warning("SSH tunnel appears to be down. Restarting...")
+        setup_gurobi_tunnel_and_env(gurobi_license_config, logger)
+
+    # Check that gurobi license is available
+    # Note: Although linopy supports passing the Gurobi environment via env
+    # this doesn't work here as we need to create the Gurobi environment
+    # in a subprocess in order to catch possible timeouts.
+    # Gurobi environments cannot be shared across resources.
+    check_gurobi_license()
+    
     with memory_logger(
         filename=getattr(snakemake.log, "memory", None), interval=30.0
     ) as mem:

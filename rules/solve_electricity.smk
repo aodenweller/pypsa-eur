@@ -15,7 +15,7 @@ rule solve_network:
     input:
         network=ITERATION_RESOURCES
         + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
-        RCL_p_nom_limits=ITERATION_RESOURCES + "y{year}/RCL_p_nom_limits.csv",
+        RCL_p_nom_limits=ITERATION_RESOURCES + "y{year}/RCL_p_nom_limits_updated.csv",
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
     output:

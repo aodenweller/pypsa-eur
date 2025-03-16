@@ -88,13 +88,13 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "extract_coupling_parameters",
             configfiles="config/config.remind.yaml",
-            iteration="11",
-            scenario="TEST",
+            iteration="1",
+            scenario="PyPSA_PkBudg1000_DEU_oneNode_RCLgenOnly_noAdjCost_1node_2025-03-14_17.48.26",
         )
 
         # mock_snakemake doesn't work with checkpoints
         input_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_1_ec_lcopt_3H-RCL-Ep{ep:.1f}.nc"
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{year}/networks/elec_s_1_ec_lcopt_3H-Ep{ep:.1f}.nc"
             for (year, ep) in zip(
                 # pairs of years and ...
                 [
@@ -127,8 +127,8 @@ if __name__ == "__main__":
                     28.3,
                     305.7,
                     29.8,
-                    30.8,
-                    30.8,
+                    308.0,
+                    308.0,
                     30.8,
                     30.8,
                 ],
@@ -499,15 +499,21 @@ if __name__ == "__main__":
         generation_share["year"] = year
         generation_shares.append(generation_share)
 
-        # Calculate technology pre-installed capacities
-        # RCL-capacities are <= pre-installed capacities provided from REMIND, choose RCL capacities here
-        # as starter; these are first expanded before the same carriers but non-RCL are installed (due to 0 costs)
-        preinstalled_capacity = network.statistics.optimal_capacity(
+        # Preinstalled capacities consist of two parts 
+        # First, get p_nom from capacity-adjusted existing powerplants
+        preinstalled_capacity_ppl = network.statistics.installed_capacity(
+            comps=["Generator"], groupby=["RCL", "region", "general_carrier"]  # Only generators for now
+        )
+        preinstalled_capacity_ppl = preinstalled_capacity_ppl.to_frame("value").reset_index()
+        # Second, get p_nom_opt from RCL components
+        preinstalled_capacity_rcl = network.statistics.optimal_capacity(
             comps=["Generator", "Link", "Store"], groupby=["RCL", "region", "general_carrier"]
         )
-        preinstalled_capacity = preinstalled_capacity.to_frame("value").reset_index()
+        preinstalled_capacity_rcl = preinstalled_capacity_rcl.to_frame("value").reset_index()
+        preinstalled_capacity_rcl = preinstalled_capacity_rcl.query("RCL == True")
+        # Combine both
+        preinstalled_capacity = pd.concat([preinstalled_capacity_ppl, preinstalled_capacity_rcl])
         preinstalled_capacity["year"] = year
-        preinstalled_capacity = preinstalled_capacity.query("RCL == True")
         preinstalled_capacities.append(preinstalled_capacity)
 
         # Maximum potentials per technology
@@ -708,8 +714,31 @@ if __name__ == "__main__":
         peak_residual_load["carrier"] = "AC"
         peak_residual_loads.append(peak_residual_load)
 
+        def get_supply_with_zeros(value):
+            supply_data = network.statistics.supply(comps=["Link"], groupby=["region", "carrier"])
+            # Ensure the index includes both 'component' and 'region'
+            supply_data = supply_data.xs("Link", level="component")  # Extract only "Link" component
+
+            # Convert to DataFrame and unstack "carrier"
+            supply_df = supply_data.unstack(level="carrier").fillna(0)
+
+            # Ensure "battery discharger" column exists
+            if value not in supply_df.columns:
+                supply_df[value] = 0
+
+            # Extract the "battery discharger" supply and restore MultiIndex
+            absolute_supply = supply_df[value]
+            absolute_supply = absolute_supply.to_frame("objective")  # Convert to DataFrame
+
+            # Reintroduce "component" level
+            absolute_supply["component"] = "Link"
+            absolute_supply = absolute_supply.set_index("component", append=True)  # Move "component" to MultiIndex
+            absolute_supply = absolute_supply.reorder_levels(["component", "region"])["objective"]  # Ensure correct order
+            
+            return absolute_supply
+
         ## Calculate hydrogen turbine (fuel cell) storage requirements
-        absolute_supply = network.statistics.supply(comps=["Link"], groupby=["region", "carrier"]).xs("H2 fuel cell", level="carrier")
+        absolute_supply = get_supply_with_zeros("H2 fuel cell")
         relative_supply = absolute_supply / network.statistics.withdrawal(comps="Load", bus_carrier="AC", groupby="region")
 
         h2turb_storage = pd.DataFrame({
@@ -721,7 +750,7 @@ if __name__ == "__main__":
         h2turb_storages.append(h2turb_storage)
         
         ## Calculate battery storage requirements
-        absolute_supply = network.statistics.supply(comps=["Link"], groupby=["region", "carrier"]).xs("battery discharger", level="carrier")
+        absolute_supply = get_supply_with_zeros("battery discharger")
         relative_supply = absolute_supply / network.statistics.withdrawal(comps="Load", bus_carrier="AC", groupby="region")
         
         battery_storage = pd.DataFrame({
@@ -734,6 +763,7 @@ if __name__ == "__main__":
         
         ## Determine grid losses in absolute and relative terms
         grid_loss_abs = network.statistics.energy_balance(comps = "Line", groupby="region").abs()
+        # TODO: Hacky temporary solution
         if len(grid_loss_abs) == 0:
             grid_loss_abs = pd.Series([0], index=["DEU"])
             grid_loss_abs.index.name = "region"
@@ -749,6 +779,7 @@ if __name__ == "__main__":
 
         ## Determime grid sizes and investments per region
         # The full grid: Combine DC and AC lines into one dataframe
+        # TODO: Refactor when implementing grid tech in REMIND
         grid = pd.concat(
             [
                 network.links.query("carrier == 'DC'")[
@@ -795,6 +826,7 @@ if __name__ == "__main__":
         grid = pd.concat([national_grid, international_grid])
         
         # If there are no grid connections, create data frame with only zeros
+        # TODO: Hacky way to avoid errors
         if len(grid) == 0:
             grid = pd.DataFrame({
                 "region": ["DEU"],
@@ -951,7 +983,7 @@ if __name__ == "__main__":
         # Read gen shares from REMIND for weighing
         capacity_weights = read_remind_data(
             file_path=snakemake.input["remind_weights"],
-            variable_name="v32_shSeElDisp",
+            variable_name="v32_shPe2seel",
             rename_columns={
                 "ttot": "year",
                 "all_regi": "region",
