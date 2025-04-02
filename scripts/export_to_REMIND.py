@@ -2,7 +2,7 @@
 # %%
 import logging
 import os
-
+import copy
 import gamspy as gt
 import numpy as np
 import pandas as pd
@@ -22,59 +22,65 @@ logger = logging.getLogger(__name__)
 # ------------------------------
 
 
-def add_region_and_general_carrier(network, region_mapping, map_pypsaeur_to_general):
+def add_columns_for_processing(n, region_mapping, map_pypsaeur_to_general):
     """
-    Add column region and general_carrier to network components.
+    Add columns to network components:
+    # (1) region (REMIND region)
+    # (2) general_carrier (general technology group)
+    # (3) RCL (region-carrier-limit) to identify the components more easily
     """
     # Remove columns from network components if they already exist
     # These come from the RCL constraints
     # TODO: Harmonise columns names in RCL constraints
     for comp in ["generators", "links", "stores"]:
-        if "region_REMIND" in getattr(network, comp).columns:
-            getattr(network, comp).drop(columns=["region_REMIND"], inplace=True)
-        if "technology_group" in getattr(network, comp).columns:
-            getattr(network, comp).drop(columns=["technology_group"], inplace=True)
+        if "region_REMIND" in getattr(n, comp).columns:
+            getattr(n, comp).drop(columns=["region_REMIND"], inplace=True)
+        if "technology_group" in getattr(n, comp).columns:
+            getattr(n, comp).drop(columns=["technology_group"], inplace=True)
 
+    # (1) Add region
     # Add region to buses if it doesnt exist (this is the case if additionakl h2demand is not enabled)
-    if "region" not in network.buses.columns:
-        network.buses["region"] = ""
+    if "region" not in n.buses.columns:
+        n.buses["region"] = ""
 
     # First map the PyPSA-EUR countries to REMIND-EU regions;
     # .statistics(..) can then automatically take care of the aggregation
     # H2 demand buses already have a region assigned, so we don't want to overwrite those
-    network.buses["region"] = network.buses["region"].where(
-        network.buses["region"] != "",
-        network.buses["country"].map(region_mapping["REMIND-EU"]),
+    n.buses["region"] = n.buses["region"].where(
+        n.buses["region"] != "",
+        n.buses["country"].map(region_mapping["REMIND-EU"]),
     )
 
     # Add information for aggregation later: region name (REMIND-EU) and general carrier
-    network.generators["region"] = network.generators["bus"].map(
-        network.buses["region"]
-    )
-    network.stores["region"] = network.stores["bus"].map(network.buses["region"])
-    network.storage_units["region"] = network.storage_units["bus"].map(
-        network.buses["region"]
-    )
-    network.links["region"] = network.links["bus0"].map(network.buses["region"])
-    network.lines["region"] = network.lines["bus0"].map(network.buses["region"])
-    network.loads["region"] = network.loads["bus"].map(network.buses["region"])
+    n.generators["region"] = n.generators["bus"].map(n.buses["region"])
+    n.stores["region"] = n.stores["bus"].map(n.buses["region"])
+    n.storage_units["region"] = n.storage_units["bus"].map(n.buses["region"])
+    n.links["region"] = n.links["bus0"].map(n.buses["region"])
+    n.lines["region"] = n.lines["bus0"].map(n.buses["region"])
+    n.loads["region"] = n.loads["bus"].map(n.buses["region"])
     # Links/lines have two buses, and can be attributed to two regions (used for e.g. grid length calculations)
-    network.links["region1"] = network.links["bus1"].map(network.buses["region"])
-    network.lines["region1"] = network.lines["bus1"].map(network.buses["region"])
+    n.links["region1"] = n.links["bus1"].map(n.buses["region"])
+    n.lines["region1"] = n.lines["bus1"].map(n.buses["region"])
 
-    # Add general carrier to network components
-    network.generators["general_carrier"] = network.generators["carrier"].map(
+    # (2) Add general_carrier
+    n.generators["general_carrier"] = n.generators["carrier"].map(
         map_pypsaeur_to_general
     )
-    network.stores["general_carrier"] = network.stores["carrier"]
-    network.storage_units["general_carrier"] = network.storage_units["carrier"].map(
+    n.stores["general_carrier"] = n.stores["carrier"]
+    n.storage_units["general_carrier"] = n.storage_units["carrier"].map(
         map_pypsaeur_to_general
     )
-    network.links["general_carrier"] = network.links["carrier"]
-    network.lines["general_carrier"] = network.lines["carrier"]
-    network.loads["general_carrier"] = network.loads["bus"].map(
-        network.buses["carrier"]
-    )
+    n.links["general_carrier"] = n.links["carrier"]
+    n.lines["general_carrier"] = n.lines["carrier"]
+    n.loads["general_carrier"] = n.loads["bus"].map(n.buses["carrier"])
+
+    # (3) Add RCL
+    n.generators["RCL"] = False
+    n.generators.loc[n.generators.index.str.contains("RCL"), "RCL"] = True
+    n.links["RCL"] = False
+    n.links.loc[n.links.index.str.contains("RCL"), "RCL"] = True
+    n.stores["RCL"] = False
+    n.stores.loc[n.stores.index.str.contains("RCL"), "RCL"] = True
 
 
 def get_pypsa_to_general_mapping(fp_mapping):
@@ -174,7 +180,7 @@ def check_for_mapping_completeness(n):
 def process_data(df, cols, map_to_remind):
     """
     Process the dataframes, combines the network-specific results into one dataframe
-    removes excess columns / sets index and sorts by region + year.
+    removes excess columns / sets index and sorts by cols.
 
     Parameters
     ----------
@@ -193,40 +199,36 @@ def process_data(df, cols, map_to_remind):
 
     # Remove rows related to the additional hydrogen bus
     if "general_carrier" in df.columns:
-        df = df.query("general_carrier != 'H2 transfer to H2 demand REMIND'")
-        df = df.query("general_carrier != 'H2 demand buffer REMIND'")
-
-    # Helper function to map carriers to REMIND technologies
-    def map_carriers_for_remind(dg, col):
-        """
-        Maps the carrier names from general technologies to REMIND
-        technologies.
-        """
-        # Mapping
-        old_carrier = dg.iloc[0][col]
-        new_carriers = map_general_to_remind[old_carrier]
-        # Repeat rows for each new carrier, create new dataframe then assign the new carrier name
-        dg = pd.DataFrame(
-            np.repeat(dg.values, len(new_carriers), axis=0), columns=dg.columns
+        df = df.query(
+            "general_carrier not in ['H2 transfer to H2 demand REMIND', 'H2 demand buffer REMIND']"
         )
-        dg[col] = new_carriers
-        return dg
 
-    # Map carriers to REMIND technologies for general_carrier
-    if map_to_remind and "carrier_perturbed" not in df.columns:
-        df = df.rename(columns={"general_carrier": "carrier"})
-        df = df.groupby(["region", "carrier"], group_keys=False).apply(
-            map_carriers_for_remind, col="carrier"
-        )
-    # Map carriers to REMIND technologies for both carrier and carrier_perturbed
-    if map_to_remind and "carrier_perturbed" in df.columns:
-        df = df.rename(columns={"general_carrier": "carrier"})
-        df = df.groupby(
-            ["region", "carrier", "carrier_perturbed"], group_keys=False
-        ).apply(map_carriers_for_remind, col="carrier")
-        df = df.groupby(
-            ["region", "carrier", "carrier_perturbed"], group_keys=False
-        ).apply(map_carriers_for_remind, col="carrier_perturbed")
+    # Function to map and explode carrier columns
+    def map_and_explode(df, column):
+        if column in df.columns:
+            # Get original column order
+            cols = list(df.columns)
+            # Map carriers to REMIND technologies
+            df.loc[:, f"new_{column}"] = df[column].map(map_general_to_remind)
+            # Explode the new carriers into separate rows
+            df = (
+                df.explode(f"new_{column}")
+                .drop(columns=[column])
+                .rename(columns={f"new_{column}": column})
+            )
+            # Reorder columns
+            df = df[cols]
+        return df
+
+    # Map carriers to REMIND technologies
+    if map_to_remind:
+        df = map_and_explode(
+            df.copy(), "general_carrier"
+        )  # Make a copy before modifying
+        if "carrier_perturbed" in df.columns:
+            df = map_and_explode(
+                df.copy(), "carrier_perturbed"
+            )  # Make a copy before modifying
 
     return df
 
@@ -362,7 +364,7 @@ def calculate_load_prices(n, grouper):
     return load_prices
 
 
-def calculate_markups_supply(n, comps, grouper, map_to_remind):
+def calculate_markups_supply(n, comps, grouper, z_cutoff, map_to_remind):
     """
     Calculate markups for all generators.
 
@@ -374,28 +376,39 @@ def calculate_markups_supply(n, comps, grouper, map_to_remind):
         List of components to calculate markups for.
     grouper : list
         List of columns to group the markups by.
+    z_cutoff: float or bool
+        Z-score above which to cut off scarcity prices.
     map_to_remind: bool
         Whether to map the general carrier names to REMIND carrier names.
     """
+    # Cutoff scarcity prices if configured
+    if z_cutoff:
+        n_calc = cutoff_scarcity_prices(n, z_cutoff)
+    else:
+        n_calc = n
+
     # Calculate markups for the supply side
-    market_value = n.statistics.market_value(comps=comps, groupby=grouper)
+    market_value = n_calc.statistics.market_value(comps=comps, groupby=grouper)
 
     # Get average electricity price
     load_price_ac = (
-        calculate_load_prices(n, grouper).query("general_carrier == 'AC'").value[0]
+        calculate_load_prices(n_calc, grouper).query("general_carrier == 'AC'").value[0]
     )
 
     # Subtract average electricity price from market value to get markup
     markups_supply = market_value - load_price_ac
     markups_supply = (
-        markups_supply.to_frame("value").reset_index().drop(columns=["component"])
+        markups_supply.to_frame("value")
+        .reset_index()
+        .drop(columns=["component"])
+        .fillna(0)
     )
 
     return process_data(markups_supply, cols=grouper, map_to_remind=map_to_remind)
 
 
 # TODO: Make compatible with multiple regions
-def calculate_markups_demand(n, grouper, map_to_remind):
+def calculate_markups_demand(n, grouper, z_cutoff, map_to_remind):
     """
     Calculate markups for the demand side, i.e.
     electricity prices paid by differend end-users.
@@ -407,19 +420,29 @@ def calculate_markups_demand(n, grouper, map_to_remind):
         Network to calculate markups for.
     grouper : list
         List of columns to group the markups by.
+    z_cutoff: float or bool
+        Z-score above which to cut off scarcity prices.
+    map_to_remind: bool
+        Whether to map the general carrier names to REMIND carrier names.
     """
+    # Cutoff scarcity prices if configured
+    if z_cutoff:
+        n_calc = cutoff_scarcity_prices(n, z_cutoff)
+    else:
+        n_calc = n
+
     # Electrolysis generation series
-    gen = n.links_t.p0.loc[:, n.links.carrier == "H2 electrolysis"]
-    gen.columns = gen.columns.map(n.links.bus0)
+    gen = n_calc.links_t.p0.loc[:, n_calc.links.carrier == "H2 electrolysis"]
+    gen.columns = gen.columns.map(n_calc.links.bus0)
     gen = gen.T.groupby(level=0).sum().T
     # Local marginal price
-    lmp = n.buses_t.marginal_price.loc[:, gen.columns]
+    lmp = n_calc.buses_t.marginal_price.loc[:, gen.columns]
     # Calculate market value
     mv = (gen * lmp).sum().sum() / gen.sum().sum()
 
     # Get average electricity price
     load_price_ac = (
-        calculate_load_prices(n, grouper).query("general_carrier == 'AC'").value[0]
+        calculate_load_prices(n_calc, grouper).query("general_carrier == 'AC'").value[0]
     )
 
     # Subtract average electricity price from market value to get markup
@@ -591,7 +614,7 @@ def calculate_potentials(n, grouper, map_to_remind):
     return process_data(potential, cols=grouper, map_to_remind=map_to_remind)
 
 
-def calculate_optimal_capacities(n, comps, grouper, year):
+def calculate_optimal_capacities(n, comps, grouper, weigh_by_remind, year=None):
     """
     Calculate optimal capacities for the network.
 
@@ -603,14 +626,14 @@ def calculate_optimal_capacities(n, comps, grouper, year):
         List of components to calculate optimal capacities for.
     grouper : list
         List of columns to group the optimal capacities by.
+    weigh_by_remind: bool
+        Whether to weigh the optimal capacities by REMIND capacities.
     year: int
-        Year to calculate optimal capacities for.
+        Year to weigh the optimal capacities by REMIND capacities.
     """
     # Calculate optimal capacities
     optimal_capacities = n.statistics.optimal_capacity(comps=comps, groupby=grouper)
-    optimal_capacities = (
-        optimal_capacities.to_frame("value").reset_index().drop(columns=["component"])
-    )
+    optimal_capacities = optimal_capacities.to_frame("value").reset_index()
 
     # Remove rows related to the additional hydrogen bus
     if "general_carrier" in optimal_capacities.columns:
@@ -622,7 +645,13 @@ def calculate_optimal_capacities(n, comps, grouper, year):
         )
 
     # Weigh by REMIND capacities
-    optimal_capacities = weigh_by_REMIND_capacity(optimal_capacities, grouper, year)
+    if weigh_by_remind:
+        # Drop
+        optimal_capacities = optimal_capacities.drop(columns=["component"])
+        # Ensure year is provided
+        if year is None:
+            raise ValueError("Year must be provided to weigh by REMIND capacities")
+        optimal_capacities = weigh_by_REMIND_capacity(optimal_capacities, grouper, year)
 
     return optimal_capacities
 
@@ -930,60 +959,224 @@ def determine_crossborder_flow_and_price(network, carrier=["AC", "DC"]):
 # ------------------------------
 
 
-def calculate_market_values_supply(n, groupby):
+def calculate_energy_balance(
+    n, comps=["Load", "Link", "Generator", "Store", "StorageUnit"]
+):
     """
-    Calculate market values for the all generators.
+    Calculate the energy balance for the network.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network to calculate the energy balance for.
+    """
+    # Calculate energy balance
+    energy_balance = (
+        n.statistics.energy_balance(comps=comps, nice_names=False)
+        .to_frame("value")
+        .reset_index()
+    )
+
+    return energy_balance
+
+
+def calculate_preinstalled_capacities(n, grouper=["region", "general_carrier"]):
+    """
+    Calculate preinstalled capacities for the network.
+    These are capacities passed for free from REMIND to PyPSA.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network to calculate preinstalled capacities for.
+    """
+    # Preinstalled capacities consist of two parts
+    # First, get p_nom from capacity-adjusted existing powerplants
+    preinstalled_capacity_ppl = n.statistics.installed_capacity(
+        comps=["Generator"], groupby=(["RCL"] + grouper)  # Only generators for now
+    )
+    preinstalled_capacity_ppl = preinstalled_capacity_ppl.to_frame(
+        "value"
+    ).reset_index()
+    # Second, get p_nom_opt from RCL components
+    preinstalled_capacity_rcl = n.statistics.optimal_capacity(
+        comps=["Generator", "Link", "Store"], groupby=(["RCL"] + grouper)
+    )
+    preinstalled_capacity_rcl = preinstalled_capacity_rcl.to_frame(
+        "value"
+    ).reset_index()
+    preinstalled_capacity_rcl = preinstalled_capacity_rcl.query("RCL == True")
+    # Combine both
+    preinstalled_capacities = pd.concat(
+        [preinstalled_capacity_ppl, preinstalled_capacity_rcl]
+    )
+
+    return preinstalled_capacities
+
+
+def cutoff_scarcity_prices(n, z_cutoff):
+    """
+    Create a deep copy of the network and apply a
+    cutoff for scarcity prices to the marginal prices.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network to apply cutoff for scarcity prices to.
+    z_cutoff : float
+        Z-score to apply cutoff for scarcity prices.
+    """
+    # Calculate market values after applying cutoff for electricity prices
+    n_cutoff = copy.deepcopy(n)
+
+    relevant_buses = n_cutoff.buses.query("carrier == 'AC'").index
+    z_cutoff = float(z_cutoff)
+    zscores = (
+        n_cutoff.buses_t["marginal_price"][relevant_buses]
+        .apply(zscore)
+        .mean(axis="columns")
+    )
+    zscores.index = pd.to_datetime(zscores.index)
+
+    # By setting snapshot_weightings to 0, the market value will not be calculated for these snapshots above the cutoff value
+    n_cutoff.snapshot_weightings = n_cutoff.snapshot_weightings.where(
+        zscores < z_cutoff, 0
+    )
+
+    logger.info(
+        "Excluding {number} snapshots from calculations with electricity prices above {p:.2f} USD/MWh.".format(
+            number=int(
+                n_cutoff.snapshot_weightings["generators"].shape[0]
+                * n_cutoff.snapshot_weightings["generators"].iloc[0]
+                - n_cutoff.snapshot_weightings["generators"].sum()
+            ),
+            p=n_cutoff.buses_t["marginal_price"][relevant_buses]
+            .where(zscores < z_cutoff)
+            .mean(axis="columns")
+            .max(),
+        )
+    )
+
+    return n_cutoff
+
+
+def calculate_market_values_supply(n, comps, grouper, z_cutoff):
+    """
+    Calculate market values for
 
     Parameters
     ----------
     n : pypsa.Network
         Network to calculate market values for.
-    groupby : list
+    comps: list
+        List of components to calculate market values for.
+    grouper : list
         List of columns to group the market values by.
+    z_cutoff: float
+        Z-score above which to cut off scarcity prices.
     """
-    # Calculate market values after applying cutoff for electricity prices
-    if cutoff_market_values := snakemake.config["remind_coupling"][
-        "extract_coupling_parameters"
-    ]["cutoff_market_values"]:
-        relevant_buses = network.buses.query("carrier == 'AC'").index
-        cutoff_market_values = float(cutoff_market_values)
-        zscores = (
-            network.buses_t["marginal_price"][relevant_buses]
-            .apply(zscore)
-            .mean(axis="columns")
-        )
-        zscores.index = pd.to_datetime(zscores.index)
-
-        # By setting snapshot_weightings to 0, the market value will not be calculated for these snapshots above the cutoff value
-        network.snapshot_weightings = network.snapshot_weightings.where(
-            zscores < cutoff_market_values, 0
-        )
-
-        logger.info(
-            "Cutoff for electricity prices in market value calculation enabled. "
-            "Excluding {n} snapshots from calculations with electricity prices above {p:.2f} USD/MWh.".format(
-                n=int(
-                    network.snapshot_weightings["generators"].shape[0]
-                    * network.snapshot_weightings["generators"].iloc[0]
-                    - network.snapshot_weightings["generators"].sum()
-                ),
-                p=network.buses_t["marginal_price"][relevant_buses]
-                .where(zscores < cutoff_market_values)
-                .mean(axis="columns")
-                .max(),
-            )
-        )
+    # Cutoff scarcity prices if configured
+    if z_cutoff:
+        n_calc = cutoff_scarcity_prices(n, z_cutoff)
+    else:
+        n_calc = n
 
     # Calculate the market values (round-about way as the intended method of the statistics module is not yet available)
-    market_values = network.statistics.market_value(
-        comps=["Generator"],
-        groupby=["region", "general_carrier"],
+    market_values_supply = n_calc.statistics.market_value(
+        comps=comps,
+        groupby=grouper,
     )
-    market_values = (
-        market_values.to_frame("value").reset_index().drop(columns=["component"])
+    market_values_supply = market_values_supply.to_frame("value").reset_index()
+
+    return market_values_supply
+
+
+def calculate_market_values_demand(n, z_cutoff):
+    """
+    Calculate market values for demand-side end-users.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network to calculate market values for.
+    grouper : list
+        List of columns to group the market values by.
+    z_cutoff: float
+        Z-score above which to cut off scarcity prices.
+    """
+    # Cutoff scarcity prices if configured
+    if z_cutoff:
+        n_calc = cutoff_scarcity_prices(n, z_cutoff)
+    else:
+        n_calc = n
+
+    # Electrolysis generation series
+    gen = n_calc.links_t.p0.loc[:, n_calc.links.carrier == "H2 electrolysis"]
+    gen.columns = gen.columns.map(n_calc.links.bus0)
+    gen = gen.T.groupby(level=0).sum().T
+    # Local marginal price
+    lmp = n_calc.buses_t.marginal_price.loc[:, gen.columns]
+    # Calculate market value
+    mv = (gen * lmp).sum().sum() / gen.sum().sum()
+
+    # Create DataFrame
+    market_values_demand = pd.DataFrame(
+        {
+            "region": ["DEU"],
+            "general_carrier": ["electrolysis"],
+            "value": [mv],
+        }
     )
 
-    return market_values
+    return market_values_demand
+
+
+def calculate_curtailments(n, grouper):
+    """
+    Calculate curtailments for the network.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network to calculate curtailments for.
+    grouper : list
+        List of columns to group the curtailments by.
+    """
+    # Calculate curtailments
+    curtailments = n.statistics.curtailment(groupby=grouper, nice_names=False)
+    curtailments = curtailments.to_frame("value").reset_index()
+
+    return curtailments
+
+
+# TODO: Check implementation and compare with other options
+def calculate_hourly_prices(n, grouper):
+    """
+    Calculate hourly prices for the network.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network to calculate hourly prices for.
+    grouper : list
+        List of columns to group the hourly prices by.
+    """
+    # Calculate hourly prices
+    hourly_prices = n.statistics.revenue(
+        comps=["Load"],
+        groupby=grouper,
+        aggregate_time=False,
+    ) / (
+        -1
+        * n.statistics.withdrawal(
+            comps=["Load"],
+            groupby=grouper,
+            aggregate_time=False,
+        )
+    )
+    hourly_prices = hourly_prices.reset_index()
+
+    return hourly_prices
 
 
 # %%
@@ -1000,15 +1193,16 @@ if __name__ == "__main__":
         )
 
         # Manual input for testing
-        networks = [
+        fp_networks = [
             f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8.nc",
             f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op.nc",
             f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_CCGT.nc",
             f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_solar.nc",
         ]
     else:
-        networks = snakemake.input["networks"]
-        configure_logging(snakemake)
+        fp_networks = snakemake.input["networks"]  # For testing this doesn't work
+
+    configure_logging(snakemake)
 
     # Get PyPSA-EUR to general technology mapping
     map_pypsaeur_to_general = get_pypsa_to_general_mapping(
@@ -1032,7 +1226,10 @@ if __name__ == "__main__":
         snakemake.input["region_mapping"]
     )
 
-    # Define coupling functions along with their required parameters
+    # Define dictionary of coupling parameters
+    # The func key is the function to calculate the parameter
+    # The params key provide parameters for the function
+    # The gdx key is used to save the parameter to a GDX file
     coupling_functions = {
         "capacity_factors": {
             "func": calculate_capacity_factors,
@@ -1051,6 +1248,9 @@ if __name__ == "__main__":
             "params": {
                 "comps": ["Generator"],
                 "grouper": ["region", "general_carrier"],
+                "z_cutoff": snakemake.config["remind_coupling"]["export_to_REMIND"][
+                    "z_cutoff"
+                ],
                 "map_to_remind": True,
             },
             "gdx": {
@@ -1062,6 +1262,9 @@ if __name__ == "__main__":
             "func": calculate_markups_demand,
             "params": {
                 "grouper": ["region", "general_carrier"],
+                "z_cutoff": snakemake.config["remind_coupling"]["export_to_REMIND"][
+                    "z_cutoff"
+                ],
                 "map_to_remind": False,
             },
             "gdx": {
@@ -1115,6 +1318,7 @@ if __name__ == "__main__":
             "params": {
                 "comps": ["Generator", "Link", "Store"],
                 "grouper": ["region", "general_carrier"],
+                "weigh_by_remind": True,
                 "year": "placeholder",
             },  # Year inserted in loop
             "gdx": {
@@ -1164,7 +1368,7 @@ if __name__ == "__main__":
             },
             "gdx": {
                 "description": "Difference quotients of capacity factors w.r.t. capacity [1/MW]",
-                "dims": ["s_year", "s_region", "s_carrier", "s_carrier"],
+                "dims": ["year", "region", "carrier", "carrier"],
             },
         },
         "difference_quotient_markups_supply": {
@@ -1177,23 +1381,95 @@ if __name__ == "__main__":
             },
             "gdx": {
                 "description": "Difference quotients of supply-side markups w.r.t. capacity [($/MWh)/MW]",
-                "dims": ["s_year", "s_region", "s_carrier", "s_carrier"],
+                "dims": ["year", "region", "carrier", "carrier"],
             },
         },
     }
 
-    # Initialise a dictionary for storing coupling parameters
+    # Define dictionary of reporting parameters
+    # The func key is the function to calculate the parameter
+    # The params key provide parameters for the function
+    reporting_functions = {
+        "energy_balance": {"func": calculate_energy_balance, "params": {}},
+        "preinstalled_capacities": {
+            "func": calculate_preinstalled_capacities,
+            "params": {},
+        },
+        "optimal_capacities": {
+            "func": calculate_optimal_capacities,
+            "params": {
+                "comps": ["Generator", "Link", "Store", "StorageUnit", "Line"],
+                "grouper": ["region", "general_carrier"],
+                "weigh_by_remind": False,
+            },
+        },
+        "peak_residual_load_absolute": {
+            "func": calculate_peak_residual_loads,
+            "params": {"grouper": "region", "kind": "absolute"},
+        },
+        "hydrogen_storage_generation_absolute": {
+            "func": calculate_link_generation,
+            "params": {
+                "carrier": "H2 fuel cell",  # TODO: Use mapping
+                "grouper": "region",
+                "kind": "absolute",
+            },
+        },
+        "battery_storage_generation_absolute": {
+            "func": calculate_link_generation,
+            "params": {
+                "carrier": "battery discharger",  # TODO: Use mapping
+                "grouper": "region",
+                "kind": "absolute",
+            },
+        },
+        "grid_losses_absolute": {
+            "func": calculate_grid_losses,
+            "params": {"grouper": "region", "kind": "absolute"},
+        },
+        "load_prices": {
+            "func": calculate_load_prices,
+            "params": {"grouper": ["region", "general_carrier"]},
+        },
+        "market_values_supply": {
+            "func": calculate_market_values_supply,
+            "params": {
+                "comps": ["Generator"],
+                "grouper": ["region", "general_carrier"],
+                "z_cutoff": snakemake.config["remind_coupling"]["export_to_REMIND"][
+                    "z_cutoff"
+                ],
+            },
+        },
+        "market_values_demand": {
+            "func": calculate_market_values_demand,
+            "params": {
+                "z_cutoff": snakemake.config["remind_coupling"]["export_to_REMIND"][
+                    "z_cutoff"
+                ]
+            },
+        },
+        "curtailments": {
+            "func": calculate_curtailments,
+            "params": {"grouper": ["region", "general_carrier"]},
+        },
+        "hourly_prices": {
+            "func": calculate_hourly_prices,
+            "params": {"grouper": ["region", "general_carrier"]},
+        },
+    }
+
+    # Initialise empty dictionaries to store coupling and reporting parameters
     coupling_parameters = {}
+    reporting_parameters = {}
 
-    # Load perturbation settings
+    # Load perturbation settings and filter networks accordingly
     perturbation = snakemake.params.get("perturbation")
-
-    # Filter networks based on perturbation settings
     if perturbation["enable"] and perturbation["use_op_for_derivative"]:
-        networks = [n for n in networks if "_op" in n]
+        fp_networks = [n for n in fp_networks if "_op" in n]
 
     # Create dataframe containing metadata of all networks in this iteration
-    networks = pd.DataFrame(networks, columns=["filepath"])
+    networks = pd.DataFrame(fp_networks, columns=["filepath"])
     networks["year"] = networks["filepath"].str.extract(r"y(\d{4})")
     networks["perturbed"] = networks["filepath"].str.contains("perturb")
     networks["ptech"] = networks["filepath"].str.extract(r"perturb_(\w+).nc")
@@ -1204,14 +1480,12 @@ if __name__ == "__main__":
         networks.groupby("year")["ref"].sum().eq(1).all()
     ), "There must be exactly one reference network per year"
 
-    # Loop over years
+    # Loop over all years
     for year, df in networks.groupby("year"):
 
-        # Load reference network
+        # Load reference network and add region and general_carrier to network components
         n = pypsa.Network(df.query("ref")["filepath"].values[0])
-
-        # Add region and general_carrier to network components
-        add_region_and_general_carrier(n, region_mapping, map_pypsaeur_to_general)
+        add_columns_for_processing(n, region_mapping, map_pypsaeur_to_general)
         check_for_mapping_completeness(n)
 
         # Calculate and store default coupling parameters
@@ -1234,18 +1508,25 @@ if __name__ == "__main__":
                     coupling_parameters[key] = result
 
         # Calculate and store reporting parameters
-        # TODO
+        for key, values in reporting_functions.items():
+            func, params = values["func"], values["params"]
+            result = func(n, **params)
+            # Insert year in first column
+            result.insert(0, "year", year)
+            # Concatenate data with previous years
+            if key in reporting_parameters:
+                reporting_parameters[key] = pd.concat(
+                    [reporting_parameters[key], result], ignore_index=True
+                )
+            else:
+                reporting_parameters[key] = result
 
         # For each year, calculate difference quotients for perturbed networks (if available)
         for p in df.query("perturbed")["ptech"]:
 
-            # Load perturbed network
+            # Load perturbed network and add region and general_carrier to network components
             npert = pypsa.Network(df.query(f"ptech == '{p}'")["filepath"].values[0])
-
-            # Add region and general_carrier to network components
-            add_region_and_general_carrier(
-                npert, region_mapping, map_pypsaeur_to_general
-            )
+            add_columns_for_processing(npert, region_mapping, map_pypsaeur_to_general)
             check_for_mapping_completeness(npert)
 
             # Calculate difference quotients
@@ -1270,44 +1551,46 @@ if __name__ == "__main__":
     # Create GDX container
     gdx = gt.Container()
 
-    # Define sets
-    s_year = gt.Set(
-        gdx,
-        "year",
-        # Get years from networks
-        records=networks["year"].unique(),
-        description="Years in which PyPSA networks were solved",
-    )
-    s_region = gt.Set(
-        gdx,
-        "region",
-        # Get regions from config
-        records=region_mapping.loc[snakemake.config["countries"]].iloc[0],
-        description="REMIND regions for which PyPSA networks were solved",
-    )
-    s_carrier = gt.Set(
-        gdx,
-        "carrier",
-        # Remove duplicates
-        records=list(
-            set(
-                [item for sublist in map_general_to_remind.values() for item in sublist]
-            )
-        ),
-        description="REMIND technologies for which PyPSA networks were solved",
-    )
-    s_enduse = gt.Set(
-        gdx,
-        "enduse",
-        # This only applies to the markups_demand coupling parameter
-        records=coupling_parameters["markups_demand"]["general_carrier"].unique(),
-        description="REMIND end-use sectors for which PyPSA loads were disaggregated",
-    )
+    # Define GDX sets
+    sets_definition = {
+        "year": {
+            "records": networks["year"].unique(),
+            "description": "Years in which PyPSA networks were solved",
+        },
+        "region": {
+            "records": region_mapping.loc[snakemake.config["countries"]].iloc[0],
+            "description": "REMIND regions for which PyPSA networks were solved",
+        },
+        "carrier": {
+            "records": list(
+                set(
+                    [
+                        item
+                        for sublist in map_general_to_remind.values()
+                        for item in sublist
+                    ]
+                )
+            ),
+            "description": "REMIND technologies for which PyPSA networks were solved",
+        },
+        "enduse": {
+            "records": coupling_parameters["markups_demand"][
+                "general_carrier"
+            ].unique(),
+            "description": "REMIND end-use sectors for which PyPSA loads were disaggregated",
+        },
+    }
+
+    # Create sets
+    sets = {}
+    for name, params in sets_definition.items():
+        sets[name] = gt.Set(
+            gdx, name, records=params["records"], description=params["description"]
+        )
 
     # Add all coupling parameters to GDX
     for key, df in coupling_parameters.items():
-        # Define parameter
-        p = gt.Parameter(
+        gt.Parameter(
             gdx,
             name=key,
             domain=coupling_functions[key]["gdx"]["dims"],
@@ -1323,13 +1606,13 @@ if __name__ == "__main__":
     os.makedirs(snakemake.output["coupling_parameters"], exist_ok=True)
 
     for key, df in coupling_parameters.items():
-        df.to_csv(
-            snakemake.output["coupling_parameters"] + f"/{key}.csv", index=False
-        )
+        df.to_csv(snakemake.output["coupling_parameters"] + f"/{key}.csv", index=False)
 
     # Export reporting parameters to CSV
     # snakemake.output["reporting_parameters"] gives the direcory
     os.makedirs(snakemake.output["reporting_parameters"], exist_ok=True)
 
-    # TODO
-#%%
+    for key, df in reporting_parameters.items():
+        df.to_csv(snakemake.output["reporting_parameters"] + f"/{key}.csv", index=False)
+
+# %%
