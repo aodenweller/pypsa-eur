@@ -3,6 +3,7 @@
 import logging
 import os
 import copy
+import time
 import gamspy as gt
 import numpy as np
 import pandas as pd
@@ -202,6 +203,10 @@ def process_data(df, cols, map_to_remind):
         df = df.query(
             "general_carrier not in ['H2 transfer to H2 demand REMIND', 'H2 demand buffer REMIND']"
         )
+
+    # Remove rows related to DC if available
+    if "general_carrier" in df.columns:
+        df = df.query("general_carrier != 'DC'")
 
     # Function to map and explode carrier columns
     def map_and_explode(df, column):
@@ -648,6 +653,8 @@ def calculate_optimal_capacities(n, comps, grouper, weigh_by_remind, year=None):
     if weigh_by_remind:
         # Drop
         optimal_capacities = optimal_capacities.drop(columns=["component"])
+        # Drop DC link for now
+        optimal_capacities = optimal_capacities.query("general_carrier != 'DC'")
         # Ensure year is provided
         if year is None:
             raise ValueError("Year must be provided to weigh by REMIND capacities")
@@ -792,7 +799,7 @@ def calculate_generation_shares(n, grouper, year):
 
 
 def calculate_difference_quotient(
-    n_opt, n_pert, ptech, property_func, grouper, **kwargs
+    n_opt, n_pert, ptech, property_func, grouper, exclude=None, **kwargs
 ):
     """
     Calculate the difference quotient as a numerical approximation of the partial
@@ -810,6 +817,8 @@ def calculate_difference_quotient(
         Function for which the difference quotient is calculated.
     grouper : list
         List of columns to group the results by.
+    exclude: list
+        List of general_carrier elements to exclude from the results.
     """
 
     def get_filtered_capacity(n, ptech, grouper):
@@ -836,6 +845,12 @@ def calculate_difference_quotient(
 
     # Merge capacity with property values
     merged = prop_merged.merge(cap_merged, on="region")
+
+    # Exclude unwanted components from both general_carrier and carrier_perturbed
+    if exclude:
+        merged = merged.query(
+            "general_carrier not in @exclude and carrier_perturbed not in @exclude"
+        ).copy()
 
     # Compute difference quotient
     merged["value"] = (merged["value_pert"] - merged["value_orig"]) / (
@@ -959,9 +974,7 @@ def determine_crossborder_flow_and_price(network, carrier=["AC", "DC"]):
 # ------------------------------
 
 
-def calculate_energy_balance(
-    n, comps=["Load", "Link", "Generator", "Store", "StorageUnit"]
-):
+def calculate_energy_balance(n, grouper, bus_carrier, comps=None):
     """
     Calculate the energy balance for the network.
 
@@ -972,7 +985,9 @@ def calculate_energy_balance(
     """
     # Calculate energy balance
     energy_balance = (
-        n.statistics.energy_balance(comps=comps, nice_names=False)
+        n.statistics.energy_balance(
+            comps=comps, groupby=grouper, bus_carrier=bus_carrier, nice_names=False
+        )
         .to_frame("value")
         .reset_index()
     )
@@ -980,7 +995,7 @@ def calculate_energy_balance(
     return energy_balance
 
 
-def calculate_preinstalled_capacities(n, grouper=["region", "general_carrier"]):
+def calculate_preinstalled_capacities(n, grouper):
     """
     Calculate preinstalled capacities for the network.
     These are capacities passed for free from REMIND to PyPSA.
@@ -998,7 +1013,8 @@ def calculate_preinstalled_capacities(n, grouper=["region", "general_carrier"]):
     preinstalled_capacity_ppl = preinstalled_capacity_ppl.to_frame(
         "value"
     ).reset_index()
-    # Second, get p_nom_opt from RCL components
+    preinstalled_capacity_ppl = preinstalled_capacity_ppl.query("RCL == False")
+    # Second, get p_nom_opt from RCL components (also for links and stores)
     preinstalled_capacity_rcl = n.statistics.optimal_capacity(
         comps=["Generator", "Link", "Store"], groupby=(["RCL"] + grouper)
     )
@@ -1187,17 +1203,23 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "export_to_REMIND",
             configfiles="config/config.remind.yaml",
-            iteration="9",
-            scenario="TESTsmk",
-            year="2030",
+            iteration="1",
+            scenario="PyPSA_PkBudg1000_DEU_allRCL_PyPSArefactor_perturb_4nodes_scurve_2025-04-11_00.06.03",
         )
 
         # Manual input for testing
         fp_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8.nc",
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op.nc",
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_CCGT.nc",
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_solar.nc",
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_1_ec_lcopt_3H-Ep131.8.nc",
+            #f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op.nc",
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_CCGT.nc",
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_biomass.nc",
+            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2035/networks/elec_s_1_ec_lcopt_3H-Ep133.1.nc",
+            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2040/networks/elec_s_1_ec_lcopt_3H-Ep134.4.nc",
+            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2045/networks/elec_s_1_ec_lcopt_3H-Ep135.8.nc",
+            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2050/networks/elec_s_1_ec_lcopt_3H-Ep137.1.nc",
+            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op.nc",
+            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_CCGT.nc",
+            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_solar.nc",
         ]
     else:
         fp_networks = snakemake.input["networks"]  # For testing this doesn't work
@@ -1364,6 +1386,7 @@ if __name__ == "__main__":
                 "property_func": calculate_capacity_factors,
                 "comps": ["Generator"],
                 "grouper": ["region", "general_carrier"],
+                "exclude": ["nuclear", "hydro"],  # TODO: Put in config
                 "map_to_remind": False,  # Applies to property_func
             },
             "gdx": {
@@ -1377,6 +1400,10 @@ if __name__ == "__main__":
                 "property_func": calculate_markups_supply,
                 "comps": ["Generator"],
                 "grouper": ["region", "general_carrier"],
+                "exclude": ["nuclear", "hydro"],  # TODO: Put in config
+                "z_cutoff": snakemake.config["remind_coupling"]["export_to_REMIND"][
+                    "z_cutoff"
+                ],
                 "map_to_remind": False,  # Applies to propert_func
             },
             "gdx": {
@@ -1390,10 +1417,24 @@ if __name__ == "__main__":
     # The func key is the function to calculate the parameter
     # The params key provide parameters for the function
     reporting_functions = {
-        "energy_balance": {"func": calculate_energy_balance, "params": {}},
+        # TODO: Add bus_carrier to all components to enable grouping for energy balances
+        "energy_balance_ac": {
+            "func": calculate_energy_balance,
+            "params": {
+                "grouper": ["region", "general_carrier"],
+                "bus_carrier": "AC",
+            },
+        },
+        "energy_balance_addH2": {
+            "func": calculate_energy_balance,
+            "params": {
+                "grouper": ["region", "general_carrier"],
+                "bus_carrier": "H2 demand REMIND",
+            },
+        },
         "preinstalled_capacities": {
             "func": calculate_preinstalled_capacities,
-            "params": {},
+            "params": {"grouper": ["region", "general_carrier"]},
         },
         "optimal_capacities": {
             "func": calculate_optimal_capacities,
@@ -1464,31 +1505,65 @@ if __name__ == "__main__":
     reporting_parameters = {}
 
     # Load perturbation settings and filter networks accordingly
+    # Comment this out for testing
     perturbation = snakemake.params.get("perturbation")
-    if perturbation["enable"] and perturbation["use_op_for_derivative"]:
-        fp_networks = [n for n in fp_networks if "_op" in n]
+    export_settings = snakemake.params.get("export_settings")
+    # if perturbation["enable"] and export_settings["dispatch_networks"]:
+    #     fp_networks_oneref = [n for n in fp_networks if "_op" in n]
 
     # Create dataframe containing metadata of all networks in this iteration
     networks = pd.DataFrame(fp_networks, columns=["filepath"])
     networks["year"] = networks["filepath"].str.extract(r"y(\d{4})")
-    networks["perturbed"] = networks["filepath"].str.contains("perturb")
-    networks["ptech"] = networks["filepath"].str.extract(r"perturb_(\w+).nc")
+    networks["op"] = networks["filepath"].str.contains("_op")
+    networks["perturbed"] = networks["filepath"].str.contains("op_perturb_")
+    networks["ptech"] = networks["filepath"].str.extract(r"op_perturb_(\w+).nc")
     networks["ref"] = ~networks["perturbed"]
 
-    # Ensure one reference network per year
-    assert (
-        networks.groupby("year")["ref"].sum().eq(1).all()
-    ), "There must be exactly one reference network per year"
+    # If export_settings["dispatch_networks"] is enabled and there is a reference network with op=True
+    # remove the reference network with op=False
+    if export_settings["dispatch_networks"]:
+        # Group by unique combinations of identifying features (like filepath and year)
+        group_cols = ['year']
+        networks_new = []
+
+        for _, group in networks.groupby(group_cols):
+            ref_op_true = group[(group['ref'] == True) & (group['op'] == True)]
+            ref_op_false = group[(group['ref'] == True) & (group['op'] == False)]
+
+            if not ref_op_true.empty:
+                # Drop the ref=True & op=False rows
+                group = group.drop(ref_op_false.index)
+            else:
+                logger.warning(f"export_setting['dispatch_networks'] is enabled, but no network found for year {group['year'].values[0]}. Falling back to default network.")
+            
+            networks_new.append(group)
+
+        # Combine all groups back
+        networks = pd.concat(networks_new, ignore_index=True)
+
+    # Check if there is exactly one reference network per year
+    # If not, raise an error
+    net_ref_sum = networks.groupby("year")["ref"].sum()
+    if not net_ref_sum.eq(1).all():
+        raise ValueError(
+            f"Expected exactly one reference network per year, but found {net_ref_sum}"
+        )
 
     # Loop over all years
     for year, df in networks.groupby("year"):
-
+        logger.info(f"Processing year {year}")
         # Load reference network and add region and general_carrier to network components
         n = pypsa.Network(df.query("ref")["filepath"].values[0])
+        # If the network has no objective, raise a warning and skip
+        if not hasattr(n, "objective"):
+            logger.warning(
+                f"Network {df.query('ref')['filepath'].values[0]} in year {year} has no objective. The solving probably failed. Skipping."
+            )
+            continue
         add_columns_for_processing(n, region_mapping, map_pypsaeur_to_general)
         check_for_mapping_completeness(n)
 
-        # Calculate and store default coupling parameters
+        # Calculate and store coupling parameters
         for key, values in coupling_functions.items():
             # Only calculate non-difference quotients parameters
             if values["func"] != calculate_difference_quotient:
@@ -1614,5 +1689,8 @@ if __name__ == "__main__":
 
     for key, df in reporting_parameters.items():
         df.to_csv(snakemake.output["reporting_parameters"] + f"/{key}.csv", index=False)
+        
+    # Sleep for 5 seconds to ensure all files are written
+    time.sleep(5)
 
 # %%

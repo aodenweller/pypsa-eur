@@ -1,27 +1,45 @@
 # This file maps REMIND switches to corresponding settings in the config.yaml
 # The file is parsed by import_REMIND_config.py
 
-# Note: The time resolution (c32_pypsa_nodes) and spatial resolution (c32_pypsa_hourlyRes)
+# Note: The time resolution (c32_pypsa_cfg_nodes) and spatial resolution (c32_pypsa_cfg_hourly_res)
 # are integrated via the wildcards that are set to co2_price_scenarios.csv in import_REMIND_config.py
 
-c32_pypsa_rcl_generators:
-  target: remind_coupling.preinvestment_capacities.generators
-  values:
+enable_RCL_generators:
+  remind_switch: c32_pypsa_cfg_rcl_generators
+  overwrite_pypsa: remind_coupling.preinvestment_capacities.generators
+  switch_mapping:
     0: false
     1: true
 
-c32_pypsa_rcl_links:
-  target: remind_coupling.preinvestment_capacities.links
-  values:
+enable_RCL_links:
+  remind_switch: c32_pypsa_cfg_rcl_links
+  overwrite_pypsa: remind_coupling.preinvestment_capacities.links
+  switch_mapping:
     0: []
     1: [H2 electrolysis, H2 fuel cell]
     2: [battery charger]
     3: [H2 electrolysis, H2 fuel cell, battery charger]
 
-c32_pypsa_rcl_stores:
-  target: remind_coupling.preinvestment_capacities.stores
-  values:
+enable_RCL_stores:
+  remind_switch: c32_pypsa_cfg_rcl_stores
+  overwrite_pypsa: remind_coupling.preinvestment_capacities.stores
+  switch_mapping:
     0: []
     1: [H2]
     2: [battery]
     3: [H2, battery]
+
+enable_perturbed_scenarios:
+  remind_switch: c32_pypsa_perturb
+  overwrite_pypsa: remind_coupling.perturbation.enable
+  switch_mapping:
+    0: false
+    1: true
+
+# If running perturbed networks, also run default dispatch network 
+enable_dispatch_networks_when_perturbed:
+  remind_switch: c32_pypsa_perturb
+  overwrite_pypsa: remind_coupling.export_to_REMIND.dispatch_networks
+  switch_mapping:
+    0: false
+    1: true

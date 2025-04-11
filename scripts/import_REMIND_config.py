@@ -5,8 +5,7 @@
 # This script also creates a csv file for snakemake paramspace with the co2 price from REMIND
 # This could also include the tempmoral resolution
 
-#%%
-
+# %%
 import logging
 import yaml
 import copy
@@ -18,10 +17,11 @@ from _helpers import (
     configure_logging,
     mock_snakemake,
     read_remind_data,
-    get_region_mapping
+    get_region_mapping,
 )
 
 logger = logging.getLogger(__name__)
+
 
 # Function to update nested config attributes dynamically
 def set_nested_value(config, key_path, value):
@@ -30,171 +30,214 @@ def set_nested_value(config, key_path, value):
     nested_dict = reduce(lambda d, k: d.setdefault(k, {}), keys, config)
     nested_dict[last_key] = value
 
+
 # Convert numpy types to native Python types
 def convert_to_native_type(value):
     if isinstance(value, (np.integer, np.floating)):
         return value.item()  # Converts NumPy scalar to Python native type
     return value  # Return value as is if no conversion is needed
 
-#%%
+
 if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
         snakemake = mock_snakemake(
             "import_REMIND_config",
-            scenario="PyPSA_PkBudg1000_DEU_allRCL_noAdjCost_4nodes_2025-03-16_00.49.31",
-            iteration="1"
-            )
+            configfiles="config/config.remind.yaml",
+            scenario="PyPSA_PkBudg1000_DEU_allRCL_PyPSArefactor_perturbAnticipation_2025-04-04_12.45.54",
+            iteration="1",
+        )
 
     configure_logging(snakemake)
-    
-#%%
-## First, read in the REMIND data and update the PyPSA config.yaml file
 
-# Read standard config yaml file
-with open(snakemake.input["config_default"], "r", encoding="utf-8") as f:
-    config_default = yaml.load(f, Loader=yaml.SafeLoader)
-    
-# Make deep copy of config_default
-config = copy.deepcopy(config_default)
+    # %%
+    ## First, read in the REMIND data and update the PyPSA config.yaml file
 
-# Read in remind2config yaml file
-with open(snakemake.input["remind2config"], "r", encoding="utf-8") as f:
-    remind2config = yaml.load(f, Loader=yaml.SafeLoader)
+    # Read standard config yaml file
+    with open(snakemake.input["config_default"], "r", encoding="utf-8") as f:
+        config_default = yaml.load(f, Loader=yaml.SafeLoader)
 
-# For each key in remind2config, update the corresponding key in config
-for switch, mapping in remind2config.items():
-    # Read REMIND data
-    try:
-        remind_data = read_remind_data(snakemake.input["remind_data"], switch)
-    except KeyError:
-        logging.warning(f"Switch {switch} not found in REMIND data, skipping.")
-        continue
-    except IndexError:
-        logging.warning(f"No values found for switch {switch} in REMIND data, skipping.")
-        continue
-    except Exception as e:
-        logging.warning(f"Error reading switch {switch} from REMIND data: {e}, skipping.")
-        continue
-    switch_value = convert_to_native_type(remind_data["value"][0])
-    target = mapping["target"]
-    # If "values" exists, use the mapped value. Otherwise, store the number directly
-    new_value = mapping.get("values", {}).get(switch_value, switch_value)
-    # Apply type conversion based on the 'type' field in the mapping, if present
-    if mapping.get("type") == "integer":
-        new_value = int(new_value)  # Convert to integer
-    elif mapping.get("type") == "float":
-        new_value = float(new_value)  # Convert to float
-    # Update config
-    set_nested_value(config, target, new_value)
+    # Make deep copy of config_default
+    config = copy.deepcopy(config_default)
 
-# Write new config yaml file
-with open(snakemake.output["config"], "w") as f:
-    yaml.dump(config,
-                f,
-                default_flow_style=False,
-                allow_unicode=True,
-                sort_keys=False,
-                encoding="utf-8")
+    # Read in remind2config yaml file
+    with open(snakemake.input["remind2config"], "r", encoding="utf-8") as f:
+        remind2config = yaml.load(f, Loader=yaml.SafeLoader)
 
-# %%
-## Second, read in REMIND data and create csv for snakemake paramspace
+    # For each key in remind2config, update the corresponding key in config
+    for _, df in remind2config.items():
+        remind_switch = df["remind_switch"]
+        overwrite_pypsa = df["overwrite_pypsa"]
+        switch_mapping = df["switch_mapping"]
+        # Read REMIND data
+        try:
+            remind_data = read_remind_data(
+                snakemake.input["remind_config"], remind_switch
+            )
+        except KeyError:
+            logging.warning(
+                f"Switch {remind_switch} not found in REMIND data, skipping."
+            )
+            continue
+        except IndexError:
+            logging.warning(
+                f"No values found for switch {remind_switch} in REMIND data, skipping."
+            )
+            continue
+        except Exception as e:
+            logging.warning(
+                f"Error reading switch {remind_switch} from REMIND data: {e}, skipping."
+            )
+            continue
+        switch_value = convert_to_native_type(remind_data["value"][0])
+        # Get the mapping for the switch value
+        new_value = switch_mapping.get(switch_value)
+        # Apply type conversion based on the 'type' field in the mapping, if present
+        if switch_mapping.get("type") == "integer":
+            new_value = int(new_value)  # Convert to integer
+        elif switch_mapping.get("type") == "float":
+            new_value = float(new_value)  # Convert to float
+        # Update config
+        set_nested_value(config, overwrite_pypsa, new_value)
 
-# Load and transform region mapping
-region_mapping = get_region_mapping(
-    snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
-)
-region_mapping = pd.DataFrame(region_mapping).T.reset_index()
-region_mapping.columns = ["PyPSA-EUR", "REMIND-EU"]
-region_mapping = region_mapping.loc[
-    region_mapping["PyPSA-EUR"].isin(snakemake.config["countries"])
-]
+    # Write new config yaml file
+    with open(snakemake.output["config"], "w") as f:
+        yaml.dump(
+            config,
+            f,
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+            encoding="utf-8",
+        )
 
-df = read_remind_data(
-    file_path=snakemake.input["remind_data"],
-    variable_name="p_priceCO2",
-    rename_columns={
-        "tall": "year",
-        "all_regi": "region",
-    },
-)
+    # %%
+    ## Second, read in REMIND data and create csv for snakemake paramspace
 
-# unit conversion from USD/tC to USD/tCO2
-df["value"] *= 12 / (12 + 2 * 16)
+    # Load and transform region mapping
+    region_mapping = get_region_mapping(
+        snakemake.input["region_mapping"], source="PyPSA-EUR", target="REMIND-EU"
+    )
+    region_mapping = pd.DataFrame(region_mapping).T.reset_index()
+    region_mapping.columns = ["PyPSA-EUR", "REMIND-EU"]
+    region_mapping = region_mapping.loc[
+        region_mapping["PyPSA-EUR"].isin(snakemake.config["countries"])
+    ]
 
-# Get coupled years from REMIND data
-years_coupled = read_remind_data(
+    df = read_remind_data(
         file_path=snakemake.input["remind_data"],
-        variable_name="tPy32",
-        rename_columns={"ttot": "year"},
-    ).year.unique().tolist()
-
-# Calculate mean co2 price across all regions overlapping between REMIND and PyPSA-EUR countries for each year
-# TODO: Implement regional prices in PyPSA!
-df = (
-    df.loc[df["region"].isin(region_mapping["REMIND-EU"])]
-    .groupby("year")["value"]
-    .mean()
-)
-
-# add all years from variable as additional indices to df
-df.index = df.index.astype(int)  # ensure same dtypes for index are int, else df.reindex will produce wrong results
-
-df = (df.reindex(
-    list(
-            map(int, years_coupled)
-        ),
-        fill_value=0,
+        variable_name="p_priceCO2",
+        rename_columns={
+            "tall": "year",
+            "all_regi": "region",
+        },
     )
-    .to_frame("co2_price")
-    .reset_index())
 
-# Create a csv file which can be directly read by snakemake paramspace
-# need to add the remaining wildcards of interest, assume each wildcard has only one
-# entry in the config.yaml file
-if (
-    len(snakemake.config["scenario"]["ll"]) != 1
-    or len(snakemake.config["scenario"]["simpl"]) != 1
-    or len(snakemake.config["scenario"]["clusters"]) != 1
-    or len(snakemake.config["scenario"]["opts"]) != 1
-):
-    logger.error(
-        "Only exactly one entry for config['scenario'] -> simpl, clusters, ll and opts in config permitted."
+    # unit conversion from USD/tC to USD/tCO2
+    df["value"] *= 12 / (12 + 2 * 16)
+
+    # Get coupled years from REMIND data
+    years_coupled = (
+        read_remind_data(
+            file_path=snakemake.input["remind_data"],
+            variable_name="tPy32",
+            rename_columns={"ttot": "year"},
+        )
+        .year.unique()
+        .tolist()
     )
-    
-df["scenario"] = snakemake.wildcards["scenario"]
-df["iteration"] = snakemake.wildcards["iteration"]
-df["simpl"] = snakemake.config["scenario"]["simpl"][0]
-df["clusters"] = snakemake.config["scenario"]["clusters"][0]
-df["ll"] = snakemake.config["scenario"]["ll"][0]
-df["opts"] = snakemake.config["scenario"]["opts"][0]
 
-# Update number of clusters to value provided in REMIND switch
-try:
-    n_clusters = read_remind_data(snakemake.input["remind_data"], "c32_pypsa_nodes")["value"][0]
-    df["clusters"] = int(n_clusters)
-except KeyError:
-    logging.warning("Switch 'c32_pypsa_nodes' not found in REMIND data, skipping.")
+    # Calculate mean co2 price across all regions overlapping between REMIND and PyPSA-EUR countries for each year
+    # TODO: Implement regional prices in PyPSA!
+    df = (
+        df.loc[df["region"].isin(region_mapping["REMIND-EU"])]
+        .groupby("year")["value"]
+        .mean()
+    )
 
-# Update temporal resolution to value provided in REMIND switch
-try:
-    temporal_resolution = read_remind_data(snakemake.input["remind_data"], "c32_pypsa_hourlyRes")["value"][0]
-    temporal_resolution = int(temporal_resolution)
-    df["opts"] = df["opts"] = df["opts"].str.replace(r'\b\d{1,2}(?=H)', str(temporal_resolution), regex=True)
-except KeyError:
-    logging.warning("Switch 'c32_pypsa_hourlyRes' not found in REMIND data, skipping.")
+    # add all years from variable as additional indices to df
+    # ensure same dtypes for index are int, else df.reindex will produce wrong results
+    df.index = df.index.astype(int)
 
-# Preserve all opts and substitute the co2 price placeholder ("EpREMIND") with the actual co2 price from REMIND
-if not df["opts"].str.contains("-EpREMIND").all():
-    logging.error("Placeholder '-EpREMIND' missing from config['scenario']['opts']")
-df["opts"] = df.apply(
-    lambda row: row["opts"].replace("-EpREMIND", f"-Ep{row['co2_price']:0.1f}"),
-    axis="columns",
-)
+    df = (
+        df.reindex(
+            list(map(int, years_coupled)),
+            fill_value=0,
+        )
+        .to_frame("co2_price")
+        .reset_index()
+    )
 
-# no longer needed
-df = df.drop(columns=["co2_price"])
-df.to_csv(snakemake.output["co2_price_scenarios"], index=False)
+    # Create a csv file which can be directly read by snakemake paramspace
+    # need to add the remaining wildcards of interest, assume each wildcard has only one
+    # entry in the config.yaml file
+    if (
+        len(snakemake.config["scenario"]["ll"]) != 1
+        or len(snakemake.config["scenario"]["simpl"]) != 1
+        or len(snakemake.config["scenario"]["clusters"]) != 1
+        or len(snakemake.config["scenario"]["opts"]) != 1
+    ):
+        logger.error(
+            "Only exactly one entry for config['scenario'] -> simpl, clusters, ll and opts in config permitted."
+        )
+
+    df["scenario"] = snakemake.wildcards["scenario"]
+    df["iteration"] = snakemake.wildcards["iteration"]
+    df["simpl"] = snakemake.config["scenario"]["simpl"][0]
+    df["clusters"] = snakemake.config["scenario"]["clusters"][0]
+    df["ll"] = snakemake.config["scenario"]["ll"][0]
+    df["opts"] = snakemake.config["scenario"]["opts"][0]
+
+    # Update number of clusters to value provided in REMIND switch
+    try:
+        n_clusters = read_remind_data(
+            snakemake.input["remind_config"], "c32_pypsa_cfg_nodes"
+        )["value"][0]
+        df["clusters"] = int(n_clusters)
+    except KeyError:
+        logging.warning("Switch 'c32_pypsa_cfg_nodes' not found in REMIND data, skipping.")
+
+    # Update temporal resolution to value provided in REMIND switch
+    try:
+        temporal_resolution = read_remind_data(
+            snakemake.input["remind_config"], "c32_pypsa_cfg_hourly_res"
+        )
+        temporal_resolution = int(temporal_resolution.value.iloc[0])
+        df["opts"] = df["opts"] = df["opts"].str.replace(
+            r"\b\d{1,2}(?=H)", str(temporal_resolution), regex=True
+        )
+    except KeyError:
+        logging.warning(
+            "Switch 'c32_pypsa_cfg_hourly_res' not found in REMIND data, skipping."
+        )
+
+    # Preserve all opts and substitute the co2 price placeholder ("EpREMIND") with the actual co2 price from REMIND
+    if not df["opts"].str.contains("-EpREMIND").all():
+        logging.error("Placeholder '-EpREMIND' missing from config['scenario']['opts']")
+    df["opts"] = df.apply(
+        lambda row: row["opts"].replace("-EpREMIND", f"-Ep{row['co2_price']:0.1f}"),
+        axis="columns",
+    )
+
+    # no longer needed
+    df = df.drop(columns=["co2_price"])
+
+    # Add ptech column conditionally on switch in REMIND
+    # TODO: Move after solve_all_networks
+    try:
+        perturb = read_remind_data(snakemake.input["remind_config"], "c32_pypsa_perturb")
+        perturb = int(perturb.value.iloc[0])
+        if perturb:
+            # Get technologies to perturb from the config
+            ptech = config["remind_coupling"]["perturbation"]["generators"]
+            df["ptech"] = [ptech] * len(df)
+            df = df.explode("ptech", ignore_index=True)
+    except KeyError:
+        logging.warning(
+            "Switch 'c32_pypsa_perturb' not found in REMIND data, skipping."
+        )
+
+    df.to_csv(snakemake.output["co2_price_scenarios"], index=False)
 
 # %%

@@ -489,7 +489,8 @@ rule add_electricity:
         remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
     output:
         SCENARIO_RESOURCES + "i{iteration}/y{year}/networks/elec.nc",
-        costs_validation=RESULTS + "{scenario}/i{iteration}/validation/costs_{year}.csv",  # should be used only for validation purposes
+        # Export costs for validation only
+        costs_validation=RESULTS + "{scenario}/i{iteration}/reporting_parameters/costs_{year}.csv",
     log:
         LOGS + "{scenario}/i{iteration}/y{year}/add_electricity.log",
     benchmark:

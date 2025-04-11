@@ -6,7 +6,7 @@
 Solves linear optimal dispatch in hourly resolution using the capacities of
 previous capacity expansion in rule :mod:`solve_network`.
 """
-
+#%%
 
 import logging
 
@@ -30,13 +30,13 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "solve_operations_network",
-            configfiles="test/config.electricity.yaml",
+            scenario="PyPSA_PkBudg1000_DEU_allRCL_PyPSArefactor_perturb_4nodes_2025-04-10_15.50.49",
+            iteration="1",
+            year="2035",
             simpl="",
-            opts="",
-            clusters="5",
-            ll="v1.5",
-            sector_opts="",
-            planning_horizons="",
+            opts="3H-Ep133.1",
+            clusters="4",
+            ll="copt",
         )
 
     configure_logging(snakemake)
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     solve_opts = snakemake.params.options
 
     np.random.seed(solve_opts.get("seed", 123))
-
+#%%
     n = pypsa.Network(snakemake.input.network)
 
     # deal with the gurobi license activation, which requires a tunnel to the login nodes
@@ -63,7 +63,22 @@ if __name__ == "__main__":
     # Gurobi environments cannot be shared across resources.
     check_gurobi_license()
 
-    n.optimize.fix_optimal_capacities()
+    #n.optimize.fix_optimal_capacities()
+    
+    # Multiply all p_nom of generators with 1 + 1E-4 to avoid numerical issues with Gurobi
+    tolerance = snakemake.params.get("remind_export")["dispatch_networks_tolerance"]
+    
+    logger.info(f"Multiplying all capacities by 1+{tolerance}")
+    
+    for c, attr in pypsa.descriptors.nominal_attrs.items():
+        ext_i = n.get_extendable_i(c)
+        n.static(c).loc[ext_i, attr] = (1 + tolerance) * n.static(c).loc[ext_i, attr + "_opt"]
+        n.static(c)[attr + "_extendable"] = False
+        
+    # Create empty output trigger file to track that this rule ran once
+    with open(snakemake.output.trigger, "w") as f:
+        f.write("")
+        
     n = prepare_network(n, solve_opts, config=snakemake.config)
     n = solve_network(
         n,

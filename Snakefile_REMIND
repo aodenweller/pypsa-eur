@@ -60,6 +60,7 @@ localrules:
     sync,
     download_and_prepare,
     solve_all_scenarios,
+    export_to_REMIND
 
 wildcard_constraints:
     simpl="[a-zA-Z0-9]*",
@@ -67,6 +68,7 @@ wildcard_constraints:
     ll=r"(v|c)([0-9\.]+|opt)",
     opts=r"[-+a-zA-Z0-9\.]*",
     year="2[01][0-9][05]",
+    scenario=".*",
     iteration="[0-9]+",
 
 
@@ -74,7 +76,6 @@ include: "rules/common.smk"
 include: "rules/retrieve.smk"
 include: "rules/build_electricity.smk"
 include: "rules/solve_electricity.smk"
-include: "rules/postprocess.smk"
 
 
 rule purge:
@@ -180,27 +181,23 @@ rule download_and_prepare:
 # # * {year}: Indicating the REMIND year for which the model is built
 # # * {iteration}: Indicating the REMIND iteration for which the model is built
 
-# Checkpoint to:
+# This rule need to be called first in a separate snakemake call.
+# Afterwards, use --configfile in the next snakemake call.
 # 1) Import REMIND config and change config.remind_scenario.yaml accordingly
 #    This enables changes to the config.yaml file, depending on REMIND switches
 # 2) Import CO2 prices from REMIND and create co2_price_scenarios.csv
 #    This is used to give CO2 prices to PyPSA-Eur via wildcards and 
 #    also to determine in which years PyPSA-Eur should run
-# IMPORTANT: When calling the snakemake command, you need to provide the right
-# config file using the --config option, otherwise snakemake will use the default.
-# Using the config_provider function is insufficient and unreliable as calling
-# snakemake.config (which is used in many scripts) will return the default config.
-# Therefore, this rule needs to be called in a separate snakemake call BEFORE
-# the main snakemake call for the PyPSA-Eur runs. So for example:
-# > snakemake -s Snakefile_remind resources/default/i1/config.remind_scenario.yaml
-# > snakemake -s Snakefile_remind results/default/i1/PyPSAEUR2REMIND.gdx
-# >            --configfile resources/default/i1/config.remind_scenario.yaml
-# This will reliably overwrite any default with the config.remind_scenario.yaml
+# TODO: Only use this to create the co2_price_scenarios.csv file for the non-perturbed scenarios
+#       Then use another conditional checkpoint after solve_all_networks to create the perturbed
+#       networks, if any. These can then be created only for certain technologies.
+# TODO: Change such that config.remind_scenario.yaml only contains the changes, not the whole file
 checkpoint import_REMIND_config:
     input:
         config_default="config/config.remind.yaml",
         remind2config="config/remind2config.yaml",
-        remind_data=RESOURCES + "{scenario}/i{iteration}/REMIND2PyPSAEUR.gdx",
+        remind_config=RESOURCES + "{scenario}/i{iteration}/REMIND2PyPSAEUR_config.gdx",
+        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
         region_mapping="config/regionmapping_21_EU11.csv",
     output:
         config=RESOURCES + "{scenario}/i{iteration}/config.remind_scenario.yaml",
@@ -276,64 +273,110 @@ rule import_REMIND_RCL_p_nom_limits:
     script:
         "scripts/import_REMIND_RCL_p_nom_limits.py"
 
-# snakemake -n -call -s Snakefile_remind solve_all_scenarios --config remind_scenario=no_scenario iteration=
+
+def get_networks(wildcards):
+    """Generate network file paths dynamically based on the perturbation flag."""
+    base_path = RESULTS + "{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
+    co2_price_scenarios = pd.read_csv(
+        checkpoints.import_REMIND_config.get(
+            scenario=wildcards.scenario,
+            iteration=wildcards.iteration,
+        ).output["co2_price_scenarios"],
+        na_filter=False,
+    ).to_dict(orient="list")
+
+    # Check if 'ptech' is a key in co2_price_scenarios
+    if "ptech" in co2_price_scenarios:
+        # Expand operational networks (_op.nc)
+        # Requiring the trigger file -> allowed to fail!
+        if config["remind_coupling"]["export_to_REMIND"]["dispatch_networks"]:
+            operational_networks = expand(
+                base_path + "_op_trigger",
+                zip,
+                **co2_price_scenarios,
+            )
+        else:
+            operational_networks = expand(
+                base_path + ".nc",
+                zip,
+                **co2_price_scenarios,
+            )
+        # Expand perturbed networks (_op_{ptech}_trigger)
+        # Requiring the trigger file -> allowed to fail! 
+        perturbed_triggers = expand(
+            base_path + "_op_perturb_{ptech}_trigger",
+            zip,
+            **co2_price_scenarios,
+        )
+        return operational_networks + perturbed_triggers
+    else:
+        # Expand only capacity expansion model (cem) networks (.nc)
+        # Requiring the .nc file -> not allowed to fail!
+        return expand(
+            base_path + ".nc",
+            zip,
+            **co2_price_scenarios,
+        )
+
 rule solve_all_scenarios:
     input:
-        networks=lambda wildcards: expand(
-            RESULTS
-            + "{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
-            zip,
-            **pd.read_csv(
-                checkpoints.import_REMIND_config.get(
-                    scenario=wildcards["scenario"],
-                    iteration=wildcards["iteration"],
-                ).output["co2_price_scenarios"],
-                na_filter=False,
-            ).to_dict(orient="list")
-        ),
+        networks_trigger=lambda wildcards: get_networks(wildcards),
+    output:
+        # Dummy file that can be called to provide wildcards and call the rule
+        # e.g. snakemake -s Snakefile_remind results/test/i1/solve_all_scenarios
+        trigger_all=touch(RESULTS + "{scenario}/i{iteration}/solve_all_scenarios")
 
+def find_available_files(wildcards):
+    """Finds available network files and logs missing ones."""
+    # Base file path
+    base_path = RESULTS + "{scenario}/i{iteration}/y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}"
+    # Determine file patterns based on the configuration
+    file_patterns = [base_path + ".nc"]
+    if config["remind_coupling"]["export_to_REMIND"]["dispatch_networks"]:
+        file_patterns = file_patterns + [base_path + "_op.nc"]
+    if config["remind_coupling"]["perturbation"]["enable"]:
+        file_patterns = file_patterns + [base_path + "_op_perturb_{ptech}.nc"]
+    # Get scenarios and expand network file paths
+    scenarios = pd.read_csv(
+        checkpoints.import_REMIND_config.get(
+            scenario=wildcards.scenario, iteration=wildcards.iteration
+        ).output.co2_price_scenarios,
+        na_filter=False,
+    ).to_dict(orient="list")
+    # Expand all file patterns
+    network_files = []
+    for pattern in file_patterns:
+        network_files.extend(expand(pattern, zip, **scenarios))
+    # Log missing files and return existing ones
+    existing_files = set([f for f in network_files if os.path.exists(f)])
+    missing_files = set(network_files) - set(existing_files)
+    if missing_files:
+        logger.warning(f"Missing files: {missing_files}")
+    return existing_files
 
-# Extract coupling parameters from PyPSA-EUR runs for hand-over to next iteration of REMIND-EU
-rule extract_coupling_parameters:
+# Export PyPSA-Eur results to REMIND and create additional reporting
+rule export_to_REMIND:
+    params:
+        perturbation=config_provider("remind_coupling", "perturbation"),
+        export_settings=config_provider("remind_coupling", "export_to_REMIND"),
     input:
-        networks=rules.solve_all_scenarios.input["networks"],
+        # Dynamically check for existing files (this allows files to be missing)
+        networks=find_available_files,
+        # Trigger the solve_all_scenarios rule (see above for details 
+        **rules.solve_all_scenarios.input,
         region_mapping="config/regionmapping_21_EU11.csv",
         technology_cost_mapping="config/technology_cost_mapping.csv",
         remind_weights=ITERATION_RESOURCES + "REMIND2PyPSAEUR.gdx",
     output:
-        capacity_factors=ITERATION_RESULTS + "validation/capacity_factors.csv",
-        capacity_factors_links=ITERATION_RESULTS + "validation/capacity_factors_links.csv",
-        availability_factors=ITERATION_RESULTS + "validation/availability_factors.csv",
-        curtailments=ITERATION_RESULTS + "validation/curtailments.csv",
-        generation_shares=ITERATION_RESULTS + "validation/generation_shares.csv",
-        preinstalled_capacities=ITERATION_RESULTS + "validation/preinstalled_capacities.csv",
-        peak_residual_loads=ITERATION_RESULTS + "validation/peak_residual_loads.csv",
-        grid_capacities=ITERATION_RESULTS + "validation/grid_capacities.csv",
-        grid_investments=ITERATION_RESULTS + "validation/grid_investments.csv",
-        grid_losses=ITERATION_RESULTS + "validation/grid_losses.csv",
-        market_values=ITERATION_RESULTS + "validation/market_values.csv",
-        hourly_prices=ITERATION_RESULTS + "validation/hourly_prices.csv",
-        load_prices=ITERATION_RESULTS + "validation/load_prices.csv",
-        markups=ITERATION_RESULTS + "validation/markups.csv",
-        electricity_prices_electrolysis=ITERATION_RESULTS + "validation/electricity_prices_electrolysis.csv",
-        loads=ITERATION_RESULTS + "validation/loads.csv",
-        energy_balances=ITERATION_RESULTS + "validation/energy_balances.csv",
-        potentials=ITERATION_RESULTS + "validation/potentials.csv",
-        optimal_capacities=ITERATION_RESULTS + "validation/optimal_capacities.csv",
-        h2turb_storages=ITERATION_RESULTS + "validation/h2turb_storages.csv",
-        battery_storages=ITERATION_RESULTS + "validation/battery_storages.csv",
-        crossborder_flows=ITERATION_RESULTS + "validation/crossborder_flows.csv",
-        crossborder_prices_import=ITERATION_RESULTS + "validation/crossborder_prices_import.csv",
-        crossborder_prices_export=ITERATION_RESULTS + "validation/crossborder_prices_export.csv",
-        generation_region_shares=ITERATION_RESULTS + "validation/generation_region_shares.csv",
-        technology_mapping=ITERATION_RESULTS + "validation/technology_mapping.csv",
         gdx=ITERATION_RESULTS + "PyPSAEUR2REMIND.gdx",
+        coupling_parameters=directory(ITERATION_RESULTS + "coupling_parameters"),
+        reporting_parameters=directory(ITERATION_RESULTS + "reporting_parameters"),
     log:
-        LOGS + "{scenario}/i{iteration}/extract_coupling_parameters.log",
+        ITERATION_LOGS + "export_to_REMIND.log",
     benchmark:
-        BENCHMARKS + "{scenario}/i{iteration}/extract_coupling_parameters/"
+        ITERATION_BENCHMARKS + "export_to_REMIND"
     resources:
-        mem_mb=lambda wildcards, attempt: attempt * 10000,
+        mem_mb=lambda wildcards, attempt: attempt * 30000,
         walltime="00:10:00",
     script:
-        "scripts/extract_coupling_parameters.py"
+        "scripts/export_to_REMIND.py"

@@ -7,6 +7,7 @@ jobs: 500
 
 # define the cluster submission command (slurm wrapper)
 # Use partition standard and qos short if not set
+# TODO: Make time an argument of resources.XX (didn't work well for grouped jobs so far)
 cluster-generic-submit-cmd:
   export HPC_PARTITION=${{HPC_PARTITION:-priority}} HPC_QOS=${{HPC_QOS:-standby}} &&
   mkdir -p logs_slurm/{wildcards.scenario}/{rule} &&
@@ -21,13 +22,15 @@ cluster-generic-submit-cmd:
     --parsable
     --export=PATH,LD_LIBRARY_PATH,GUROBI_HOME
 cluster-generic-cancel-cmd: scancel
+cluster-generic-status-cmd: "python pik_hpc_profile/slurm-status.py"
 
 # Allow canceling of snakemake-submitted slurm jobs using Ctrl+c in combination with sbatch --parsable
 keep-going: true
+keep-incomplete: true
 latency-wait: 60
 #local-cores: 1
-max-jobs-per-second: 15
-max-status-checks-per-second: 1
+max-jobs-per-second: 150  # Allow to submit all at once
+max-status-checks-per-second: 15
 printshellcmds: true
 #reason: true
 rerun-incomplete: true
@@ -38,7 +41,7 @@ rerun-trigger:
 - input
 - mtime
 - params
-restart-times: 3
+restart-times: 2
 # Disable snakemake lock
 nolock: true
 scheduler: greedy
@@ -93,6 +96,13 @@ set-resources:
   extract_coupling_parameters:
     parition: "priority"
     qos: "standby"
+# When running operation networks, submit to priority standby
+  solve_operations_network:
+    partition: "priority"
+    qos: "standby"
+  solve_operations_perturbed_network:
+    partition: "priority"
+    qos: "standby"
   # Due to group-components aggregating mem_mb resources,
   # the high default requests for mem_mb of these will exceed permitted memory requests in queue
   # but that much memory is currently not needed for small PyPSA-Eur models, so we overwrite the values here
@@ -124,12 +134,3 @@ groups:
 - retrieve_osm_prebuilt=download_data
 - retrieve_ship_raster=download_data
 - rertieve_synthetic_electricity_demand=download_data
-
-# Due to limits for qos=partition="priority" to 5 concurrent cluster jobs per user,
-# performance is limited and jobs have to wait for their turn.
-# This statement causes rules which are connected via the group "iy" to be submitted in parallel
-# with 3 independent groups of rules submitted as one job.
-# 3 because of limit on cluster resources (CPUs) in qos/partition
-#group-components:
-#- iy=1   # 15 independent years / 3 = 5 jobs with 3 years solving per job
-#cores: 12 # solve_network in solve_electricity.smk requires 4 cores per rule executions -> 2 simultaneous solves per Job

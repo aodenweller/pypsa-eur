@@ -19,10 +19,25 @@ remind_coupling:
     stores: []  # Any of [H2, battery]
   # Additional demand for electrolytic hydrogen from REMIND
   h2_demand:
-    enabled: true
+    enabled: true  # TODO: This doesn't yet affect import_REMIND_config.py
     buffer_max_hours: 168 # in hours, set to 0 to deactivate, full buffer = 8760
-  extract_coupling_parameters:
-    cutoff_market_values: 4 # false (to deactivate) or value, e.g.: 5 indicating zscore above which market_prices are excluded from the market_value calculation
+  # Enable perturbation of networks for each of the following technologies
+  # This can be used in order to numerically determine the partial derivatives of some key coupled
+  # variables (e.g. capacity factors, market values) w.r.t perturbed capacity in order to tell REMIND
+  # how PyPSA would roughly respond to capacity changes. This stabilises convergence, avoiding oscillations.
+  perturbation:
+    enable: true
+    generators: [solar, onwind, offwind, OCGT, CCGT, biomass, coal]  # regex pattern, used in wildcard ptech
+    perturbation_factor: 1.05
+    min_perturbation: 100  # MW
+  export_to_REMIND:
+    # This triggers solve_operations_network, creating the dispatch-only network for exporting parameters
+    # It's automatically set to true if perturbation is activated from REMIND
+    dispatch_networks: false
+    # Multiply all capacities by (1 + tolerance) for dispatch-only network
+    dispatch_networks_tolerance: 1E-4
+    # This is false or the zscore above which electricity scarcity prices are excluded
+    z_cutoff: 4
 
 logging:
   level: INFO
@@ -133,7 +148,7 @@ electricity:
   custom_powerplants: false
   everywhere_powerplants: [OCGT, nuclear, oil, CCGT, coal, lignite, biomass] # REMIND coupling specific required for RCL constraint to work properly; ignores existing powerplant locations
 
-  # If conventional_carriers is empty, there are now existing powerplants, but only RCL generators
+  # If conventional_carriers is empty, there are no existing powerplants, but only RCL generators
   conventional_carriers: [OCGT, nuclear, oil, CCGT, coal, lignite, biomass]
   renewable_carriers: [solar, onwind, offwind-ac, offwind-dc, hydro]
 
@@ -292,20 +307,6 @@ conventional:
   unit_commitment: false
   dynamic_fuel_price: false
   default_efficiencies: true # REMIND-specific: Remove efficiencies from existing powerplants s.t. it is filled with values from costs.csv which are REMIND-coupled
-  nuclear:
-    p_max_pu: 0.85 # REMIND-specific: Limit capacity factor to 85%
-  OCGT:
-    p_max_pu: 0.85 # REMIND-specific: Limit capacity factor to 85%
-  oil:
-    p_max_pu: 0.85 # REMIND-specific: Limit capacity factor to 85%
-  CCGT:
-    p_max_pu: 0.85 # REMIND-specific: Limit capacity factor to 85%
-  coal:
-    p_max_pu: 0.85 # REMIND-specific: Limit capacity factor to 85%
-  lignite:
-    p_max_pu: 0.85 # REMIND-specific: Limit capacity factor to 85%
-  biomass:
-    p_max_pu: 0.85 # REMIND-specific: Limit capacity factor to 85%
 
 # docs in https://pypsa-eur.readthedocs.io/en/latest/configuration.html#lines
 lines:
@@ -914,13 +915,13 @@ solving:
   #tmpdir: "path/to/tmp"
   options:
     clip_p_max_pu: 1.e-2
-    load_shedding: false
+    load_shedding: 1  # in USD/kWh = 1000 USD/MWh
     curtailment_mode: false
     noisy_costs: true
     skip_iterations: true
     rolling_horizon: false
     seed: 123
-    custom_extra_functionality: "../data/custom_extra_functionality.py"
+    custom_extra_functionality: false
     # io_api: "direct"  # Increases performance but only supported for the highs and gurobi solvers
     # options that go into the optimize function
     track_iterations: false
@@ -956,7 +957,7 @@ solving:
 
   solver:
     name: gurobi
-    options: gurobi-fallback
+    options: gurobi-default
 
   gurobi_hpc_tunnel:
     use_tunnel: True

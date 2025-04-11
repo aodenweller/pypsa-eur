@@ -102,5 +102,3 @@ if __name__ == "__main__":
         )
 
     scaled_load.to_csv(snakemake.output["load_timeseries"])
-
-# %%

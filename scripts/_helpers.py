@@ -474,7 +474,7 @@ def mock_snakemake(
         )
     try:
         # for p in SNAKEFILE_CHOICES:
-        for p in ["Snakefile_remind"]:
+        for p in ["Snakefile_REMIND"]:
             if os.path.exists(p):
                 snakefile = p
                 break
