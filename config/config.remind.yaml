@@ -21,22 +21,23 @@ remind_coupling:
   h2_demand:
     enabled: true  # TODO: This doesn't yet affect import_REMIND_config.py
     buffer_max_hours: 168 # in hours, set to 0 to deactivate, full buffer = 8760
+  # Trigger the solving of the dispatch-only operations network
+  solve_operations_network:
+    enable: false
+    tolerance: 1E-4
   # Enable perturbation of networks for each of the following technologies
   # This can be used in order to numerically determine the partial derivatives of some key coupled
   # variables (e.g. capacity factors, market values) w.r.t perturbed capacity in order to tell REMIND
   # how PyPSA would roughly respond to capacity changes. This stabilises convergence, avoiding oscillations.
-  perturbation:
-    enable: true
+  solve_perturbed_network:
+    enable: false
     generators: [solar, onwind, offwind, OCGT, CCGT, biomass, coal]  # regex pattern, used in wildcard ptech
+    min_capacity_share: 0.01  # Minimum share of capacity per tech of total capacity (threshold for perturbation) 
     perturbation_factor: 1.05
-    min_perturbation: 100  # MW
   export_to_REMIND:
-    # This triggers solve_operations_network, creating the dispatch-only network for exporting parameters
-    # It's automatically set to true if perturbation is activated from REMIND
-    dispatch_networks: false
-    # Multiply all capacities by (1 + tolerance) for dispatch-only network
-    dispatch_networks_tolerance: 1E-4
-    # This is false or the zscore above which electricity scarcity prices are excluded
+    # Use the operations network for data export, need to enable it above
+    use_operations_network: false
+    # zscore above which electricity scarcity prices are excluded (or false)
     z_cutoff: 4
 
 logging:

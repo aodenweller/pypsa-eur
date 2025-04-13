@@ -1202,27 +1202,30 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "export_to_REMIND",
-            configfiles="config/config.remind.yaml",
-            iteration="1",
-            scenario="PyPSA_PkBudg1000_DEU_allRCL_PyPSArefactor_perturb_4nodes_scurve_2025-04-11_00.06.03",
+            configfiles="resources/PyPSA_PkBudg1000_DEU_allRCL_PyPSArefactor_4nodes_Loadshedding_2025-04-11_14.02.50/i9/config.remind_scenario.yaml",
+            iteration="9",
+            scenario="PyPSA_PkBudg1000_DEU_allRCL_PyPSArefactor_4nodes_Loadshedding_2025-04-11_14.02.50",
         )
 
         # Manual input for testing
         fp_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_1_ec_lcopt_3H-Ep131.8.nc",
-            #f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op.nc",
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_CCGT.nc",
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_biomass.nc",
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_4_ec_lcopt_3H-Ep131.8.nc",
             # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2035/networks/elec_s_1_ec_lcopt_3H-Ep133.1.nc",
             # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2040/networks/elec_s_1_ec_lcopt_3H-Ep134.4.nc",
             # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2045/networks/elec_s_1_ec_lcopt_3H-Ep135.8.nc",
             # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2050/networks/elec_s_1_ec_lcopt_3H-Ep137.1.nc",
-            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op.nc",
-            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_CCGT.nc",
-            # f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y{snakemake.wildcards['year']}/networks/elec_s_1_ec_lcopt_3H-Ep131.8_op_perturb_solar.nc",
+        ]
+        fp_triggers_op = [
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_4_ec_lcopt_3H-Ep131.8_op_trigger",
+        ]
+        fp_triggers_op_perturb = [
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_4_ec_lcopt_3H-Ep131.8_op_perturb_biomass_trigger",
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_4_ec_lcopt_3H-Ep131.8_op_perturb_CCGT_trigger",
         ]
     else:
         fp_networks = snakemake.input["networks"]  # For testing this doesn't work
+        fp_triggers_op = snakemake.input["triggers_op"]
+        fp_triggers_op_perturb = snakemake.input["triggers_op_perturb"]
 
     configure_logging(snakemake)
 
@@ -1504,54 +1507,92 @@ if __name__ == "__main__":
     coupling_parameters = {}
     reporting_parameters = {}
 
-    # Load perturbation settings and filter networks accordingly
-    # Comment this out for testing
-    perturbation = snakemake.params.get("perturbation")
-    export_settings = snakemake.params.get("export_settings")
-    # if perturbation["enable"] and export_settings["dispatch_networks"]:
-    #     fp_networks_oneref = [n for n in fp_networks if "_op" in n]
+    remind_coupling = snakemake.params.get("remind_settings")
+
+    # Operation networks
+    if fp_triggers_op:
+        logger.info("Checking which operational networks are available.")
+        # Get the list of operational network file paths by replacing "_trigger" with ".nc"
+        fp_networks_op = [
+            fp.replace("_trigger", ".nc") for fp in fp_triggers_op
+        ]
+        # Sleep for 5 seconds to ensure all files are available
+        time.sleep(5)
+        # Check which operational network files exist
+        fp_networks_op_available = [
+            fp for fp in fp_networks_op if os.path.exists(fp)
+        ]
+        # Log warnings for any missing files
+        missing_networks_op = set(fp_networks_op) - set(fp_networks_op_available)
+        for missing in missing_networks_op:
+            logger.warning(f"Operational network {missing} not found. Skipping.")
+    else:
+        fp_networks_op_available = []
+                
+    # Perturbed networks
+    if fp_triggers_op_perturb:
+        logger.info("Checking which perturbed networks are available.")
+        # Get the list of perturbed network file paths by replacing "_trigger" with ".nc"
+        fp_networks_perturb = [
+            fp.replace("_trigger", ".nc") for fp in fp_triggers_op_perturb
+        ]
+        # Sleep for 5 seconds to ensure all files are available
+        time.sleep(5)
+        # Check which perturbed network files exist
+        fp_networks_perturb_available = [
+            fp for fp in fp_networks_perturb if os.path.exists(fp)
+        ]
+        # Log warnings for any missing files
+        missing_networks_perturb = set(fp_networks_perturb) - set(fp_networks_perturb_available)
+        for missing in missing_networks_perturb:
+            logger.warning(f"Perturbed network {missing} not found. Skipping.")
+    else:
+        fp_networks_perturb_available = []
+    
+    # Combine all networks
+    fp_networks_all = fp_networks + fp_networks_op_available + fp_networks_perturb_available
 
     # Create dataframe containing metadata of all networks in this iteration
-    networks = pd.DataFrame(fp_networks, columns=["filepath"])
+    networks = pd.DataFrame(fp_networks_all, columns=["filepath"])
     networks["year"] = networks["filepath"].str.extract(r"y(\d{4})")
     networks["op"] = networks["filepath"].str.contains("_op")
     networks["perturbed"] = networks["filepath"].str.contains("op_perturb_")
     networks["ptech"] = networks["filepath"].str.extract(r"op_perturb_(\w+).nc")
     networks["ref"] = ~networks["perturbed"]
+    networks = networks.sort_values("year")
 
-    # If export_settings["dispatch_networks"] is enabled and there is a reference network with op=True
-    # remove the reference network with op=False
-    if export_settings["dispatch_networks"]:
-        # Group by unique combinations of identifying features (like filepath and year)
-        group_cols = ['year']
-        networks_new = []
+    networks_ref = networks.query("ref")
+    networks_ptech = networks.query("perturbed")
 
-        for _, group in networks.groupby(group_cols):
-            ref_op_true = group[(group['ref'] == True) & (group['op'] == True)]
-            ref_op_false = group[(group['ref'] == True) & (group['op'] == False)]
-
-            if not ref_op_true.empty:
-                # Drop the ref=True & op=False rows
-                group = group.drop(ref_op_false.index)
-            else:
-                logger.warning(f"export_setting['dispatch_networks'] is enabled, but no network found for year {group['year'].values[0]}. Falling back to default network.")
-            
-            networks_new.append(group)
-
-        # Combine all groups back
-        networks = pd.concat(networks_new, ignore_index=True)
-
+    if remind_coupling["export_to_REMIND"]["use_operations_network"]:
+        if remind_coupling["solve_operations_network"]["enable"]:
+            # Group by year and check whether within that group the op=True network is available. If it is, drop the op=False network
+            networks_ref = networks_ref.groupby("year").apply(
+                lambda x: x.drop(x[(x["op"] == False)].index)
+            ).reset_index(drop=True)
+        else:
+            logger.warning(
+                "export_to_REMIND.use_operations_network also requires solve_operations_network.enable."
+            )
+    else:
+        # Drop operational networks
+        networks_ref = networks_ref[~networks["op"]].reset_index(drop=True)
+    
+    networks = pd.concat([networks_ref, networks_ptech], ignore_index=True)
+    
     # Check if there is exactly one reference network per year
-    # If not, raise an error
     net_ref_sum = networks.groupby("year")["ref"].sum()
     if not net_ref_sum.eq(1).all():
         raise ValueError(
             f"Expected exactly one reference network per year, but found {net_ref_sum}"
         )
+    
+    # Print unique years
+    logger.info(f"Unique years in networks: {networks['year'].unique()}")
 
     # Loop over all years
     for year, df in networks.groupby("year"):
-        logger.info(f"Processing year {year}")
+        logger.info(f"Processing year {year}, file path: {df['filepath'].values[0]}")
         # Load reference network and add region and general_carrier to network components
         n = pypsa.Network(df.query("ref")["filepath"].values[0])
         # If the network has no objective, raise a warning and skip

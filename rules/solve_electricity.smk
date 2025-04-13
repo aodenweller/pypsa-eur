@@ -58,13 +58,14 @@ rule solve_operations_network:
             "sector", "co2_sequestration_potential", default=200
         ),
         custom_extra_functionality=input_custom_extra_functionality,
-        remind_export=config_provider("remind_coupling", "export_to_REMIND"),
+        remind_settings=config_provider("remind_coupling", "solve_operations_network"),
     input:
         network=ITERATION_RESULTS
         + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
     output:
-        network=ITERATION_RESULTS
-        + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_op.nc",
+        # Don't require the network file to be present (allow to fail, e.g. if input network has no objective)
+        # network=ITERATION_RESULTS
+        # + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_op.nc",
         trigger=ITERATION_RESULTS
         + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_op_trigger",
     log:
@@ -96,14 +97,15 @@ rule solve_operations_perturbed_network:
     params:
         solving=config_provider("solving"),
         custom_extra_functionality=input_custom_extra_functionality,
-        perturbation=config_provider("remind_coupling", "perturbation"),
+        perturbation=config_provider("remind_coupling", "solve_perturbed_network"),
     input:
         network=ITERATION_RESULTS
         + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
         technology_cost_mapping="config/technology_cost_mapping.csv",
     output:
-        network=ITERATION_RESULTS
-        + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_op_perturb_{ptech}.nc",
+        # Don't require the network file to be present (allow to fail, e.g. if input network has no objective)
+        # network=ITERATION_RESULTS
+        # + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_op_perturb_{ptech}.nc",
         trigger=ITERATION_RESULTS
         + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_op_perturb_{ptech}_trigger",
     log:

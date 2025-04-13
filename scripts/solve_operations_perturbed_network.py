@@ -9,6 +9,7 @@ previous capacity expansion optimization, and perturbing the
 """
 
 import logging
+import time
 
 import numpy as np
 import pypsa
@@ -49,7 +50,17 @@ if __name__ == "__main__":
     np.random.seed(solve_opts.get("seed", 123))
 
 #%%
+    # Create empty output trigger file to track that this rule ran once
+    with open(snakemake.output.trigger, "w") as f:
+        f.write("")
+        
+    # Load network
     n = pypsa.Network(snakemake.input.network)
+    
+    # Exit if if there is no objective
+    if not hasattr(n, "objective"):
+        logger.warning("Network has no objective. Cannot solve operations network.")
+        exit(0)
 
     n.optimize.fix_optimal_capacities()
     
@@ -69,19 +80,9 @@ if __name__ == "__main__":
     
     # Perturbation factor from config
     perturbation_factor = snakemake.params["perturbation"]["perturbation_factor"]
-    min_perturbation = snakemake.params["perturbation"]["min_perturbation"]
     
-    optimal_capacity = n.generators.loc[n.generators.carrier.isin(ptech_pypsa), "p_nom_opt"].sum()
-    perturbed_capacity = optimal_capacity * perturbation_factor
-    
-    if perturbed_capacity - optimal_capacity > min_perturbation:
-        n.generators.loc[n.generators.carrier.isin(ptech_pypsa), "p_nom"] *= perturbation_factor
-    else:
-        n.generators.loc[n.generators.carrier.isin(ptech_pypsa), "p_nom"] *= (1 + min_perturbation / optimal_capacity)
-        
-    # Create empty output trigger file to track that this rule ran once
-    with open(snakemake.output.trigger, "w") as f:
-        f.write("")
+    # Perturb the p_nom of the technology in the network
+    n.generators.loc[n.generators.carrier.isin(ptech_pypsa), "p_nom"] *= perturbation_factor
     
     # deal with the gurobi license activation, which requires a tunnel to the login nodes
     solver_config = snakemake.config["solving"]["solver"]
@@ -107,6 +108,11 @@ if __name__ == "__main__":
     )
 
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
-    n.export_to_netcdf(snakemake.output[0])
 
-# %%
+        # Use snakemake.input.network and replace _trigger by .nc
+    filename = snakemake.output["trigger"].replace("_trigger", ".nc")
+    
+    n.export_to_netcdf(filename)
+    
+    time.sleep(5)
+    

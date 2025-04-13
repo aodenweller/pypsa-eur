@@ -9,6 +9,7 @@ previous capacity expansion in rule :mod:`solve_network`.
 #%%
 
 import logging
+import time
 
 import numpy as np
 import pypsa
@@ -47,7 +48,18 @@ if __name__ == "__main__":
 
     np.random.seed(solve_opts.get("seed", 123))
 #%%
+
+    # Create empty output trigger file to track that this rule ran once
+    with open(snakemake.output.trigger, "w") as f:
+        f.write("")
+        
+    # Load network
     n = pypsa.Network(snakemake.input.network)
+    
+    # Exit if if there is no objective
+    if not hasattr(n, "objective"):
+        logger.warning("Network has no objective. Cannot solve operations network.")
+        exit(0)
 
     # deal with the gurobi license activation, which requires a tunnel to the login nodes
     solver_config = snakemake.config["solving"]["solver"]
@@ -66,7 +78,8 @@ if __name__ == "__main__":
     #n.optimize.fix_optimal_capacities()
     
     # Multiply all p_nom of generators with 1 + 1E-4 to avoid numerical issues with Gurobi
-    tolerance = snakemake.params.get("remind_export")["dispatch_networks_tolerance"]
+    tolerance = snakemake.params.get("remind_settings")["tolerance"]
+    tolerance = float(tolerance)
     
     logger.info(f"Multiplying all capacities by 1+{tolerance}")
     
@@ -75,10 +88,7 @@ if __name__ == "__main__":
         n.static(c).loc[ext_i, attr] = (1 + tolerance) * n.static(c).loc[ext_i, attr + "_opt"]
         n.static(c)[attr + "_extendable"] = False
         
-    # Create empty output trigger file to track that this rule ran once
-    with open(snakemake.output.trigger, "w") as f:
-        f.write("")
-        
+
     n = prepare_network(n, solve_opts, config=snakemake.config)
     n = solve_network(
         n,
@@ -89,4 +99,10 @@ if __name__ == "__main__":
     )
 
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
-    n.export_to_netcdf(snakemake.output[0])
+    
+    # Use snakemake.input.network and replace _trigger by .nc
+    filename = snakemake.output["trigger"].replace("_trigger", ".nc")
+    
+    n.export_to_netcdf(filename)
+    
+    time.sleep(5)

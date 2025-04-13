@@ -219,25 +219,8 @@ if __name__ == "__main__":
         lambda row: row["opts"].replace("-EpREMIND", f"-Ep{row['co2_price']:0.1f}"),
         axis="columns",
     )
-
-    # no longer needed
     df = df.drop(columns=["co2_price"])
 
-    # Add ptech column conditionally on switch in REMIND
-    # TODO: Move after solve_all_networks
-    try:
-        perturb = read_remind_data(snakemake.input["remind_config"], "c32_pypsa_perturb")
-        perturb = int(perturb.value.iloc[0])
-        if perturb:
-            # Get technologies to perturb from the config
-            ptech = config["remind_coupling"]["perturbation"]["generators"]
-            df["ptech"] = [ptech] * len(df)
-            df = df.explode("ptech", ignore_index=True)
-    except KeyError:
-        logging.warning(
-            "Switch 'c32_pypsa_perturb' not found in REMIND data, skipping."
-        )
-
-    df.to_csv(snakemake.output["co2_price_scenarios"], index=False)
+    df.to_csv(snakemake.output["scenario_wildcards"], index=False)
 
 # %%
