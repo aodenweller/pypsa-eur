@@ -21,9 +21,9 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "import_REMIND_costs",
-            scenario="PyPSA_PkBudg1000_DEU_adjCost_battery_2025-03-04_13.03.55",
+            scenario="PyPSA_PkBudg1000_DEU_genRCL_4nodes_remind_v350_2025-04-14_20.03.01",
             iteration="1",
-            year="2050",
+            year="2030",
         )
 
     configure_logging(snakemake)
@@ -131,20 +131,17 @@ if __name__ == "__main__":
     logger.info("... extracting CO2 intensities")
     co2_intensity = read_remind_data(
         file_path=snakemake.input["remind_data"],
-        variable_name="fm_dataemiglob",
+        variable_name = "pm_emifac",
         rename_columns={
-            "all_te_2": "technology",
-            "all_enty_0": "from_carrier",
-            "all_enty_1": "to_carrier",
-            "all_enty_3": "emission_type",
+            "tall_0": "year",
+            "all_regi_1": "region",
+            "all_enty_2": "from_carrier",
+            "all_enty_3": "to_carrier",
+            "all_te_4": "technology",
+            "all_enty_5": "emission_type",
         },
-    ).query("to_carrier == 'seel' & emission_type == 'co2'")
+    ).query("to_carrier == 'seel' & emission_type == 'co2'").query("year == '{}'".format(snakemake.wildcards["year"]))
 
-    # CO2 intensities are not region specified; instead of treating as special case, continue by
-    # adding a fake region-dependency with all-region identical values
-    co2_intensity = co2_intensity.merge(
-        pd.Series(costs["region"].unique(), name="region"), how="cross"
-    )
     # Unit conversion from Gt_C/TWa to t_CO2/MWh
     co2_intensity["value"] *= 1e9 * ((2 * 16 + 12) / 12) / 8760 / 1e6
     co2_intensity["parameter"] = "CO2 intensity"
