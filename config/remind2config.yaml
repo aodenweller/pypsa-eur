@@ -29,8 +29,12 @@ enable_RCL_stores:
     2: [battery]
     3: [H2, battery]
 
+cost_of_RCL_components:
+  remind_switch: c32_pypsa_cfg_rcl_cost
+  overwrite_pypsa: remind_coupling.preinvestment_capacities.capital_cost
+
 enable_perturbed_scenarios:
-  remind_switch: c32_pypsa_perturb
+  remind_switch: c32_pypsa_cfg_perturb
   overwrite_pypsa: remind_coupling.solve_perturbed_network.enable
   switch_mapping:
     0: false
@@ -38,7 +42,7 @@ enable_perturbed_scenarios:
 
 # If solving perturbed networks, also create default op network 
 enable_dispatch_networks_when_perturbed:
-  remind_switch: c32_pypsa_perturb
+  remind_switch: c32_pypsa_cfg_perturb
   overwrite_pypsa: remind_coupling.solve_operations_network.enable
   switch_mapping:
     0: false
@@ -46,7 +50,7 @@ enable_dispatch_networks_when_perturbed:
 
 # If solving perturbed networks, use default op network for export
 use_dispatch_networks_for_export:
-  remind_switch: c32_pypsa_perturb
+  remind_switch: c32_pypsa_cfg_perturb
   overwrite_pypsa: remind_coupling.export_to_REMIND.use_operations_network
   switch_mapping:
     0: false

@@ -45,7 +45,7 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "import_REMIND_config",
             configfiles="config/config.remind.yaml",
-            scenario="PyPSA_PkBudg1000_DEU_allRCL_PyPSArefactor_perturbAnticipation_2025-04-04_12.45.54",
+            scenario="PyPSA_PkBudg1000_DEU_allRCL_PyPSArefactor_4nodes_loadsh_costRCL_2025-04-14_10.33.02",
             iteration="1",
         )
 
@@ -69,7 +69,11 @@ if __name__ == "__main__":
     for _, df in remind2config.items():
         remind_switch = df["remind_switch"]
         overwrite_pypsa = df["overwrite_pypsa"]
-        switch_mapping = df["switch_mapping"]
+        # Check if df has switch_mapping with df as a dictionary
+        if "switch_mapping" in df:
+            switch_mapping = df["switch_mapping"]
+        else:
+            switch_mapping = None
         # Read REMIND data
         try:
             remind_data = read_remind_data(
@@ -92,12 +96,7 @@ if __name__ == "__main__":
             continue
         switch_value = convert_to_native_type(remind_data["value"][0])
         # Get the mapping for the switch value
-        new_value = switch_mapping.get(switch_value)
-        # Apply type conversion based on the 'type' field in the mapping, if present
-        if switch_mapping.get("type") == "integer":
-            new_value = int(new_value)  # Convert to integer
-        elif switch_mapping.get("type") == "float":
-            new_value = float(new_value)  # Convert to float
+        new_value = switch_mapping.get(switch_value) if switch_mapping else switch_value
         # Update config
         set_nested_value(config, overwrite_pypsa, new_value)
 
