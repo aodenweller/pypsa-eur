@@ -20,6 +20,7 @@ gurobi.log
 /networks
 /benchmarks
 /logs
+/logs_slurm
 /notebooks
 /data
 /cutouts
@@ -33,7 +34,7 @@ doc/_build
 config/config.yaml
 config/scenarios.yaml
 
-config.yaml
+#config.yaml  # Comment because of cluster profile config.yaml
 config/config.yaml
 
 dconf

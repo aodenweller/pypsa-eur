@@ -4,6 +4,7 @@
 
 import contextlib
 import copy
+import functools
 import hashlib
 import logging
 import os
@@ -27,10 +28,18 @@ import yaml
 from snakemake.utils import update_config
 from tqdm import tqdm
 
+import subprocess
+import sys
+import time
+import multiprocessing
+import gurobipy as grb
+
 logger = logging.getLogger(__name__)
 
 REGION_COLS = ["geometry", "name", "x", "y", "country"]
 
+DEFAULT_TUNNEL_PORT = 1080
+LOGIN_NODE = "01"
 
 def copy_default_files(workflow):
     default_files = {
@@ -550,7 +559,7 @@ def mock_snakemake(
         workdir = Path.cwd()
 
     try:
-        for p in SNAKEFILE_CHOICES:
+        for p in ["Snakefile_REMIND"]:
             p = root_dir / p
             if os.path.exists(p):
                 snakefile = p
@@ -841,6 +850,579 @@ def update_config_from_wildcards(config, w, inplace=True):
         return config
 
 
+@functools.lru_cache
+def get_technology_mapping(
+    fn: str or Path,
+    group_technologies: bool = False,
+):
+    """
+    Get a mapping between technologies in REMIND and PyPSA-EUR, inferred from
+    the technology_cost_mapping file.
+
+    Technologies can also be mapped to grouped technologies.
+
+    Parameters
+    ----------
+    fn : str
+        Path to the technology cost mapping file.
+    group_technologies : bool, optional
+        Whether to group technologies, by default False.
+
+    Returns
+    -------
+    pd.DataFrame
+        Dataframe containing the technology mapping with columns "PyPSA-Eur" and "REMIND-EU".
+        If group_technologies is True, the dataframe will contain an additional column "technology_group".
+    """
+
+    new_mapping = pd.read_csv(fn)
+    new_mapping = new_mapping.query("parameter == 'investment'")
+    new_mapping = new_mapping.query(
+        "`couple to` == 'mapping generation weighted to reference REMIND-EU technology'"
+    )
+
+    new_mapping = new_mapping[["PyPSA-EUR technology", "reference"]]
+    # convert potential list-like entries to real list
+    new_mapping["reference"] = new_mapping["reference"].map(yaml.safe_load)
+    # Turn all list-entries into separate rows
+    new_mapping = new_mapping.explode("reference")
+    new_mapping = new_mapping.rename(
+        columns={"PyPSA-EUR technology": "PyPSA-Eur", "reference": "REMIND-EU"}
+    )
+
+    if not (offwind := new_mapping.loc[new_mapping["PyPSA-Eur"] == "offwind"]).empty:
+        logger.info(
+            "'offwind' technology detected. Adding offwind-ac and offwind-dc to technology mapping..."
+        )
+        new_mapping = pd.concat(
+            [
+                new_mapping,
+                offwind.replace("offwind", "offwind-ac"),
+                offwind.replace("offwind", "offwind-dc"),
+            ]
+        ).reset_index(drop=True)
+
+    if "hydro" in new_mapping["PyPSA-Eur"].unique() and (
+        "ror" not in new_mapping["PyPSA-Eur"].unique()
+        or "PHS" not in new_mapping["PyPSA-Eur"].unique()
+    ):
+        logger.info(
+            "'hydro' technology but 'ror' and/or 'PHS' are missing. Adding 'ror' and 'PHS' to technology mapping..."
+        )
+        hydro = new_mapping.loc[new_mapping["PyPSA-Eur"] == "hydro"]
+        new_mapping = pd.concat(
+            [
+                new_mapping,
+                hydro.replace({"PyPSA-Eur": {"hydro": "ror"}}),
+                hydro.replace({"PyPSA-Eur": {"hydro": "PHS"}}),
+            ]
+        ).reset_index(drop=True)
+
+    # get all unique row combinations
+    new_mapping = new_mapping.drop_duplicates().reset_index(drop=True)
+
+    if group_technologies:
+        # Determine PyPSA-Eur technologies/carriers which share the same constrained (= are mapped from the same REMIND technologies)
+        new_mapping = (
+            new_mapping.groupby("PyPSA-Eur")
+            .agg(lambda x: tuple(sorted(x)))
+            .reset_index()
+            .groupby("REMIND-EU", as_index=False)
+            .agg(lambda x: list(x))
+        )
+
+        # Create groups of PyPSA-Eur technologies, e.g. ['solar', 'solar rooftop'] -> "solar & solar rooftop"
+        new_mapping["technology_group"] = new_mapping["PyPSA-Eur"].apply(
+            lambda x: " & ".join(x)
+        )
+        new_mapping = new_mapping.explode("REMIND-EU").explode("PyPSA-Eur")
+
+    return new_mapping
+
+
+def get_region_mapping(
+    fn,
+    source: str = "REMIND-EU",
+    target: str = "PyPSA-EUR",
+    flatten: bool = False,
+) -> dict:
+    """
+    Get a mapping between regions in REMIND and PyPSA-EUR.
+
+    The mapping from REMIND-EU between regions and countries is read from file (fn),
+    which is directly taken from the REMIND-EU model.
+    The corresponding countries in PyPSA-EUR are determined using the country_converter.
+    Valid values for source and target are: remind, pypsa-eur.
+    Lower and uppercase are ignored.
+
+    Parameters
+    ----------
+    fn : str
+        Path to the region mapping file from REMIND-EU.
+    source : str, optional
+        Region mapping source, by default "remind-eu"
+    target : str, optional
+        Region mapping target, by default "pypsa-eur"
+    flatten : bool, optional
+        Whether to try to flatten the mapping; only valid
+        if the mapping is unique for all keys.
+        Default False.
+    """
+    import country_converter as coco
+
+    # Create region mapping by loading the original mapping from REMIND-EU from file
+    # and then mapping ISO 3166-1 alpha-3 country codes to PyPSA-EUR ISO 3166-1 alpha-2 country codes
+    logger.info("Loading region mapping...")
+    region_mapping = pd.read_csv(fn, sep=";").rename(
+        columns={"RegionCode": "remind-eu"}
+    )
+
+    region_mapping["pypsa-eur"] = coco.convert(
+        names=region_mapping["CountryCode"], to="ISO2"
+    )
+    region_mapping = region_mapping[["pypsa-eur", "remind-eu"]]
+
+    # Append Kosovo to region mapping, not present in standard mapping and uses non-standard "KV" in PyPSA-EUR
+    logger.info(
+        "Manually adding Kosovo to region mapping (PyPSA-EUR: KV, REMIND-EU: part of NES region) ..."
+    )
+    region_mapping = pd.concat(
+        [
+            region_mapping,
+            pd.DataFrame(
+                {
+                    "remind-eu": "NES",
+                    "pypsa-eur": "KV",
+                },
+                columns=["pypsa-eur", "remind-eu"],
+                index=[0],
+            ),
+        ]
+    ).reset_index(drop=True)
+
+    region_mapping = (
+        region_mapping.groupby(source.lower())[target.lower()]
+        .apply("unique")
+        .apply(list)
+    )
+
+    if flatten:
+        if (region_mapping.apply(lambda x: len(x)) != 1).any():
+            logger.error(f"Cannot flatten mapping. Non-unique map contained:\n {df}")
+
+        region_mapping = region_mapping.apply(lambda x: x[0])
+
+    return region_mapping.to_dict()
+
+
+def read_remind_data(file_path, variable_name, rename_columns={}, error_on_empty=True):
+    """
+    Auxiliary function for standardised and cached reading of REMIND-EU data
+    files to pandas.DataFrame.
+
+    Here all values read are considered variable, i.e. use
+    "variable_name" also for what is considered a "parameter" in the GDX
+    file.
+    """
+    from gamspy import Container
+
+    @functools.lru_cache
+    def _read_and_cache_remind_file(fp):
+        return Container(load_from=fp)
+
+    data = _read_and_cache_remind_file(file_path)[variable_name]
+    df = data.records
+
+    if error_on_empty and (df is None or df.empty):
+        raise ValueError(f"{variable_name} is empty. In: {file_path}")
+
+    df = df.rename(columns=rename_columns, errors="raise")
+
+    return df
+
+
+@functools.lru_cache
+def get_technology_mapping(
+    fn: str or Path,
+    group_technologies: bool = False,
+):
+    """
+    Get a mapping between technologies in REMIND and PyPSA-EUR, inferred from
+    the technology_cost_mapping file.
+
+    Technologies can also be mapped to grouped technologies.
+
+    Parameters
+    ----------
+    fn : str
+        Path to the technology cost mapping file.
+    group_technologies : bool, optional
+        Whether to group technologies, by default False.
+
+    Returns
+    -------
+    pd.DataFrame
+        Dataframe containing the technology mapping with columns "PyPSA-Eur" and "REMIND-EU".
+        If group_technologies is True, the dataframe will contain an additional column "technology_group".
+    """
+
+    new_mapping = pd.read_csv(fn)
+    new_mapping = new_mapping.query("parameter == 'investment'")
+    new_mapping = new_mapping.query(
+        "`couple to` == 'mapping generation weighted to reference REMIND-EU technology'"
+    )
+
+    new_mapping = new_mapping[["PyPSA-EUR technology", "reference"]]
+    # convert potential list-like entries to real list
+    new_mapping["reference"] = new_mapping["reference"].map(yaml.safe_load)
+    # Turn all list-entries into separate rows
+    new_mapping = new_mapping.explode("reference")
+    new_mapping = new_mapping.rename(
+        columns={"PyPSA-EUR technology": "PyPSA-Eur", "reference": "REMIND-EU"}
+    )
+
+    if not (offwind := new_mapping.loc[new_mapping["PyPSA-Eur"] == "offwind"]).empty:
+        logger.info(
+            "'offwind' technology detected. Adding offwind-ac and offwind-dc to technology mapping..."
+        )
+        new_mapping = pd.concat(
+            [
+                new_mapping,
+                offwind.replace("offwind", "offwind-ac"),
+                offwind.replace("offwind", "offwind-dc"),
+            ]
+        ).reset_index(drop=True)
+
+    if "hydro" in new_mapping["PyPSA-Eur"].unique() and (
+        "ror" not in new_mapping["PyPSA-Eur"].unique()
+        or "PHS" not in new_mapping["PyPSA-Eur"].unique()
+    ):
+        logger.info(
+            "'hydro' technology but 'ror' and/or 'PHS' are missing. Adding 'ror' and 'PHS' to technology mapping..."
+        )
+        hydro = new_mapping.loc[new_mapping["PyPSA-Eur"] == "hydro"]
+        new_mapping = pd.concat(
+            [
+                new_mapping,
+                hydro.replace({"PyPSA-Eur": {"hydro": "ror"}}),
+                hydro.replace({"PyPSA-Eur": {"hydro": "PHS"}}),
+            ]
+        ).reset_index(drop=True)
+
+    # get all unique row combinations
+    new_mapping = new_mapping.drop_duplicates().reset_index(drop=True)
+
+    if group_technologies:
+        # Determine PyPSA-Eur technologies/carriers which share the same constrained (= are mapped from the same REMIND technologies)
+        new_mapping = (
+            new_mapping.groupby("PyPSA-Eur")
+            .agg(lambda x: tuple(sorted(x)))
+            .reset_index()
+            .groupby("REMIND-EU", as_index=False)
+            .agg(lambda x: list(x))
+        )
+
+        # Create groups of PyPSA-Eur technologies, e.g. ['solar', 'solar rooftop'] -> "solar & solar rooftop"
+        new_mapping["technology_group"] = new_mapping["PyPSA-Eur"].apply(
+            lambda x: " & ".join(x)
+        )
+        new_mapping = new_mapping.explode("REMIND-EU").explode("PyPSA-Eur")
+
+    return new_mapping
+
+
+def get_region_mapping(
+    fn,
+    source: str = "REMIND-EU",
+    target: str = "PyPSA-EUR",
+    flatten: bool = False,
+) -> dict:
+    """
+    Get a mapping between regions in REMIND and PyPSA-EUR.
+
+    The mapping from REMIND-EU between regions and countries is read from file (fn),
+    which is directly taken from the REMIND-EU model.
+    The corresponding countries in PyPSA-EUR are determined using the country_converter.
+    Valid values for source and target are: remind, pypsa-eur.
+    Lower and uppercase are ignored.
+
+    Parameters
+    ----------
+    fn : str
+        Path to the region mapping file from REMIND-EU.
+    source : str, optional
+        Region mapping source, by default "remind-eu"
+    target : str, optional
+        Region mapping target, by default "pypsa-eur"
+    flatten : bool, optional
+        Whether to try to flatten the mapping; only valid
+        if the mapping is unique for all keys.
+        Default False.
+    """
+    import country_converter as coco
+
+    # Create region mapping by loading the original mapping from REMIND-EU from file
+    # and then mapping ISO 3166-1 alpha-3 country codes to PyPSA-EUR ISO 3166-1 alpha-2 country codes
+    logger.info("Loading region mapping...")
+    region_mapping = pd.read_csv(fn, sep=";").rename(
+        columns={"RegionCode": "remind-eu"}
+    )
+
+    region_mapping["pypsa-eur"] = coco.convert(
+        names=region_mapping["CountryCode"], to="ISO2"
+    )
+    region_mapping = region_mapping[["pypsa-eur", "remind-eu"]]
+
+    # Append Kosovo to region mapping, not present in standard mapping and uses non-standard "KV" in PyPSA-EUR
+    logger.info(
+        "Manually adding Kosovo to region mapping (PyPSA-EUR: KV, REMIND-EU: part of NES region) ..."
+    )
+    region_mapping = pd.concat(
+        [
+            region_mapping,
+            pd.DataFrame(
+                {
+                    "remind-eu": "NES",
+                    "pypsa-eur": "KV",
+                },
+                columns=["pypsa-eur", "remind-eu"],
+                index=[0],
+            ),
+        ]
+    ).reset_index(drop=True)
+
+    region_mapping = (
+        region_mapping.groupby(source.lower())[target.lower()]
+        .apply("unique")
+        .apply(list)
+    )
+
+    if flatten:
+        if (region_mapping.apply(lambda x: len(x)) != 1).any():
+            logger.error(f"Cannot flatten mapping. Non-unique map contained:\n {df}")
+
+        region_mapping = region_mapping.apply(lambda x: x[0])
+
+    return region_mapping.to_dict()
+
+
+def read_remind_data(file_path, variable_name, rename_columns={}, error_on_empty=True):
+    """
+    Auxiliary function for standardised and cached reading of REMIND-EU data
+    files to pandas.DataFrame.
+
+    Here all values read are considered variable, i.e. use
+    "variable_name" also for what is considered a "parameter" in the GDX
+    file.
+    """
+    from gamspy import Container
+
+    @functools.lru_cache
+    def _read_and_cache_remind_file(fp):
+        return Container(load_from=fp)
+
+    data = _read_and_cache_remind_file(file_path)[variable_name]
+    df = data.records
+
+    if error_on_empty and (df is None or df.empty):
+        raise ValueError(f"{variable_name} is empty. In: {file_path}")
+
+    df = df.rename(columns=rename_columns, errors="raise")
+
+    return df
+
+
+@functools.lru_cache
+def get_technology_mapping(
+    fn: str or Path,
+    group_technologies: bool = False,
+):
+    """
+    Get a mapping between technologies in REMIND and PyPSA-EUR, inferred from
+    the technology_cost_mapping file.
+
+    Technologies can also be mapped to grouped technologies.
+
+    Parameters
+    ----------
+    fn : str
+        Path to the technology cost mapping file.
+    group_technologies : bool, optional
+        Whether to group technologies, by default False.
+
+    Returns
+    -------
+    pd.DataFrame
+        Dataframe containing the technology mapping with columns "PyPSA-Eur" and "REMIND-EU".
+        If group_technologies is True, the dataframe will contain an additional column "technology_group".
+    """
+
+    new_mapping = pd.read_csv(fn)
+    new_mapping = new_mapping.query("parameter == 'investment'")
+    new_mapping = new_mapping.query(
+        "`couple to` == 'mapping generation weighted to reference REMIND-EU technology'"
+    )
+
+    new_mapping = new_mapping[["PyPSA-EUR technology", "reference"]]
+    # convert potential list-like entries to real list
+    new_mapping["reference"] = new_mapping["reference"].map(yaml.safe_load)
+    # Turn all list-entries into separate rows
+    new_mapping = new_mapping.explode("reference")
+    new_mapping = new_mapping.rename(
+        columns={"PyPSA-EUR technology": "PyPSA-Eur", "reference": "REMIND-EU"}
+    )
+
+    if not (offwind := new_mapping.loc[new_mapping["PyPSA-Eur"] == "offwind"]).empty:
+        logger.info(
+            "'offwind' technology detected. Adding offwind-ac and offwind-dc to technology mapping..."
+        )
+        new_mapping = pd.concat(
+            [
+                new_mapping,
+                offwind.replace("offwind", "offwind-ac"),
+                offwind.replace("offwind", "offwind-dc"),
+            ]
+        ).reset_index(drop=True)
+
+    if "hydro" in new_mapping["PyPSA-Eur"].unique() and (
+        "ror" not in new_mapping["PyPSA-Eur"].unique()
+        or "PHS" not in new_mapping["PyPSA-Eur"].unique()
+    ):
+        logger.info(
+            "'hydro' technology but 'ror' and/or 'PHS' are missing. Adding 'ror' and 'PHS' to technology mapping..."
+        )
+        hydro = new_mapping.loc[new_mapping["PyPSA-Eur"] == "hydro"]
+        new_mapping = pd.concat(
+            [
+                new_mapping,
+                hydro.replace({"PyPSA-Eur": {"hydro": "ror"}}),
+                hydro.replace({"PyPSA-Eur": {"hydro": "PHS"}}),
+            ]
+        ).reset_index(drop=True)
+
+    # get all unique row combinations
+    new_mapping = new_mapping.drop_duplicates().reset_index(drop=True)
+
+    if group_technologies:
+        # Determine PyPSA-Eur technologies/carriers which share the same constrained (= are mapped from the same REMIND technologies)
+        new_mapping = (
+            new_mapping.groupby("PyPSA-Eur")
+            .agg(lambda x: tuple(sorted(x)))
+            .reset_index()
+            .groupby("REMIND-EU", as_index=False)
+            .agg(lambda x: list(x))
+        )
+
+        # Create groups of PyPSA-Eur technologies, e.g. ['solar', 'solar rooftop'] -> "solar & solar rooftop"
+        new_mapping["technology_group"] = new_mapping["PyPSA-Eur"].apply(
+            lambda x: " & ".join(x)
+        )
+        new_mapping = new_mapping.explode("REMIND-EU").explode("PyPSA-Eur")
+
+    return new_mapping
+
+
+def get_region_mapping(
+    fn,
+    source: str = "REMIND-EU",
+    target: str = "PyPSA-EUR",
+    flatten: bool = False,
+) -> dict:
+    """
+    Get a mapping between regions in REMIND and PyPSA-EUR.
+
+    The mapping from REMIND-EU between regions and countries is read from file (fn),
+    which is directly taken from the REMIND-EU model.
+    The corresponding countries in PyPSA-EUR are determined using the country_converter.
+    Valid values for source and target are: remind, pypsa-eur.
+    Lower and uppercase are ignored.
+
+    Parameters
+    ----------
+    fn : str
+        Path to the region mapping file from REMIND-EU.
+    source : str, optional
+        Region mapping source, by default "remind-eu"
+    target : str, optional
+        Region mapping target, by default "pypsa-eur"
+    flatten : bool, optional
+        Whether to try to flatten the mapping; only valid
+        if the mapping is unique for all keys.
+        Default False.
+    """
+    import country_converter as coco
+
+    # Create region mapping by loading the original mapping from REMIND-EU from file
+    # and then mapping ISO 3166-1 alpha-3 country codes to PyPSA-EUR ISO 3166-1 alpha-2 country codes
+    logger.info("Loading region mapping...")
+    region_mapping = pd.read_csv(fn, sep=";").rename(
+        columns={"RegionCode": "remind-eu"}
+    )
+
+    region_mapping["pypsa-eur"] = coco.convert(
+        names=region_mapping["CountryCode"], to="ISO2"
+    )
+    region_mapping = region_mapping[["pypsa-eur", "remind-eu"]]
+
+    # Append Kosovo to region mapping, not present in standard mapping and uses non-standard "KV" in PyPSA-EUR
+    logger.info(
+        "Manually adding Kosovo to region mapping (PyPSA-EUR: KV, REMIND-EU: part of NES region) ..."
+    )
+    region_mapping = pd.concat(
+        [
+            region_mapping,
+            pd.DataFrame(
+                {
+                    "remind-eu": "NES",
+                    "pypsa-eur": "KV",
+                },
+                columns=["pypsa-eur", "remind-eu"],
+                index=[0],
+            ),
+        ]
+    ).reset_index(drop=True)
+
+    region_mapping = (
+        region_mapping.groupby(source.lower())[target.lower()]
+        .apply("unique")
+        .apply(list)
+    )
+
+    if flatten:
+        if (region_mapping.apply(lambda x: len(x)) != 1).any():
+            logger.error(f"Cannot flatten mapping. Non-unique map contained:\n {df}")
+
+        region_mapping = region_mapping.apply(lambda x: x[0])
+
+    return region_mapping.to_dict()
+
+
+def read_remind_data(file_path, variable_name, rename_columns={}, error_on_empty=True):
+    """
+    Auxiliary function for standardised and cached reading of REMIND-EU data
+    files to pandas.DataFrame.
+
+    Here all values read are considered variable, i.e. use
+    "variable_name" also for what is considered a "parameter" in the GDX
+    file.
+    """
+    from gamspy import Container
+
+    @functools.lru_cache
+    def _read_and_cache_remind_file(fp):
+        return Container(load_from=fp)
+
+    data = _read_and_cache_remind_file(file_path)[variable_name]
+    df = data.records
+
+    if error_on_empty and (df is None or df.empty):
+        raise ValueError(f"{variable_name} is empty. In: {file_path}")
+
+    df = df.rename(columns=rename_columns, errors="raise")
+
+    return df
+
+
 def get_checksum_from_zenodo(file_url):
     parts = file_url.split("/")
     record_id = parts[parts.index("records") + 1]
@@ -1086,3 +1668,261 @@ def load_cutout(
         cutout.data = cutout.data.sel(time=time)
 
     return cutout
+
+
+def sanitize_custom_columns(n: pypsa.Network):
+    """
+    Sanitize non-standard columns used throughout the workflow.
+
+    Parameters
+    ----------
+        n (pypsa.Network): The network object.
+
+    Returns
+    -------
+        None
+    """
+    if "reversed" in n.links.columns:
+        # Replace NA values with default value False
+        n.links.loc[n.links.reversed.isna(), "reversed"] = False
+        n.links.reversed = n.links.reversed.astype(bool)
+
+
+def rename_techs(label: str) -> str:
+    """
+    Rename technology labels for better readability.
+
+    Removes some prefixes and renames if certain conditions defined in function body are met.
+
+    Parameters
+    ----------
+    label: str
+        Technology label to be renamed
+
+    Returns
+    -------
+    str
+        Renamed label
+    """
+    prefix_to_remove = [
+        "residential ",
+        "services ",
+        "urban ",
+        "rural ",
+        "central ",
+        "decentral ",
+    ]
+
+    rename_if_contains = [
+        "CHP",
+        "gas boiler",
+        "biogas",
+        "solar thermal",
+        "air heat pump",
+        "ground heat pump",
+        "resistive heater",
+        "Fischer-Tropsch",
+    ]
+
+    rename_if_contains_dict = {
+        "water tanks": "hot water storage",
+        "retrofitting": "building retrofitting",
+        # "H2 Electrolysis": "hydrogen storage",
+        # "H2 Fuel Cell": "hydrogen storage",
+        # "H2 pipeline": "hydrogen storage",
+        "battery": "battery storage",
+        "H2 for industry": "H2 for industry",
+        "land transport fuel cell": "land transport fuel cell",
+        "land transport oil": "land transport oil",
+        "oil shipping": "shipping oil",
+        # "CC": "CC"
+    }
+
+    rename = {
+        "solar": "solar PV",
+        "Sabatier": "methanation",
+        "offwind": "offshore wind",
+        "offwind-ac": "offshore wind (AC)",
+        "offwind-dc": "offshore wind (DC)",
+        "offwind-float": "offshore wind (Float)",
+        "onwind": "onshore wind",
+        "ror": "hydroelectricity",
+        "hydro": "hydroelectricity",
+        "PHS": "hydroelectricity",
+        "NH3": "ammonia",
+        "co2 Store": "DAC",
+        "co2 stored": "CO2 sequestration",
+        "AC": "transmission lines",
+        "DC": "transmission lines",
+        "B2B": "transmission lines",
+    }
+
+    for ptr in prefix_to_remove:
+        if label[: len(ptr)] == ptr:
+            label = label[len(ptr) :]
+
+    for rif in rename_if_contains:
+        if rif in label:
+            label = rif
+
+    for old, new in rename_if_contains_dict.items():
+        if old in label:
+            label = new
+
+    for old, new in rename.items():
+        if old == label:
+            label = new
+    return label
+
+
+def load_cutout(
+    cutout_files: Union[str, list[str]], time: Union[None, pd.DatetimeIndex] = None
+) -> atlite.Cutout:
+    """
+    Load and optionally combine multiple cutout files.
+
+    Parameters
+    ----------
+    cutout_files : str or list of str
+        Path to a single cutout file or a list of paths to multiple cutout files.
+        If a list is provided, the cutouts will be concatenated along the time dimension.
+    time : pd.DatetimeIndex, optional
+        If provided, select only the specified times from the cutout.
+
+    Returns
+    -------
+    atlite.Cutout
+        Merged cutout with optional time selection applied.
+    """
+    if isinstance(cutout_files, str):
+        cutout = atlite.Cutout(cutout_files)
+    elif isinstance(cutout_files, list):
+        cutout_da = [atlite.Cutout(c).data for c in cutout_files]
+        combined_data = xr.concat(cutout_da, dim="time", data_vars="minimal")
+        cutout = atlite.Cutout(NamedTemporaryFile().name, data=combined_data)
+
+    if time is not None:
+        cutout.data = cutout.data.sel(time=time)
+
+    return cutout
+
+
+def is_tunnel_alive(tunnel_config: dict):
+    """Check if the SSH tunnel is running by checking if the port is in use."""
+    port = tunnel_config.get("tunnel_port", DEFAULT_TUNNEL_PORT)
+    result = subprocess.run(
+        f"netstat -tlnp 2>/dev/null | grep :{port}", 
+        shell=True, 
+        stdout=subprocess.PIPE
+    )
+    return result.returncode == 0
+
+def setup_gurobi_tunnel_and_env(
+    tunnel_config: dict, logger: logging.Logger = None, attempts=4
+) -> subprocess.Popen:
+    """A utility function to set up the Gurobi environment variables and establish an
+    SSH tunnel on HPCs. Otherwise the license check will fail if the compute nodes do
+     not have internet access or a token server isn't set up
+
+    Args:
+        config (dict): the snakemake pypsa-china configuration
+        logger (logging.Logger, optional): Logger. Defaults to None.
+        attempts (int, optional): ssh connection attemps. Defaults to 4.
+    """
+    if not tunnel_config.get("use_tunnel", False):
+        return
+    logger.info("Setting up tunnel")
+    user = os.getenv("USER")  # User is pulled from the environment
+    port = tunnel_config.get("tunnel_port", DEFAULT_TUNNEL_PORT)
+
+    # bash commands for tunnel: reduce pipe err severity (too high from snakemake)
+    pipe_err = "set -o pipefail; "
+    # ssh_command = f"ssh -vvv -fN -D {port} {user}@login{LOGIN_NODE}"
+    ssh_command = f"ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=10 -vvv -fN -D {port} {user}@login{LOGIN_NODE}"
+    logger.info(f"Attempting ssh tunnel to login node {LOGIN_NODE}")
+    # Kill any existing SSH tunnel on that port before starting a new one
+    subprocess.run(f"pkill -f '{ssh_command}'", shell=True)
+    # Run SSH in the background to establish the tunnel
+    socks_proc = subprocess.Popen(
+        pipe_err + ssh_command, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE
+    )
+    try:
+        time.sleep(1)
+        # [-1] because ssh is last command
+        err = socks_proc.communicate(timeout=5)[-1].decode()
+        logger.info(f"ssh err returns {str(err)}")
+        if err.find("Permission") != -1 or err.find("Could not resolve hostname") != -1:
+            socks_proc.kill()
+            time.sleep(2)  # Small delay before retrying
+        else:
+            logger.info("Gurobi Environment variables & tunnel set up successfully.")
+    except subprocess.TimeoutExpired:
+        logger.info(
+            f"SSH tunnel established on port {port} with possible errors (err check timedout)."
+        )
+
+    os.environ["https_proxy"] = f"socks5://127.0.0.1:{port}"
+    os.environ["SSL_CERT_FILE"] = "/p/projects/rd3mod/ssl/ca-bundle.pem_2022-02-08"
+    os.environ["GRB_CAFILE"] = "/p/projects/rd3mod/ssl/ca-bundle.pem_2022-02-08"
+
+    # Set up Gurobi environment variables
+    os.environ["GUROBI_HOME"] = "/p/projects/rd3mod/gurobi1103/linux64"
+    os.environ["PATH"] += f":{os.environ['GUROBI_HOME']}/bin"
+    os.environ["LD_LIBRARY_PATH"] += f":{os.environ['GUROBI_HOME']}/lib"
+    os.environ["GRB_LICENSE_FILE"] = "/p/projects/rd3mod/gurobi_rc/gurobi.lic"
+    os.environ["GRB_CURLVERBOSE"] = "1"
+    os.environ["GRB_SERVER_TIMEOUT"] = "10"
+
+    return socks_proc
+
+def _check_gurobi_license_subprocess():
+    """
+    Subprocess function to check Gurobi license availability.
+    This function will start the Gurobi environment to verify if a license is available.
+    """
+    try:
+        env = grb.Env(empty=True)
+        env.start()  # Start the Gurobi environment (this will attempt to acquire the license)
+        logger.info("Gurobi license is available.")
+        env.dispose()  # Dispose of the environment after use
+        return True
+    except grb.GurobiError as e:
+        logger.error(f"Error checking Gurobi license: {e}")
+        return False
+
+def check_gurobi_license(attempts=5, timeout=10):
+    """
+    Checks the availability of the Gurobi license in a subprocess with timeout.
+    Retries a few times if the license is not available.
+    
+    Parameters:
+    - attempts: Number of attempts.
+    - timeout: Time to wait before retrying (in seconds).
+    
+    Returns:
+    - True if the license is available, False if the check times out.
+    """
+    logger.info("Checking Gurobi license availability...")
+    
+    for attempt in range(1, attempts + 1):
+        # Create a multiprocessing Process to check license
+        process = multiprocessing.Process(target=_check_gurobi_license_subprocess)
+        process.start()
+        
+        process.join(timeout=timeout)  # Wait for the process to finish or timeout
+        
+        if process.is_alive():
+            # If the process is still alive after the timeout, terminate it
+            process.terminate()
+            process.join()  # Ensure it is properly joined to clean up
+            logger.warning(f"License check timeout. Retrying...")
+        else:
+            # If the process completed, check the result
+            if process.exitcode == 0:
+                # License was available
+                return True
+            else:
+                # License was not available
+                logger.warning("License not available during subprocess check. Retrying...")
+
+    raise(RuntimeError("Gurobi license check failed after all attempts, aborting."))

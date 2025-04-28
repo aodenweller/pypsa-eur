@@ -1,0 +1,136 @@
+# A cluster profile for the PIK HPC
+# Profile allows to activeate the gurobi license via an ssh tunnel and solve pypsa
+
+# define the executor
+executor: cluster-generic
+jobs: 500
+
+# define the cluster submission command (slurm wrapper)
+# Use partition standard and qos short if not set
+# TODO: Make time an argument of resources.XX (didn't work well for grouped jobs so far)
+cluster-generic-submit-cmd:
+  export HPC_PARTITION=${{HPC_PARTITION:-priority}} HPC_QOS=${{HPC_QOS:-standby}} &&
+  mkdir -p logs_slurm/{wildcards.scenario}/{rule} &&
+  sbatch
+    --partition=$HPC_PARTITION
+    --qos=$HPC_QOS
+    --cpus-per-task={threads}
+    --mem={resources.mem_mb}
+    --time='00:10:00'
+    --job-name=smk-{rule}-{wildcards}
+    --output=logs_slurm/{wildcards.scenario}/{rule}/{rule}-{wildcards}-%j.out
+    --parsable
+    --export=PATH,LD_LIBRARY_PATH,GUROBI_HOME
+cluster-generic-cancel-cmd: scancel
+cluster-generic-status-cmd: "python pik_hpc_profile/slurm-status.py"
+
+# Allow canceling of snakemake-submitted slurm jobs using Ctrl+c in combination with sbatch --parsable
+keep-going: true
+keep-incomplete: true
+latency-wait: 60
+#local-cores: 1
+max-jobs-per-second: 150  # Allow to submit all at once
+max-status-checks-per-second: 15
+printshellcmds: true
+#reason: true
+rerun-incomplete: true
+# Other rerun-triggers can lead to rules trying to access the internet (for retrieve_*) functions
+# which leads to errors due to lack of internet access from non-"io" partitions
+rerun-trigger:
+- code
+- input
+- mtime
+- params
+restart-times: 2
+# Disable snakemake lock
+nolock: true
+scheduler: greedy
+verbose: true
+
+# now define the resources
+default-resources:
+  partition: standard
+  qos: short
+  mem_mb: 1000
+  cores: 8
+
+set-resources:
+  download_and_prepare:
+    partition: "io"
+    qos: "io"
+  retrieve_cost_data:
+    partition: "io"
+    qos: "io"
+  retrieve_cutout:
+    partition: "io"
+    qos: "io"
+  retrieve_databundle:
+    partition: "io"
+    qos: "io"
+  retrieve_eez:
+    partition: "io"
+    qos: "io"
+  retrieve_electricity_demand:
+    partition: "io"
+    qos: "io"
+  retrieve_naturalearth_countries:
+    partition: "io"
+    qos: "io"
+  retrieve_nuts_shapes:
+    partition: "io"
+    qos: "io"
+  retrieve_osm_prebuilt:
+    partition: "io"
+    qos: "io"
+  retrieve_ship_raster:
+    partition: "io"
+    qos: "io"
+  rertieve_synthetic_electricity_demand:
+    partition: "io"
+    qos: "io"
+  retrieve_powerplants:
+    partition: "io"
+    qos: "io"
+  build_renewable_profiles:
+    walltime: "'00:60:00'"
+  extract_coupling_parameters:
+    parition: "priority"
+    qos: "standby"
+# When running operation networks, submit to priority standby
+  solve_operations_network:
+    partition: "priority"
+    qos: "standby"
+  solve_operations_perturbed_network:
+    partition: "priority"
+    qos: "standby"
+  # Due to group-components aggregating mem_mb resources,
+  # the high default requests for mem_mb of these will exceed permitted memory requests in queue
+  # but that much memory is currently not needed for small PyPSA-Eur models, so we overwrite the values here
+  # add_electricity:
+  #   mem_mb: 10000
+  #   threads: 4
+  # simplify_network:
+  #   mem_mb: 10000
+  #   threads: 4
+  # cluster_network:
+  #   mem_mb: 10000
+  #   threads: 4
+  # prepare_network:
+  #   mem_mb: 10000
+  #   threads: 4
+
+# Additional job grouping using snakemake --group for "io" partition/qos
+# permitting only 2 jobs submitted at a time per user; by grouping all
+# rules requiring to run on "io" partiaion/qos, we achieve only 2 submitted jobs
+groups:
+- download_and_prepare=download_data
+- retrieve_cost_data=download_data
+- retrieve_cutout=download_data
+- retrieve_databundle=download_data
+- retrieve_eez=download_data
+- retrieve_electricity_demand=download_data
+- retrieve_naturalearth_countries=download_data
+- retrieve_nuts_shapes=download_data
+- retrieve_osm_prebuilt=download_data
+- retrieve_ship_raster=download_data
+- rertieve_synthetic_electricity_demand=download_data

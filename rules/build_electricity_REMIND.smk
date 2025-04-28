@@ -30,7 +30,7 @@ rule build_electricity_demand:
         "../scripts/build_electricity_demand.py"
 
 
-rule build_powerplants:
+rule build_powerplants_REMIND:
     params:
         powerplants_filter=config_provider("electricity", "powerplants_filter"),
         custom_powerplants=config_provider("electricity", "custom_powerplants"),
@@ -39,19 +39,25 @@ rule build_powerplants:
     input:
         network=resources("networks/base_s_{clusters}.nc"),
         custom_powerplants="data/custom_powerplants.csv",
+        powerplants="data/powerplants.csv",
+        RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits.csv",
+        region_mapping="config/regionmapping_21_EU11.csv",
     output:
-        resources("powerplants_s_{clusters}.csv"),
+        SCENARIO_RESOURCES + "i{iteration}/y{year}/powerplants_s_{clusters}.csv",
+        RCL_p_nom_limits_updated=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits_updated_s_{clusters}.csv",
     log:
-        logs("build_powerplants_s_{clusters}.log"),
+        LOGS + "{scenario}/i{iteration}/y{year}/build_powerplants_s_{clusters}.log",
     benchmark:
-        benchmarks("build_powerplants_s_{clusters}")
+        BENCHMARKS + "{scenario}/i{iteration}/y{year}/build_powerplants_s_{clusters}"
     threads: 1
+    group:
+        "iy"
     resources:
         mem_mb=7000,
     conda:
         "../envs/environment.yaml"
     script:
-        "../scripts/build_powerplants.py"
+        "../scripts/build_powerplants_REMIND.py"
 
 
 def input_base_network(w):
@@ -664,7 +670,7 @@ def input_conventional(w):
     }
 
 
-rule add_electricity:
+rule add_electricity_REMIND:
     params:
         line_length_factor=config_provider("lines", "length_factor"),
         link_length_factor=config_provider("links", "length_factor"),
@@ -682,16 +688,18 @@ rule add_electricity:
         ),
         aggregation_strategies=config_provider("clustering", "aggregation_strategies"),
         exclude_carriers=config_provider("clustering", "exclude_carriers"),
+        # REMIND input
+        preinvestment_capacities=config_provider("remind_coupling","preinvestment_capacities"),
+        h2_demand=config_provider("remind_coupling","h2_demand"),
+        constraints=config_provider("solving","constraints"),
     input:
         unpack(input_profile_tech),
         unpack(input_class_regions),
         unpack(input_conventional),
         base_network=resources("networks/base_s_{clusters}.nc"),
-        tech_costs=lambda w: resources(
-            f"costs_{config_provider('costs', 'year')(w)}.csv"
-        ),
+        tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",  # REMIND input
         regions=resources("regions_onshore_base_s_{clusters}.geojson"),
-        powerplants=resources("powerplants_s_{clusters}.csv"),
+        powerplants=SCENARIO_RESOURCES + "i{iteration}/y{year}/powerplants_s_{clusters}.csv",  # REMIND input
         hydro_capacities=ancient("data/hydro_capacities.csv"),
         unit_commitment="data/unit_commitment.csv",
         fuel_price=lambda w: (
@@ -701,22 +709,35 @@ rule add_electricity:
         ),
         load=resources("electricity_demand_base_s.nc"),
         busmap=resources("busmap_base_s_{clusters}.csv"),
+        # REMIND input
+        region_mapping="config/regionmapping_21_EU11.csv",
+        RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits_updated_s_{clusters}.csv",
+        technology_cost_mapping="config/technology_cost_mapping.csv",
+        remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
+        load_scaling_factor=SCENARIO_RESOURCES + "i{iteration}/y{year}/load_scaling_factor.csv",
     output:
-        resources("networks/base_s_{clusters}_elec.nc"),
+        SCENARIO_RESOURCES
+        + "i{iteration}/y{year}/networks/base_s_{clusters}_elec.nc",
+        # Export costs for validation only
+        costs_validation=RESULTS + "{scenario}/i{iteration}/reporting_parameters/costs_s_{clusters}_{year}.csv",
     log:
-        logs("add_electricity_{clusters}.log"),
+        LOGS
+        + "{scenario}/i{iteration}/y{year}/add_electricity_{clusters}.log",
     benchmark:
-        benchmarks("add_electricity_{clusters}")
+        BENCHMARKS
+        + "{scenario}/i{iteration}/y{year}/add_electricity_{clusters}"
     threads: 1
+    group:
+        "iy"
     resources:
         mem_mb=10000,
     conda:
         "../envs/environment.yaml"
     script:
-        "../scripts/add_electricity.py"
+        "../scripts/add_electricity_REMIND.py"
 
 
-rule prepare_network:
+rule prepare_network_REMIND:
     params:
         time_resolution=config_provider("clustering", "temporal", "resolution_elec"),
         links=config_provider("links"),
@@ -733,18 +754,24 @@ rule prepare_network:
         drop_leap_day=config_provider("enable", "drop_leap_day"),
         transmission_limit=config_provider("electricity", "transmission_limit"),
     input:
-        resources("networks/base_s_{clusters}_elec.nc"),
-        tech_costs=lambda w: resources(
-            f"costs_{config_provider('costs', 'year')(w)}.csv"
-        ),
+        SCENARIO_RESOURCES
+        + "i{iteration}/y{year}/networks/base_s_{clusters}_elec.nc",
+        tech_costs=SCENARIO_RESOURCES + "i{iteration}/y{year}/costs.csv",
         co2_price=lambda w: resources("co2_price.csv") if "Ept" in w.opts else [],
     output:
-        resources("networks/base_s_{clusters}_elec_{opts}.nc"),
+        SCENARIO_RESOURCES
+        + "i{iteration}/y{year}/networks/base_s_{clusters}_elec_{opts}.nc",
     log:
-        logs("prepare_network_base_s_{clusters}_elec_{opts}.log"),
+        LOGS
+        + "{scenario}/i{iteration}/y{year}/prepare_network_base_s_{clusters}_elec_{opts}.log",
     benchmark:
-        benchmarks("prepare_network_base_s_{clusters}_elec_{opts}")
+        (
+            BENCHMARKS
+            + "{scenario}/i{iteration}/y{year}/prepare_network_base_s_{clusters}_elec_{opts}"
+        )
     threads: 1
+    group:
+        "iy"
     resources:
         mem_mb=4000,
     conda:
