@@ -40,7 +40,7 @@ def add_columns_for_processing(n, region_mapping, map_pypsaeur_to_general):
             getattr(n, comp).drop(columns=["technology_group"], inplace=True)
 
     # (1) Add region
-    # Add region to buses if it doesnt exist (this is the case if additionakl h2demand is not enabled)
+    # Add region to buses if it doesnt exist (this is the case if additional h2demand is not enabled)
     if "region" not in n.buses.columns:
         n.buses["region"] = ""
 
@@ -51,6 +51,9 @@ def add_columns_for_processing(n, region_mapping, map_pypsaeur_to_general):
         n.buses["region"] != "",
         n.buses["country"].map(region_mapping["REMIND-EU"]),
     )
+
+    # HACK: Only temporary for one-region coupling!
+    n.buses["region"] = "DEU"
 
     # Add information for aggregation later: region name (REMIND-EU) and general carrier
     n.generators["region"] = n.generators["bus"].map(n.buses["region"])
@@ -207,6 +210,11 @@ def process_data(df, cols, map_to_remind):
     # Remove rows related to DC if available
     if "general_carrier" in df.columns:
         df = df.query("general_carrier != 'DC'")
+
+    # Remove rows related to EVs if available
+    if "general_carrier" in df.columns:
+        df = df.query("general_carrier != 'BEV charger'")
+        df = df.query("general_carrier != 'EV battery'")
 
     # Function to map and explode carrier columns
     def map_and_explode(df, column):
@@ -369,6 +377,31 @@ def calculate_load_prices(n, grouper):
     return load_prices
 
 
+def calculate_load_prices_with_cutoff(n, grouper, z_cutoff):
+    """
+    Calculate load prices for the network with a z-score cutoff.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network to calculate load prices for.
+    grouper : list
+        List of columns to group the load prices by.
+    z_cutoff: float
+        Z-score above which to cut off scarcity prices.
+    """
+    # Cutoff scarcity prices if configured
+    if z_cutoff:
+        n_calc = cutoff_scarcity_prices(n, z_cutoff)
+    else:
+        n_calc = n
+
+    # Calculate load prices
+    load_prices = calculate_load_prices(n_calc, grouper)
+
+    return load_prices
+
+
 def calculate_markups_supply(n, comps, grouper, z_cutoff, map_to_remind):
     """
     Calculate markups for all generators.
@@ -453,13 +486,32 @@ def calculate_markups_demand(n, grouper, z_cutoff, map_to_remind):
     # Subtract average electricity price from market value to get markup
     markup_electrolysis = mv - load_price_ac
 
+    # Calculate markups for EV charging
+    gen = n_calc.links_t.p0.loc[:, n_calc.links.carrier == "BEV charger"]
+    gen.columns = gen.columns.map(n_calc.links.bus0)
+    gen = gen.T.groupby(level=0).sum().T
+    # Local marginal price
+    lmp = n_calc.buses_t.marginal_price.loc[:, gen.columns]
+    # Calculate market value
+    mv = (gen * lmp).sum().sum() / gen.sum().sum()
+
+    # Subtract average electricity price from market value to get markup
+    markup_evs = mv - load_price_ac
+
     # Create DataFrame
     markups_demand = pd.DataFrame(
-        {
-            "region": ["DEU"],
-            "general_carrier": ["electrolysis"],
-            "value": [markup_electrolysis],
-        }
+        [
+            {
+                "region": "DEU",
+                "general_carrier": "electrolysis",
+                "value": markup_electrolysis,
+            },
+            {
+                "region": "DEU",
+                "general_carrier": "EVs",
+                "value": markup_evs,
+            },
+        ]
     )
 
     return process_data(markups_demand, cols=grouper, map_to_remind=map_to_remind)
@@ -655,6 +707,14 @@ def calculate_optimal_capacities(n, comps, grouper, weigh_by_remind, year=None):
         optimal_capacities = optimal_capacities.drop(columns=["component"])
         # Drop DC link for now
         optimal_capacities = optimal_capacities.query("general_carrier != 'DC'")
+        # Drop EV battery links for now
+        optimal_capacities = optimal_capacities.query(
+            "general_carrier != 'BEV charger'"
+        )
+        # Drop EV batteries for now
+        optimal_capacities = optimal_capacities.query(
+            "general_carrier != 'EV battery'"
+        )
         # Ensure year is provided
         if year is None:
             raise ValueError("Year must be provided to weigh by REMIND capacities")
@@ -1133,15 +1193,32 @@ def calculate_market_values_demand(n, z_cutoff):
     # Local marginal price
     lmp = n_calc.buses_t.marginal_price.loc[:, gen.columns]
     # Calculate market value
-    mv = (gen * lmp).sum().sum() / gen.sum().sum()
+    mv_electrolysis = (gen * lmp).sum().sum() / gen.sum().sum()
+
+    # EV load series
+    # TODO: This is the same as the load price at the EV battery bus, simplify
+    gen = n_calc.loads_t.p.loc[:, n_calc.loads.carrier == "land transport EV"]
+    gen.columns = gen.columns.map(n_calc.loads.bus)
+    gen = gen.T.groupby(level=0).sum().T
+    # Local marginal price
+    lmp = n_calc.buses_t.marginal_price.loc[:, gen.columns]
+    # Calculate market value
+    mv_evs = (gen * lmp).sum().sum() / gen.sum().sum()
 
     # Create DataFrame
     market_values_demand = pd.DataFrame(
-        {
-            "region": ["DEU"],
-            "general_carrier": ["electrolysis"],
-            "value": [mv],
-        }
+        [
+            {
+                "region": "DEU",
+                "general_carrier": "electrolysis",
+                "value": mv_electrolysis,
+            },
+            {
+                "region": "DEU",
+                "general_carrier": "EVs",
+                "value": mv_evs,
+            },
+        ]
     )
 
     return market_values_demand
@@ -1202,9 +1279,9 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "export_to_REMIND",
-            configfiles="resources/PyPSA_PkBudg1000_DEU_allRCL_PyPSArefactor_4nodes_Loadshedding_2025-04-11_14.02.50/i9/config.remind_scenario.yaml",
-            iteration="9",
-            scenario="PyPSA_PkBudg1000_DEU_allRCL_PyPSArefactor_4nodes_Loadshedding_2025-04-11_14.02.50",
+            configfiles="resources/PyPSA_PkBudg1000_DEU_genRCL_4nodes_EVs_DSM_2025-04-25_16.25.31/i1/config.remind_scenario.yaml",
+            iteration="1",
+            scenario="PyPSA_PkBudg1000_DEU_genRCL_4nodes_EVs_DSM_2025-04-25_16.25.31",
         )
 
         # Manual input for testing
@@ -1472,10 +1549,32 @@ if __name__ == "__main__":
             "params": {"grouper": "region", "kind": "absolute"},
         },
         "load_prices": {
-            "func": calculate_load_prices,
-            "params": {"grouper": ["region", "general_carrier"]},
+            "func": calculate_load_prices_with_cutoff,
+            "params": {
+                "grouper": ["region", "general_carrier"],
+                "z_cutoff": False,
+            },
+        },
+        # TODO: Make cutoff another column in load_prices instead
+        "load_prices_cutoff": {
+            "func": calculate_load_prices_with_cutoff,
+            "params": {
+                "grouper": ["region", "general_carrier"],
+                "z_cutoff": snakemake.config["remind_coupling"]["export_to_REMIND"][
+                    "z_cutoff"
+                ],
+            },
         },
         "market_values_supply": {
+            "func": calculate_market_values_supply,
+            "params": {
+                "comps": ["Generator"],
+                "grouper": ["region", "general_carrier"],
+                "z_cutoff": False,
+            },
+        },
+        # TODO: Make cutoff another column in market_values_supply instead
+        "market_values_supply_cutoff": {
             "func": calculate_market_values_supply,
             "params": {
                 "comps": ["Generator"],
@@ -1486,6 +1585,11 @@ if __name__ == "__main__":
             },
         },
         "market_values_demand": {
+            "func": calculate_market_values_demand,
+            "params": {"z_cutoff": False},
+        },
+        # TODO: Make cutoff another column in market_values_demand instead
+        "market_values_demand_cutoff": {
             "func": calculate_market_values_demand,
             "params": {
                 "z_cutoff": snakemake.config["remind_coupling"]["export_to_REMIND"][
@@ -1513,22 +1617,18 @@ if __name__ == "__main__":
     if fp_triggers_op:
         logger.info("Checking which operational networks are available.")
         # Get the list of operational network file paths by replacing "_trigger" with ".nc"
-        fp_networks_op = [
-            fp.replace("_trigger", ".nc") for fp in fp_triggers_op
-        ]
+        fp_networks_op = [fp.replace("_trigger", ".nc") for fp in fp_triggers_op]
         # Sleep for 5 seconds to ensure all files are available
         time.sleep(5)
         # Check which operational network files exist
-        fp_networks_op_available = [
-            fp for fp in fp_networks_op if os.path.exists(fp)
-        ]
+        fp_networks_op_available = [fp for fp in fp_networks_op if os.path.exists(fp)]
         # Log warnings for any missing files
         missing_networks_op = set(fp_networks_op) - set(fp_networks_op_available)
         for missing in missing_networks_op:
             logger.warning(f"Operational network {missing} not found. Skipping.")
     else:
         fp_networks_op_available = []
-                
+
     # Perturbed networks
     if fp_triggers_op_perturb:
         logger.info("Checking which perturbed networks are available.")
@@ -1543,14 +1643,18 @@ if __name__ == "__main__":
             fp for fp in fp_networks_perturb if os.path.exists(fp)
         ]
         # Log warnings for any missing files
-        missing_networks_perturb = set(fp_networks_perturb) - set(fp_networks_perturb_available)
+        missing_networks_perturb = set(fp_networks_perturb) - set(
+            fp_networks_perturb_available
+        )
         for missing in missing_networks_perturb:
             logger.warning(f"Perturbed network {missing} not found. Skipping.")
     else:
         fp_networks_perturb_available = []
-    
+
     # Combine all networks
-    fp_networks_all = fp_networks + fp_networks_op_available + fp_networks_perturb_available
+    fp_networks_all = (
+        fp_networks + fp_networks_op_available + fp_networks_perturb_available
+    )
 
     # Create dataframe containing metadata of all networks in this iteration
     networks = pd.DataFrame(fp_networks_all, columns=["filepath"])
@@ -1567,9 +1671,11 @@ if __name__ == "__main__":
     if remind_coupling["export_to_REMIND"]["use_operations_network"]:
         if remind_coupling["solve_operations_network"]["enable"]:
             # Group by year and check whether within that group the op=True network is available. If it is, drop the op=False network
-            networks_ref = networks_ref.groupby("year").apply(
-                lambda x: x.drop(x[(x["op"] == False)].index)
-            ).reset_index(drop=True)
+            networks_ref = (
+                networks_ref.groupby("year")
+                .apply(lambda x: x.drop(x[(x["op"] == False)].index))
+                .reset_index(drop=True)
+            )
         else:
             logger.warning(
                 "export_to_REMIND.use_operations_network also requires solve_operations_network.enable."
@@ -1577,16 +1683,16 @@ if __name__ == "__main__":
     else:
         # Drop operational networks
         networks_ref = networks_ref[~networks["op"]].reset_index(drop=True)
-    
+
     networks = pd.concat([networks_ref, networks_ptech], ignore_index=True)
-    
+
     # Check if there is exactly one reference network per year
     net_ref_sum = networks.groupby("year")["ref"].sum()
     if not net_ref_sum.eq(1).all():
         raise ValueError(
             f"Expected exactly one reference network per year, but found {net_ref_sum}"
         )
-    
+
     # Print unique years
     logger.info(f"Unique years in networks: {networks['year'].unique()}")
 
@@ -1730,7 +1836,7 @@ if __name__ == "__main__":
 
     for key, df in reporting_parameters.items():
         df.to_csv(snakemake.output["reporting_parameters"] + f"/{key}.csv", index=False)
-        
+
     # Sleep for 5 seconds to ensure all files are written
     time.sleep(5)
 

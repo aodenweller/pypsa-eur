@@ -355,28 +355,32 @@ if config["enable"]["retrieve"]:
             os.remove(params["zip"])
 
 
-
+# See commit from  v2025.01.0
+# https://github.com/PyPSA/pypsa-eur/pull/1318/commits/7b2135b3bdd476a65a31ea7f59f6db736d4f4501
 if config["enable"]["retrieve"]:
 
     rule retrieve_worldbank_urban_population:
         params:
-            zip="data/worldbank/API_SP.URB.TOTL.IN.ZS_DS2_en_csv_v2_3403768.zip",
+            zip="data/worldbank/API_SP.URB.TOTL.IN.ZS_DS2_en_csv_v2.zip",
         output:
-            gpkg="data/worldbank/API_SP.URB.TOTL.IN.ZS_DS2_en_csv_v2_3403768.csv",
+            gpkg="data/worldbank/API_SP.URB.TOTL.IN.ZS_DS2_en_csv_v2.csv",
         run:
             import os
             import requests
 
             response = requests.get(
                 "https://api.worldbank.org/v2/en/indicator/SP.URB.TOTL.IN.ZS?downloadformat=csv",
-                params={"name": "API_SP.URB.TOTL.IN.ZS_DS2_en_csv_v2_3403768.zip"},
             )
 
             with open(params["zip"], "wb") as f:
                 f.write(response.content)
             output_folder = Path(params["zip"]).parent
             unpack_archive(params["zip"], output_folder)
-            os.remove(params["zip"])
+
+            for f in os.listdir(output_folder):
+                if f.startswith("API_SP.URB.TOTL.IN.ZS_DS2_en_csv_v2_") and f.endswith(".csv"):
+                    os.rename(os.path.join(output_folder, f), output.gpkg)
+                    break
 
 
 

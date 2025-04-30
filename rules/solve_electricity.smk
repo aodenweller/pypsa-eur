@@ -14,6 +14,8 @@ rule solve_network:
         custom_extra_functionality=input_custom_extra_functionality,
     input:
         network=ITERATION_RESOURCES
+        + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_sc.nc" if config["remind_coupling"]["sector_coupling"]["EVs"]["enable"]
+        else ITERATION_RESOURCES
         + "y{year}/networks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}.nc",
         RCL_p_nom_limits=ITERATION_RESOURCES + "y{year}/RCL_p_nom_limits_updated.csv",
         region_mapping="config/regionmapping_21_EU11.csv",

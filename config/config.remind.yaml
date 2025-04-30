@@ -21,6 +21,21 @@ remind_coupling:
   h2_demand:
     enabled: true  # TODO: This doesn't yet affect import_REMIND_config.py
     buffer_max_hours: 168 # in hours, set to 0 to deactivate, full buffer = 8760
+  sector_coupling:
+    # Enable EVs, using an adapted implementation as in default PyPSA-Eur
+    EVs:
+      enable: false
+      bev_share: 0.8  # Share of EV electricity demand from cars
+      bev_annual_consumption: 3  # in MWh/year for cars, 3,000 kWh/year
+      bet_annual_consumption: 40  # in MWh/year, for trucks, 40,000 kWh/year
+      share_charger: 0.8  # Share of vehicles that have a charger
+      bev_charge_rate: 0.011  # in MW, for cars, 11 kW
+      bet_charge_rate: 0.15  # in MW, for trucks, 150 kW
+      # Flexibility via demand-side management
+      # See settings below (bev_dsm_restriction_value, bev_dsm_restriction_time)
+      dsm: false
+      bev_energy: 0.06  # in MWh, for cars, 60 kWh
+      bet_energy: 0.3  # in MWh, for trucks, 300 kWh
   # Trigger the solving of the dispatch-only operations network
   solve_operations_network:
     enable: false
@@ -42,7 +57,8 @@ remind_coupling:
 
 logging:
   level: INFO
-  format: '%(levelname)s:%(name)s:%(message)s'
+  format: '%(asctime)s %(levelname)s:%(name)s:%(message)s'
+  datefmt: '%Y-%m-%d %H:%M:%S'
 
 private:
   keys:
