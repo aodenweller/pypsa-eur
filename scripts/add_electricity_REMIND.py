@@ -66,7 +66,7 @@ from _helpers import (
     update_p_nom_max,
     read_remind_data,
     get_region_mapping,
-    get_technology_mapping
+    get_technology_mapping,
 )
 from pypsa.clustering.spatial import DEFAULT_ONE_PORT_STRATEGIES, normed_or_uniform
 
@@ -712,7 +712,7 @@ def attach_conventional_generators(
                 n.generators.loc[idx, attr] = values
 
 
-def attach_hydro(
+def attach_hydro_REMIND(
     n: pypsa.Network,
     costs: pd.DataFrame,
     ppl: pd.DataFrame,
@@ -780,7 +780,7 @@ def attach_hydro(
 
     # Replace ror and hydro in ppl and rebuild index
     ppl_adj = pd.concat([phs, ror_hydro], axis=0)
-    
+
     ror = ppl_adj.query('carrier == "ror"')
     phs = ppl_adj.query('carrier == "PHS"')
     hydro = ppl_adj.query('carrier == "hydro"')
@@ -811,11 +811,16 @@ def attach_hydro(
             )
 
     # 2. REMIND-specific change: Adjust inflow_t such that it matches the capacity factor from REMIND
-    hydro_gen_REMIND = read_remind_data(
-        fp_remind_data,
-        "p32_hydroGen",
-        rename_columns={"ttot": "year", "all_regi": "region"},
-    ).query("year == @year").drop(columns="year").set_index(["region"])
+    hydro_gen_REMIND = (
+        read_remind_data(
+            fp_remind_data,
+            "p32_hydroGen",
+            rename_columns={"ttot": "year", "all_regi": "region"},
+        )
+        .query("year == @year")
+        .drop(columns="year")
+        .set_index(["region"])
+    )
     hydro_gen_REMIND *= 8760 * 1e6  # Convert from TWa to MWh
 
     # Calculate REMIND capacity factor
@@ -1341,7 +1346,7 @@ def attach_RCL_links(
         }
     )
 
-    # Only include p_nom limits included in the config snakemake.params["preinvestment_capacities"]["links"]
+    # Only include p_nom limits included in the config snakemake.params["preinstalled_capacities"]["links"]
     p_nom_limits = p_nom_limits[p_nom_limits["carrier"].isin(config["links"])]
 
     # Flatten country column entries such that all lists are converted into individual rows
@@ -1426,7 +1431,7 @@ def attach_RCL_stores(
         {"hydrogen storage underground": "H2", "battery storage": "battery"}
     )
 
-    # Only include e_nom limits included in the config snakemake.params["preinvestment_capacities"]["stores"]
+    # Only include e_nom limits included in the config snakemake.params["preinstalled_capacities"]["stores"]
     e_nom_limits = e_nom_limits[e_nom_limits["carrier"].isin(config["stores"])]
 
     # Add country-reference to stores for mapping
@@ -1460,7 +1465,7 @@ def attach_RCL_stores(
     n.madd("Store", rcl_stores.index, **rcl_stores)
 
 
-def attach_hydrogen_demand(
+def attach_hydrogen_demand_central_bus(
     n,
     year,
     config,
@@ -1490,7 +1495,7 @@ def attach_hydrogen_demand(
     # Find all H2 buses which we connect to REMIND demand bus
     original_h2_buses = n.buses[n.buses["carrier"] == "H2"]
     original_h2_buses["country"] = original_h2_buses["location"].map(n.buses["country"])
-    
+
     original_h2_buses = original_h2_buses[["country"]]
 
     # Map countries to REMIND regions
@@ -1561,6 +1566,216 @@ def attach_hydrogen_demand(
         )
 
 
+def attach_hydrogen_demand_per_node(
+    n,
+    year,
+    config,
+    fp_remind_data,
+    fp_region_mapping,
+):
+    """
+    Add additional H2 demand for hydrogen from electrolysis based on REMIND
+    scenarios to the network.
+
+    This function attaches additional hydrogen load to each existing
+    H2 buses from PyPSA-Eur. The load profile is constant.
+
+    There is currently not additional H2 buffer, which would need an additional
+    hydrogen bus, link and store.
+    """
+
+    # map countries to REMIND regions
+    # Create region mapping
+    region_mapping = get_region_mapping(
+        fp_region_mapping, source="PyPSA-EUR", target="REMIND-EU"
+    )
+    region_mapping = pd.DataFrame(region_mapping).T.reset_index()
+    region_mapping.columns = ["PyPSA-EUR", "REMIND-EU"]
+    region_mapping = region_mapping.set_index("PyPSA-EUR")
+
+    # Load H2 demand from REMIND gdx file
+    h2_demand = read_remind_data(
+        fp_remind_data,
+        "p32_ElecH2Demand",
+        rename_columns={"ttot": "year", "all_regi": "region"},
+    )
+    h2_demand["value"] *= 8760 * 1e6  # convert TWa to MWh
+    # Restrict to relevant year and regions inside the model
+    h2_demand = h2_demand.loc[
+        (h2_demand["year"] == str(year))
+        & (h2_demand["region"].isin(region_mapping["REMIND-EU"].unique()))
+    ]
+
+    # Find all H2 buses which we connect to REMIND demand bus
+    original_h2_buses = n.buses[n.buses["carrier"] == "H2"]
+    original_h2_buses["country"] = original_h2_buses["location"].map(n.buses["country"])
+    original_h2_buses["region"] = original_h2_buses["country"].map(
+        region_mapping["REMIND-EU"]
+    )
+
+    # Get mapping of electricity buses to REMIND regions
+    buses_region = (
+        n.loads["bus"].map(n.buses["country"]).map(region_mapping["REMIND-EU"])
+    )
+
+    # Loop over all regions
+    for idx, row in h2_demand.iterrows():
+        h2_buses_region = original_h2_buses.loc[
+            original_h2_buses["region"] == row["region"]
+        ]
+        h2_demand_region = row["value"]
+        elec_buses_region = buses_region.index[buses_region == row["region"]].to_list()
+
+        # Distribute hydrogen loads just like electricity loads
+        # TODO: Make this a setting
+        weights = n.loads_t["p_set"][elec_buses_region].sum(axis=0)
+        weights = weights / weights.sum()
+        # Add the suffix "H2" to the index
+        weights.index = weights.index + " H2"
+
+        # Loop over all hydrogen buses
+        for bus in h2_buses_region.index:
+
+            # Add a load for each bus in the region
+            n.add(
+                "Load",
+                name=f"{bus} demand REMIND",
+                bus=bus,
+                p_set=h2_demand_region * weights[bus] / 8760,
+            )
+
+
+# Function modified from prepare_sector_network.py
+def add_EVs_REMIND(n, options_ev):
+    
+    # Read in electricity demand for EVs
+    ev_load = read_remind_data(
+        snakemake.input.remind_data,
+        "p32_load_EVs",
+        rename_columns={"ttot": "year", "all_regi": "region"},
+    ).query("year == @snakemake.wildcards.year")
+    ev_load["value"] *= 1e6 * 8760  # convert from TWa to MWh
+
+    # Read in transport demand in units driven km [100 km]
+    transport = pd.read_csv(
+        snakemake.input.transport_demand, index_col=0, parse_dates=True
+    )
+    # Normalise such that the sum corresponds to the total EV electricity demand (in MWh)
+    load_p_set = transport.div(transport.sum(axis=0).sum()) * ev_load["value"].values[0]
+
+    # Estimate number of cars from EV load given assumptions in settings
+    number_bev = (
+        ev_load["value"]
+        * options_ev["bev_share"]
+        / options_ev["bev_annual_consumption"]
+    )
+    number_bet = (
+        ev_load["value"]
+        * (1 - options_ev["bev_share"])
+        / options_ev["bet_annual_consumption"]
+    )
+
+    # Estimate simultaneous charging power in MW (used for link)
+    charge_power = (
+        number_bev * options_ev["bev_charge_rate"]
+        + number_bet * options_ev["bet_charge_rate"]
+    )
+
+    # Estimate total battery pack capacity in MWh (used for store)
+    battery_energy = (
+        number_bev * options_ev["bev_energy"] + number_bet * options_ev["bet_energy"]
+    )
+
+    # Read in availability profile for charging
+    link_avail_profile = pd.read_csv(
+        snakemake.input.avail_profile, index_col=0, parse_dates=True
+    )
+
+    # Number of cars in total
+    number_cars = number_bev + number_bet
+
+    # Distribute charg_power to spatial nodes using number of cars
+    link_p_nom = (charge_power.values[0] * number_cars / number_cars.sum()).values[0]
+
+    # Read in DSM profile
+    store_dsm_profile = pd.read_csv(
+        snakemake.input.dsm_profile, index_col=0, parse_dates=True
+    )
+    # Distribute DSM profile to spatial nodes using number of cars
+    store_e_nom = (battery_energy.values[0] * number_cars / number_cars.sum()).values[0]
+
+    n.add("Carrier", "EV battery")
+
+    n.madd(
+        "Bus",
+        spatial_nodes,
+        suffix=" EV battery",
+        location=spatial_nodes,
+        carrier="EV battery",
+        unit="MWh_el",
+    )
+
+    p_shifted = (
+        load_p_set + cycling_shift(load_p_set, 1) + cycling_shift(load_p_set, 2)
+    ) / 3
+
+    n.madd(
+        "Load",
+        spatial_nodes,
+        suffix=" land transport EV",
+        bus=spatial_nodes + " EV battery",
+        carrier="land transport EV",
+        p_set=p_shifted.loc[n.snapshots, spatial_nodes],
+    )
+
+    n.madd(
+        "Link",
+        spatial_nodes,
+        suffix=" BEV charger",
+        bus0=spatial_nodes,
+        bus1=spatial_nodes + " EV battery",
+        p_nom=link_p_nom,
+        carrier="BEV charger",
+        p_max_pu=link_avail_profile.loc[n.snapshots, spatial_nodes],
+        # lifetime=1,
+        efficiency=1,
+    )
+
+    if options_ev["dsm"]:
+
+        n.madd(
+            "Store",
+            spatial_nodes,
+            suffix=" EV battery",
+            bus=spatial_nodes + " EV battery",
+            carrier="EV battery",
+            e_cyclic=True,
+            e_nom=store_e_nom,
+            e_max_pu=1,
+            e_min_pu=store_dsm_profile.loc[n.snapshots, spatial_nodes],
+        )
+
+    # Subtract EV load from total load
+    subtract_from_load(n, load_p_set)
+
+
+def cycling_shift(df, steps=1):
+    """
+    Cyclic shift on index of pd.Series|pd.DataFrame by number of steps.
+    """
+    df = df.copy()
+    new_index = np.roll(df.index, steps)
+    df.values[:] = df.reindex(index=new_index).values
+    return df
+
+
+def subtract_from_load(n, load_p_set):
+    """
+    Subtracts the EV load from the total load in the network.
+    """
+    n.loads_t["p_set"][spatial_nodes] -= load_p_set.loc[n.snapshots].values
+
+
 # %%
 if __name__ == "__main__":
     if "snakemake" not in globals():
@@ -1570,7 +1785,7 @@ if __name__ == "__main__":
             "add_electricity_REMIND",
             scenario="TEST",
             iteration="1",
-            year="2030",
+            year="2035",
             clusters=4,
         )
     configure_logging(snakemake)
@@ -1612,11 +1827,13 @@ if __name__ == "__main__":
     ).to_csv(snakemake.output["costs_validation"])
 
     # Read load scaling factor
-    load_scaling_factor = pd.read_csv(
+    load_scaling_factor_REMIND = pd.read_csv(
         snakemake.input.load_scaling_factor, index_col=0
     ).squeeze()
 
-    attach_load(n, snakemake.input.load, snakemake.input.busmap, load_scaling_factor)
+    attach_load(
+        n, snakemake.input.load, snakemake.input.busmap, load_scaling_factor_REMIND
+    )
 
     set_transmission_costs(
         n,
@@ -1670,7 +1887,7 @@ if __name__ == "__main__":
     if "hydro" in renewable_carriers:
         p = params.renewable["hydro"]
         carriers = p.pop("carriers", [])
-        attach_hydro(
+        attach_hydro_REMIND(
             n,
             costs,
             ppl,
@@ -1709,40 +1926,55 @@ if __name__ == "__main__":
 
     # Attach preinvestment capacities via additional RCL components
     # that are constrained in solve_electricity
-    if snakemake.params["preinvestment_capacities"]["generators"]:
+    if snakemake.params["preinstalled_capacities"]["generators"]:
         attach_RCL_generators(
             n,
-            config=snakemake.params["preinvestment_capacities"],
+            config=snakemake.params["preinstalled_capacities"],
             fp_p_nom_limits=snakemake.input["RCL_p_nom_limits"],
             fp_region_mapping=snakemake.input["region_mapping"],
             fp_technology_cost_mapping=snakemake.input["technology_cost_mapping"],
         )
-    if snakemake.params["preinvestment_capacities"]["links"]:
+    if snakemake.params["preinstalled_capacities"]["links"]:
         attach_RCL_links(
             n,
-            config=snakemake.params["preinvestment_capacities"],
+            config=snakemake.params["preinstalled_capacities"],
             fp_p_nom_limits=snakemake.input["RCL_p_nom_limits"],
             fp_region_mapping=snakemake.input["region_mapping"],
             fp_technology_cost_mapping=snakemake.input["technology_cost_mapping"],
         )
-    if snakemake.params["preinvestment_capacities"]["stores"]:
+    if snakemake.params["preinstalled_capacities"]["stores"]:
         attach_RCL_stores(
             n,
-            config=snakemake.params["preinvestment_capacities"],
+            config=snakemake.params["preinstalled_capacities"],
             fp_p_nom_limits=snakemake.input["RCL_p_nom_limits"],
             fp_region_mapping=snakemake.input["region_mapping"],
             fp_technology_cost_mapping=snakemake.input["technology_cost_mapping"],
         )
 
-    # Attaach additional hydrogen demand
-    if snakemake.params["h2_demand"]["enable"]:
-        attach_hydrogen_demand(
-            n,
-            config=snakemake.params["h2_demand"],
-            year=snakemake.wildcards["year"],
-            fp_region_mapping=snakemake.input["region_mapping"],
-            fp_remind_data=snakemake.input["remind_data"],
-        )
+    # Attach additional hydrogen demand
+    sc_settings = snakemake.params["sector_coupling"]
+    if sc_settings["additional_hydrogen"]["enable"]:
+        if sc_settings["additional_hydrogen"]["type"] == "central_bus":
+            attach_hydrogen_demand_central_bus(
+                n,
+                config=snakemake.params["sector_coupling"]["additional_hydrogen"],
+                year=snakemake.wildcards["year"],
+                fp_region_mapping=snakemake.input["region_mapping"],
+                fp_remind_data=snakemake.input["remind_data"],
+            )
+        elif sc_settings["additional_hydrogen"]["type"] == "per_node":
+            attach_hydrogen_demand_per_node(
+                n,
+                config=snakemake.params["sector_coupling"]["additional_hydrogen"],
+                year=snakemake.wildcards["year"],
+                fp_region_mapping=snakemake.input["region_mapping"],
+                fp_remind_data=snakemake.input["remind_data"],
+            )
+
+    # Attach EVs
+    if sc_settings["EVs"]["enable"]:
+        spatial_nodes = n.buses.query("carrier == 'AC'").index  # TODO: Move
+        add_EVs_REMIND(n, sc_settings["EVs"])
 
     sanitize_carriers(n, snakemake.config)
     if "location" in n.buses:

@@ -86,7 +86,7 @@ include: "rules/common.smk"
 include: "rules/retrieve.smk"
 include: "rules/build_electricity_REMIND.smk"
 include: "rules/solve_electricity_REMIND.smk"
-
+include: "rules/build_sector_REMIND.smk"
 
 rule purge:
     run:
@@ -227,13 +227,13 @@ rule download_and_prepare:
         rules.build_electricity_demand.output[0],
         # Retrieve powerplants data
         rules.retrieve_powerplants.output[0],
-        # Further input data for add_electricity_REMIND
+        # Input data for add_electricity
         expand(
             "resources/regions_by_class_{clusters}_{technology}.geojson",
             clusters=config["scenario"]["clusters"],
             technology=["onwind", "offwind-ac", "offwind-dc", "solar"],
         ),
-        unpack(input_conventional),  # TODO: Not sure what this does
+        unpack(input_conventional),  # TODO: Not sure what this is
         expand(
             resources("networks/base_s_{clusters}.nc"),
             clusters=config["scenario"]["clusters"]
@@ -244,6 +244,11 @@ rule download_and_prepare:
         ),
         expand(
             resources("busmap_base_s_{clusters}.csv"),
+            clusters=config["scenario"]["clusters"]
+        ),
+        # Input data for prepare_sector_network_REMIND
+        expand(
+            rules.build_transport_demand.output,
             clusters=config["scenario"]["clusters"]
         ),
 

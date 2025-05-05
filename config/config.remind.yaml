@@ -8,7 +8,8 @@ tutorial: false
 
 # REMIND coupling specific
 remind_coupling:
-  preinvestment_capacities:
+  # Preinstalled capacities settings (i.e. brownfield from REMIND)
+  preinstalled_capacities:
     # Cost at which preinvestment capacities are built (annualised in $/MW or $/MWh)
     capital_cost: 0.0
     # Attach RCL generators
@@ -17,10 +18,32 @@ remind_coupling:
     links: []  # Any of [H2 electrolysis, H2 fuel cell, battery charger]
     # Attach free RCL stores for these components
     stores: []  # Any of [H2, battery]
-  # Additional demand for electrolytic hydrogen from REMIND
-  h2_demand:
-    enable: true  # TODO: This doesn't yet affect import_REMIND_config.py
-    buffer_max_hours: 168 # in hours, set to 0 to deactivate, full buffer = 8760
+  # Sector coupling settings (hydrogen, EVs, etc.)
+  sector_coupling:
+    # Additional hydrogen (not for power storage) based on own implementation
+    # This adds additional hydrogen load with a constant profile
+    additional_hydrogen:
+      enable: true
+      # Type can either be
+      # "central_bus": Add one additional hydrogen bus per REMIND region, this assumes full spatial flexibility
+      # "per_node": Add addditional hydrogen load to the existing hydrogen bus at each node, no spatial flexibility
+      type: "per_node"  # Either "central_bus" or "per_node"
+      buffer_max_hours: 168  # in hours, currently only applies to "central_bus"
+    # Electric vehicles based on default PyPSA-Eur implementation
+    EVs:
+      enable: false
+      bev_share: 0.8  # Share of EV electricity demand from cars
+      bev_annual_consumption: 3  # in MWh/year for cars, 3,000 kWh/year
+      bet_annual_consumption: 40  # in MWh/year, for trucks, 40,000 kWh/year
+      share_charger: 0.8  # Share of vehicles that have a charger
+      bev_charge_rate: 0.011  # in MW, for cars, 11 kW
+      bet_charge_rate: 0.15  # in MW, for trucks, 150 kW
+      # Flexibility via demand-side management
+      # See settings below (bev_dsm_restriction_value, bev_dsm_restriction_time)
+      dsm: false
+      bev_energy: 0.06  # in MWh, for cars, 60 kWh
+      bet_energy: 0.3  # in MWh, for trucks, 300 kWh
+    # TODO: Add electricity demand for heating
   # Trigger the solving of the dispatch-only operations network
   solve_operations_network:
     enable: false
@@ -42,7 +65,8 @@ remind_coupling:
 
 logging:
   level: INFO
-  format: '%(levelname)s:%(name)s:%(message)s'
+  format: '%(asctime)s %(levelname)s:%(name)s:%(message)s'
+  datefmt: '%Y-%m-%d %H:%M:%S'
 
 remote:
   ssh: ""

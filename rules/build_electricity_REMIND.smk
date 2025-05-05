@@ -492,13 +492,6 @@ rule add_transmission_projects_and_dlr:
         "../scripts/add_transmission_projects_and_dlr.py"
 
 
-# def input_profile_tech(w):
-#     return {
-#         f"profile_{tech}": resources(f"profile_{tech}.nc")
-#         for tech in config_provider("electricity", "renewable_carriers")(w)
-#     }
-
-
 def input_class_regions(w):
     return {
         f"class_regions_{tech}": resources(
@@ -670,6 +663,9 @@ def input_conventional(w):
     }
 
 
+# Adapted rule that adds all electricity-related components,
+# but also sector coupling components that attach to the electricity network
+# TODO: Split sector coupling into its own rule `add_sector_coupling_REMIND`
 rule add_electricity_REMIND:
     params:
         line_length_factor=config_provider("lines", "length_factor"),
@@ -689,10 +685,11 @@ rule add_electricity_REMIND:
         aggregation_strategies=config_provider("clustering", "aggregation_strategies"),
         exclude_carriers=config_provider("clustering", "exclude_carriers"),
         # REMIND input
-        preinvestment_capacities=config_provider("remind_coupling","preinvestment_capacities"),
-        h2_demand=config_provider("remind_coupling","h2_demand"),
-        constraints=config_provider("solving","constraints"),
+        preinstalled_capacities=config_provider("remind_coupling","preinstalled_capacities"),
+        sector_coupling=config_provider("remind_coupling","sector_coupling"),
+        constraints=config_provider("solving","constraints"),  # TODO: Remove this param
     input:
+        # Standard electricity input files
         unpack(input_profile_tech),
         unpack(input_class_regions),
         unpack(input_conventional),
@@ -709,6 +706,11 @@ rule add_electricity_REMIND:
         ),
         load=resources("electricity_demand_base_s.nc"),
         busmap=resources("busmap_base_s_{clusters}.csv"),
+        # Transport-related input files
+        transport_demand=resources("transport_demand_s_{clusters}.csv"),
+        transport_data=resources("transport_data_s_{clusters}.csv"),
+        avail_profile=resources("avail_profile_s_{clusters}.csv"),
+        dsm_profile=resources("dsm_profile_s_{clusters}.csv"),
         # REMIND input
         region_mapping="config/regionmapping_21_EU11.csv",
         RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits_updated_s_{clusters}.csv",
