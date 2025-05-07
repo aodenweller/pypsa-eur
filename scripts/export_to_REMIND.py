@@ -497,6 +497,10 @@ def calculate_markups_demand(n, grouper, z_cutoff, map_to_remind):
 
     # Subtract average electricity price from market value to get markup
     markup_evs = mv - load_price_ac
+    
+    # Replace NA with 0
+    markup_electrolysis = markup_electrolysis if not np.isnan(markup_electrolysis) else 0
+    markup_evs = markup_evs if not np.isnan(markup_evs) else 0
 
     # Create DataFrame
     markups_demand = pd.DataFrame(
@@ -722,7 +726,7 @@ def calculate_grid_losses(n, grouper="region", kind="relative"):
         grid_loss_abs = pd.Series(0, index=regions, name="absolute")
         grid_loss_abs.index.name = "region"
     grid_loss_rel = grid_loss_abs / n.statistics.withdrawal(
-        comps="Load", bus_carrier="AC", groupby=grouper
+        comps="Load", bus_carrier = ["AC", "EV battery"], groupby=grouper
     )
 
     grid_loss = pd.DataFrame(
@@ -783,7 +787,7 @@ def calculate_link_generation(n, carrier, grouper, kind="relative"):
 
     # Calculate relative supply
     relative_supply = absolute_supply / n.statistics.withdrawal(
-        comps="Load", bus_carrier="AC", groupby=grouper
+        comps="Load", bus_carrier = ["AC", "EV battery"], groupby=grouper
     )
 
     # Combine absolute and relative supply into a DataFrame
@@ -1259,14 +1263,14 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "export_to_REMIND",
-            configfiles="resources/TEST/i1/config.remind_scenario.yaml",
+            configfiles="resources/PyPSA_PkBudg1000_DEU_rm350_pypsa202504_bounds_2025-05-07_11.04.32/i1/config.remind_scenario.yaml",
             iteration="1",
-            scenario="TEST",
+            scenario="PyPSA_PkBudg1000_DEU_rm350_pypsa202504_bounds_2025-05-07_11.04.32",
         )
 
         # Manual input for testing
         fp_networks = [
-            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/base_s_4_elec_3H-Ep131.8.nc",
+            f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2050/networks/base_s_4_elec_3H-Ep137.1.nc",
         ]
         fp_triggers_op = [
             #f"../results/{snakemake.wildcards['scenario']}/i{snakemake.wildcards['iteration']}/y2030/networks/elec_s_4_ec_lcopt_3H-Ep131.8_op_trigger",
@@ -1485,7 +1489,7 @@ if __name__ == "__main__":
             "func": calculate_energy_balance,
             "params": {
                 "grouper": ["region", "general_carrier"],
-                "bus_carrier": "H2 demand REMIND",
+                "bus_carrier": "H2",
             },
         },
         "preinstalled_capacities": {

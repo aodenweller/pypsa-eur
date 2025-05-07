@@ -25,9 +25,9 @@ remind_coupling:
     additional_hydrogen:
       enable: true
       # Type can either be
-      # "central_bus": Add one additional hydrogen bus per REMIND region, this assumes full spatial flexibility
-      # "per_node": Add addditional hydrogen load to the existing hydrogen bus at each node, no spatial flexibility
-      type: "per_node"  # Either "central_bus" or "per_node"
+      # central_bus: Add one additional hydrogen bus per REMIND region, this assumes full spatial flexibility
+      # per_node: Add addditional hydrogen load to the existing hydrogen bus at each node, no spatial flexibility
+      type: per_node  # Either "central_bus" or "per_node"
       buffer_max_hours: 168  # in hours, currently only applies to "central_bus"
     # Electric vehicles based on default PyPSA-Eur implementation
     EVs:
