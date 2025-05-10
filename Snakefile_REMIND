@@ -246,11 +246,20 @@ rule download_and_prepare:
             resources("busmap_base_s_{clusters}.csv"),
             clusters=config["scenario"]["clusters"]
         ),
-        # Input data for prepare_sector_network_REMIND
+        # Input data for EVs
         expand(
             rules.build_transport_demand.output,
             clusters=config["scenario"]["clusters"]
         ),
+        # Input data for heating
+        expand(
+            rules.build_hourly_heat_demand.output,
+            clusters=config["scenario"]["clusters"]
+        ),
+        expand(
+            rules.build_cop_profiles_REMIND.output,
+            clusters=config["scenario"]["clusters"]
+        )
 
 # This part contains all rules, which get data from REMIND between iterations.
 # PyPSA-EUR networks are solved between iterations via snakemake calls

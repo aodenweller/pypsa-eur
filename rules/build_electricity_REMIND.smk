@@ -706,11 +706,14 @@ rule add_electricity_REMIND:
         ),
         load=resources("electricity_demand_base_s.nc"),
         busmap=resources("busmap_base_s_{clusters}.csv"),
-        # Transport-related input files
+        # EV input files
         transport_demand=resources("transport_demand_s_{clusters}.csv"),
         transport_data=resources("transport_data_s_{clusters}.csv"),
         avail_profile=resources("avail_profile_s_{clusters}.csv"),
         dsm_profile=resources("dsm_profile_s_{clusters}.csv"),
+        # Heating input files
+        hourly_heat_demand_total=resources("hourly_heat_demand_total_base_s_{clusters}.nc"),
+        cop_profiles=resources("cop_profiles_base_s_{clusters}.nc"),
         # REMIND input
         region_mapping="config/regionmapping_21_EU11.csv",
         RCL_p_nom_limits=SCENARIO_RESOURCES + "i{iteration}/y{year}/RCL_p_nom_limits_updated_s_{clusters}.csv",

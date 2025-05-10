@@ -2,11 +2,9 @@
 #
 # SPDX-License-Identifier: MIT
 # This file contains those rules of build_sector.smk that are required for the REMIND coupling
-# This currently encompasses anything related to electricity demand for EVs
-# In the future this might be extended to electricity demand for heating (and potentially others)
+# This currently includes input data for modelling EVs and heating
 
 
-# Unchanged
 rule build_population_layouts:
     input:
         nuts3_shapes=resources("nuts3_shapes.geojson"),
@@ -29,7 +27,6 @@ rule build_population_layouts:
         "../scripts/build_population_layouts.py"
 
 
-# Unchanged
 rule build_clustered_population_layouts:
     input:
         pop_layout_total=resources("pop_layout_total.nc"),
@@ -51,7 +48,6 @@ rule build_clustered_population_layouts:
         "../scripts/build_clustered_population_layouts.py"
 
 
-# Unchanged
 rule build_simplified_population_layouts:
     input:
         pop_layout_total=resources("pop_layout_total.nc"),
@@ -73,7 +69,6 @@ rule build_simplified_population_layouts:
         "../scripts/build_clustered_population_layouts.py"
 
 
-# Unchanged
 rule build_temperature_profiles:
     params:
         snapshots=config_provider("snapshots"),
@@ -100,7 +95,6 @@ rule build_temperature_profiles:
         "../scripts/build_temperature_profiles.py"
 
 
-# Unchanged
 rule build_energy_totals:
     params:
         countries=config_provider("countries"),
@@ -154,7 +148,7 @@ rule build_salt_cavern_potentials:
     script:
         "../scripts/build_salt_cavern_potentials.py"
 
-# Unchanged
+
 rule build_population_weighted_energy_totals:
     params:
         snapshots=config_provider("snapshots"),
@@ -210,38 +204,163 @@ rule build_transport_demand:
         "../scripts/build_transport_demand.py"
 
 
-# New rule for REMIND coupling
-# Currently only adds EVs to the network
-# rule prepare_sector_network_REMIND:
-#     params:
-#         remind_settings=config_provider("remind_coupling", "sector_coupling"),
-#     input:
-#         # Network output from rule prepare_network
-#         network=SCENARIO_RESOURCES
-#         + "i{iteration}/y{year}/networks/base_s_{clusters}_elec_{opts}.nc",
-#         # REMIND gdx with EV load
-#         remind_data=SCENARIO_RESOURCES + "i{iteration}/REMIND2PyPSAEUR.gdx",
-#         # Transport-related input files
-#         transport_demand=resources("transport_demand_s_{clusters}.csv"),
-#         transport_data=resources("transport_data_s_{clusters}.csv"),
-#         avail_profile=resources("avail_profile_s_{clusters}.csv"),
-#         dsm_profile=resources("dsm_profile_s_{clusters}.csv"),
-#     output:
-#         # Network with sector coupling (suffix sc)
-#         network=SCENARIO_RESOURCES
-#         + "i{iteration}/y{year}/networks/base_s_{clusters}_elec_{opts}_sc.nc",
-#     threads: 1
-#     resources:
-#         mem_mb=2000,
-#     log:
-#         SCENARIO_LOGS
-#         + "i{iteration}/y{year}/prepare_sector_network_REMIND/s_{clusters}_elec_{opts}_sc.log",
-#     benchmark:
-#         SCENARIO_BENCHMARKS
-#         + "i{iteration}/y{year}/prepare_sector_network_REMIND/s_{clusters}_elec_{opts}_sc"
-#     group:
-#         "iy"
-#     conda:
-#         "../envs/environment.yaml"
-#     script:
-#         "../scripts/prepare_sector_network_REMIND.py"
+rule build_daily_heat_demand:
+    params:
+        snapshots=config_provider("snapshots"),
+        drop_leap_day=config_provider("enable", "drop_leap_day"),
+    input:
+        pop_layout=resources("pop_layout_total.nc"),
+        regions_onshore=resources("regions_onshore_base_s_{clusters}.geojson"),
+        cutout=lambda w: input_cutout(
+            w, config_provider("sector", "heat_demand_cutout")(w)
+        ),
+    output:
+        heat_demand=resources("daily_heat_demand_total_base_s_{clusters}.nc"),
+    resources:
+        mem_mb=20000,
+    threads: 8
+    log:
+        logs("build_daily_heat_demand_total_s_{clusters}.loc"),
+    benchmark:
+        benchmarks("build_daily_heat_demand/total_s_{clusters}")
+    conda:
+        "../envs/environment.yaml"
+    script:
+        "../scripts/build_daily_heat_demand.py"
+
+
+rule build_hourly_heat_demand:
+    params:
+        snapshots=config_provider("snapshots"),
+        drop_leap_day=config_provider("enable", "drop_leap_day"),
+    input:
+        heat_profile="data/heat_load_profile_BDEW.csv",
+        heat_demand=resources("daily_heat_demand_total_base_s_{clusters}.nc"),
+    output:
+        heat_demand=resources("hourly_heat_demand_total_base_s_{clusters}.nc"),
+    resources:
+        mem_mb=2000,
+    threads: 8
+    log:
+        logs("build_hourly_heat_demand_total_s_{clusters}.loc"),
+    benchmark:
+        benchmarks("build_hourly_heat_demand/total_s_{clusters}")
+    conda:
+        "../envs/environment.yaml"
+    script:
+        "../scripts/build_hourly_heat_demand.py"
+
+
+# Removed planning_horizons wildcard (in both rule and code)
+rule build_central_heating_temperature_profiles_REMIND:
+    params:
+        max_forward_temperature_central_heating_baseyear=config_provider(
+            "sector",
+            "district_heating",
+            "supply_temperature_approximation",
+            "max_forward_temperature_baseyear",
+        ),
+        min_forward_temperature_central_heating_baseyear=config_provider(
+            "sector",
+            "district_heating",
+            "supply_temperature_approximation",
+            "min_forward_temperature_baseyear",
+        ),
+        return_temperature_central_heating_baseyear=config_provider(
+            "sector",
+            "district_heating",
+            "supply_temperature_approximation",
+            "return_temperature_baseyear",
+        ),
+        snapshots=config_provider("snapshots"),
+        drop_leap_day=config_provider("enable", "drop_leap_day"),
+        lower_threshold_ambient_temperature=config_provider(
+            "sector",
+            "district_heating",
+            "supply_temperature_approximation",
+            "lower_threshold_ambient_temperature",
+        ),
+        upper_threshold_ambient_temperature=config_provider(
+            "sector",
+            "district_heating",
+            "supply_temperature_approximation",
+            "upper_threshold_ambient_temperature",
+        ),
+        rolling_window_ambient_temperature=config_provider(
+            "sector",
+            "district_heating",
+            "supply_temperature_approximation",
+            "rolling_window_ambient_temperature",
+        ),
+        relative_annual_temperature_reduction=config_provider(
+            "sector",
+            "district_heating",
+            "supply_temperature_approximation",
+            "relative_annual_temperature_reduction",
+        ),
+        energy_totals_year=config_provider("energy", "energy_totals_year"),
+    input:
+        temp_air_total=resources("temp_air_total_base_s_{clusters}.nc"),
+        regions_onshore=resources("regions_onshore_base_s_{clusters}.geojson"),
+    output:
+        central_heating_forward_temperature_profiles=resources(
+            "central_heating_forward_temperature_profiles_base_s_{clusters}.nc"
+        ),
+        central_heating_return_temperature_profiles=resources(
+            "central_heating_return_temperature_profiles_base_s_{clusters}.nc"
+        ),
+    resources:
+        mem_mb=20000,
+    log:
+        logs(
+            "build_central_heating_temperature_profiles_s_{clusters}.log"
+        ),
+    benchmark:
+        benchmarks(
+            "build_central_heating_temperature_profiles/s_{clusters}"
+        )
+    conda:
+        "../envs/environment.yaml"
+    script:
+        "../scripts/build_central_heating_temperature_profiles/run_REMIND.py"
+
+
+# Removed planning_horizons wildcard from rule (no change in code necessary)
+rule build_cop_profiles_REMIND:
+    params:
+        heat_pump_sink_T_decentral_heating=config_provider(
+            "sector", "heat_pump_sink_T_individual_heating"
+        ),
+        heat_source_cooling_central_heating=config_provider(
+            "sector", "district_heating", "heat_source_cooling"
+        ),
+        heat_pump_cop_approximation_central_heating=config_provider(
+            "sector", "district_heating", "heat_pump_cop_approximation"
+        ),
+        heat_pump_sources=config_provider("sector", "heat_pump_sources"),
+        limited_heat_sources=config_provider(
+            "sector", "district_heating", "limited_heat_sources"
+        ),
+        snapshots=config_provider("snapshots"),
+    input:
+        central_heating_forward_temperature_profiles=resources(
+            "central_heating_forward_temperature_profiles_base_s_{clusters}.nc"
+        ),
+        central_heating_return_temperature_profiles=resources(
+            "central_heating_return_temperature_profiles_base_s_{clusters}.nc"
+        ),
+        temp_soil_total=resources("temp_soil_total_base_s_{clusters}.nc"),
+        temp_air_total=resources("temp_air_total_base_s_{clusters}.nc"),
+        regions_onshore=resources("regions_onshore_base_s_{clusters}.geojson"),
+    output:
+        cop_profiles=resources("cop_profiles_base_s_{clusters}.nc"),
+    resources:
+        mem_mb=20000,
+    log:
+        logs("build_cop_profiles_s_{clusters}.log"),
+    benchmark:
+        benchmarks("build_cop_profiles/s_{clusters}")
+    conda:
+        "../envs/environment.yaml"
+    script:
+        "../scripts/build_cop_profiles/run.py"

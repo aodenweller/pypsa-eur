@@ -43,7 +43,11 @@ remind_coupling:
       dsm: false
       bev_energy: 0.06  # in MWh, for cars, 60 kWh
       bet_energy: 0.3  # in MWh, for trucks, 300 kWh
-    # TODO: Add electricity demand for heating
+    # Heating based on PyPSA-Eur heat profile data, but simpler implementation
+    heating:
+      enable: false
+      # Flexibility via demand-side management (additional storage)
+      dsm: false
   # Trigger the solving of the dispatch-only operations network
   solve_operations_network:
     enable: false
@@ -542,7 +546,7 @@ sector:
       lower_threshold_ambient_temperature: 0
       upper_threshold_ambient_temperature: 10
       rolling_window_ambient_temperature: 72
-      relative_annual_temperature_reduction: 0.01
+      relative_annual_temperature_reduction: 0  # REMIND specific
     ptes:
       dynamic_capacity: true
       max_top_temperature: 90
